@@ -37,7 +37,11 @@ function leagueList(id, rows, value) {
   });
 }
 
+let lastLeague = "";
 function showLeague(lg) {
+  const key = JSON.stringify([lg, you && you.cc, ranks.indexOf(you && you.cc)]);
+  if (key === lastLeague) return;
+  lastLeague = key;
   leagueList("total", lg.total, (r) => r.score.toLocaleString());
   leagueList("passion", lg.passion, (r) => r.perPlayer.toLocaleString());
   const mine = $("mine");
@@ -56,7 +60,11 @@ function announce({ cc }) {
   announceTimer = setTimeout(() => box.classList.remove("show"), 4000);
 }
 
+let lastNow = "";
 function showNow(frame) {
+  const key = `${frame.working}|${frame.players}|${frame.song}|${frame.bpm}|${frame.climax}|${Math.round(frame.intensity * 20)}`;
+  if (key === lastNow) return;
+  lastNow = key;
   const now = $("now");
   now.replaceChildren();
   if (!frame.working) {
@@ -343,19 +351,16 @@ function mascot(team, x, y, r) {
 
 let last = performance.now();
 function frame(now) {
+  if (now - last < 32) { requestAnimationFrame(frame); return; }   // ~30 fps is plenty for this
   const dt = Math.min(.1, (now - last) / 1000); last = now;
   const G = geometry();
   const { cx, cy, R } = G;
   g.clearRect(0, 0, width, height);
-  const heat = info.working ? info.intensity : 0;
-  // Stage platform: a warm shell that brightens with excitement.
-  const light = g.createRadialGradient(cx, cy, 0, cx, cy, R * (1.05 + heat * .2));
-  light.addColorStop(0, `rgba(232, 182, 90, ${.12 + heat * .14 + (info.climax ? .08 : 0)})`);
-  light.addColorStop(1, "rgba(232, 182, 90, .02)");
-  g.fillStyle = light;
-  g.beginPath(); g.moveTo(cx, cy); g.arc(cx, cy, R * 1.05, rad(-92 - 90), rad(92 - 90)); g.closePath(); g.fill();
-  g.strokeStyle = "rgba(232, 182, 90, .25)"; g.lineWidth = 1;
-  g.beginPath(); g.arc(cx, cy, R * 1.05, rad(-92 - 90), rad(92 - 90)); g.stroke();
+  // Stage: a quiet outline only (a full-screen gradient every frame was heavy and loud).
+  g.fillStyle = "rgba(244, 234, 216, .025)";
+  g.beginPath(); g.moveTo(cx, cy); g.arc(cx, cy, R * 1.05, rad(-182), rad(2)); g.closePath(); g.fill();
+  g.strokeStyle = info.climax ? "rgba(232, 182, 90, .45)" : "rgba(244, 234, 216, .12)"; g.lineWidth = 1;
+  g.beginPath(); g.arc(cx, cy, R * 1.05, rad(-182), rad(2)); g.stroke();
   // Musicians.
   const soloGlow = Math.max(0, 1 - (Date.now() + offset - soloAt) / 500);
   for (const [name, pts] of Object.entries(G.stage.sections)) {
@@ -375,9 +380,9 @@ function frame(now) {
       }
       const cc = entry[1];
       const leading = cc && cc === leader;  // spotlight: thin gold ring, a soft flash on melody notes
-      if (leading && soloGlow > .02) {
-        g.globalAlpha = soloGlow * .35; g.fillStyle = "#e8b65a";
-        g.beginPath(); g.arc(x, y, size * 1.5, 0, Math.PI * 2); g.fill();
+      if (leading && soloGlow > .02) {      // brief, thin: a ring that brightens, not a blob
+        g.globalAlpha = soloGlow * .7; g.strokeStyle = "#e8b65a"; g.lineWidth = 1.4;
+        g.beginPath(); g.arc(x, y, size * 1.25, 0, Math.PI * 2); g.stroke();
       }
       if (cc && sp >= 7) {
         g.globalAlpha = .55 + lit * .45;

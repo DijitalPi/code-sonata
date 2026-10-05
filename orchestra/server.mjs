@@ -40,11 +40,24 @@ let seatsVersion = 0;
 const SHARE = { piano: .03, strings: .26, choir: .16, cello: .16, flute: .1, vibraphone: .07, horn: .11, harp: .06, accordion: .05 };
 const seated = SECTIONS.map(() => 0);
 
-function seatFor(id) {
-  let best = 0;
-  for (let s = 1; s < SECTIONS.length; s++) {
-    if ((seated[s] + 1) / SHARE[SECTIONS[s]] < (seated[best] + 1) / SHARE[SECTIONS[best]]) best = s;
+// Every country sits in one place: its delegation gets a section, later compatriots join it.
+// The two soloist chairs (piano, accordion) go to whoever arrives while they are free.
+const SOLOISTS = [SECTIONS.indexOf("piano"), SECTIONS.indexOf("accordion")];
+const countrySection = new Map();   // cc -> section
+const countryCount = new Map();     // cc -> players
+
+function seatFor(id, cc) {
+  let best = SOLOISTS.find((s) => seated[s] < 1);
+  if (best === undefined && cc && countrySection.has(cc)) best = countrySection.get(cc);
+  if (best === undefined) {
+    best = -1;
+    for (let s = 0; s < SECTIONS.length; s++) {
+      if (SOLOISTS.includes(s)) continue;
+      if (best < 0 || (seated[s] + 1) / SHARE[SECTIONS[s]] < (seated[best] + 1) / SHARE[SECTIONS[best]]) best = s;
+    }
+    if (cc) countrySection.set(cc, best);
   }
+  if (cc) countryCount.set(cc, (countryCount.get(cc) || 0) + 1);
   seated[best]++;
   const row = seatsTaken[best];
   let seat = row.indexOf(null);
@@ -57,9 +70,9 @@ function report(id, body, now, cc) {
   let p = players.get(id);
   if (!p) {
     if (players.size >= MAX_PLAYERS) return null;
-    p = { ...seatFor(id), energy: 0, pulse: 0, cc: cc || "" };
+    p = { ...seatFor(id, cc), energy: 0, pulse: 0, cc: cc || "" };
     players.set(id, p);
-  } else if (cc && p.cc !== cc) { p.cc = cc; seatsVersion++; }
+  }
   const steps = Math.max(0, Math.min(200, Number(body.steps) || 0));
   p.last = now;
   p.working = Boolean(body.working);
@@ -119,6 +132,11 @@ function expire(now) {
     if (now - p.last > PLAYER_TTL) {
       seatsTaken[p.section][p.seat] = null;
       seated[p.section]--;
+      if (p.cc) {
+        const left = (countryCount.get(p.cc) || 1) - 1;
+        if (left > 0) countryCount.set(p.cc, left);
+        else { countryCount.delete(p.cc); countrySection.delete(p.cc); }
+      }
       players.delete(id);
       seatsVersion++;
     }
