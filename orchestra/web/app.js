@@ -164,15 +164,34 @@ for (const button of document.querySelectorAll("[data-team]")) {
 // ---------- hall ----------
 const canvas = $("hall"), g = canvas.getContext("2d");
 let width = 0, height = 0, dpr = 1, version = 0, cached = null;
+const flagCache = new Map();
 function resize() {
   dpr = Math.min(2, devicePixelRatio || 1);
   width = innerWidth; height = innerHeight;
   canvas.width = width * dpr; canvas.height = height * dpr;
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   cached = null;
+  flagCache.clear();
 }
 addEventListener("resize", resize);
 resize();
+
+// Flag emoji rendered once per size into a small bitmap; drawing hundreds per frame stays cheap.
+function flagImage(cc, px) {
+  const size = Math.max(6, Math.round(px));
+  const key = `${cc}:${size}`;
+  let img = flagCache.get(key);
+  if (!img) {
+    img = document.createElement("canvas");
+    img.width = img.height = size * dpr;
+    const c = img.getContext("2d");
+    c.scale(dpr, dpr); c.font = `${size * .9}px system-ui`; c.textAlign = "center"; c.textBaseline = "middle";
+    c.fillText(flag(cc), size / 2, size / 2 + size * .06);
+    if (flagCache.size > 3000) flagCache.clear();
+    flagCache.set(key, img);
+  }
+  return img;
+}
 
 // A real symphony seating plan, seen from the audience. Angles in degrees: 0 = straight
 // back, -90 = far left, +90 = far right. Bands are fractions of the stage radius.
@@ -317,13 +336,22 @@ function frame(now) {
       const key = `${s}:${i}`;
       const lit = glow.get(key) || 0;
       if (lit) glow.set(key, Math.max(0, lit - dt * 1.6));
-      const size = Math.max(1.1, sp * (.18 + .035 * Math.min(4, entry[0])));
+      // Each musician is a person: their country's flag, ringed in the section colour.
+      const size = Math.max(2.2, sp * .42);
       if (lit > .02) {
-        g.globalAlpha = lit * .55; g.strokeStyle = color; g.lineWidth = 1;
-        g.beginPath(); g.arc(x, y, size * (1.3 + (1 - lit) * 1.6), 0, Math.PI * 2); g.stroke();
+        g.globalAlpha = lit * .6; g.strokeStyle = color; g.lineWidth = 1.2;
+        g.beginPath(); g.arc(x, y, size * (1.25 + (1 - lit) * 1.4), 0, Math.PI * 2); g.stroke();
       }
-      g.globalAlpha = .3 + lit * .7; g.fillStyle = color;
-      g.beginPath(); g.arc(x, y, size, 0, Math.PI * 2); g.fill();
+      const cc = entry[1];
+      if (cc && sp >= 7) {
+        g.globalAlpha = .55 + lit * .45;
+        g.drawImage(flagImage(cc, size * 2.1), x - size * 1.05, y - size * 1.05, size * 2.1, size * 2.1);
+        g.globalAlpha = .5 + lit * .5; g.strokeStyle = color; g.lineWidth = 1;
+        g.beginPath(); g.arc(x, y, size * 1.02, 0, Math.PI * 2); g.stroke();
+      } else {
+        g.globalAlpha = .3 + lit * .7; g.fillStyle = color;
+        g.beginPath(); g.arc(x, y, size * .7, 0, Math.PI * 2); g.fill();
+      }
       g.globalAlpha = 1;
     });
   }
