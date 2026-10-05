@@ -18,6 +18,17 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(classify(entry), ["think", "edit", "bash", "read", "tool"])
         self.assertEqual(classify(claude({"type": "text"}, stop="end_turn")), ["text", "done"])
 
+    def test_signals_from_results_and_commands(self):
+        def result(text, error=False):
+            return {"type": "user", "message": {"content": [{"type": "tool_result", "is_error": error, "content": text}]}}
+        self.assertEqual(classify(result("===== 34 passed in 0.3s =====")), ["busy", "pass"])
+        self.assertEqual(classify(result("2 failed, 32 passed")), ["busy", "testfail"])
+        self.assertEqual(classify(result([{"type": "text", "text": "command not found"}], True)), ["busy", "fail"])
+        self.assertEqual(classify(result("ok")), ["busy"])
+        commit = claude({"type": "tool_use", "name": "Bash", "input": {"command": "git add -A && git commit -m x"}})
+        self.assertEqual(classify(commit), ["bash", "ship"])
+        self.assertEqual(classify(claude({"type": "tool_use", "name": "Bash", "input": {"command": "git status"}})), ["bash"])
+
     def test_codex_steps(self):
         self.assertEqual(classify({"type": "response_item", "payload": {"type": "custom_tool_call", "name": "exec"}}), ["bash"])
         self.assertEqual(classify({"type": "response_item", "payload": {"type": "function_call", "name": "apply_patch"}}), ["edit"])
@@ -181,6 +192,21 @@ class MusicTests(unittest.TestCase):
         music.accept([(f"s{i}", "edit") for i in range(8)], 0)
         voices = {n[3] for n in self.play(music, 0, 4) if len(n) > 3}
         self.assertTrue(set(range(8)) <= voices)
+
+    def test_signal_motifs(self):
+        from agents import CRASH, DRUMS, TIMPANI, TREMOLO
+        music = AgentMusic(seed=1)
+        music.accept([("a", "ship")], 0)
+        notes = music.tick(0)
+        self.assertIn((CRASH, DRUMS), {(n[0], n[3]) for n in notes})
+        music.accept([("a", "testfail")], 5)
+        self.assertTrue({TREMOLO, TIMPANI} <= {n[3] for n in music.tick(5)})
+        music.accept([("a", "fail")], 5.5)  # throttled per kind, not across kinds
+        self.assertTrue(music.tick(5.5))
+        music.signal("wait", 9)
+        self.assertTrue({5, 7} <= {n[3] for n in music.tick(9)})  # bell: vibraphone + harp
+        music.signal("wait", 9.5)
+        self.assertFalse(music.accents)  # no repeated bell within 2 s
 
     def test_calm_work_has_no_drums(self):
         from agents import DRUMS

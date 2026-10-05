@@ -42,6 +42,11 @@ düşünme, bitiş) her zaman o akorun notalarıdır, detone çatışma olmaz.
 tremolo yaylılar (%60), trampet (%65), timpani (%70), melodi oktav ikilemesi. En tepede 3 sn
 kalınca zil + bütün müzik bir ton yukarı (doruk, menüde 🔥); tempo düşünce geri iner.
 
+**Anlamlı sesler:** Claude izin/cevap beklerken yükselen nazik çan (Claude Code `Notification`
+hook'u, `~/.claude/settings.json`). Araç hatası: kısa kasvetli akor; test kırıldı: daha
+güçlüsü. Testler geçti: korno arpeji. `git commit`/`git push`: fanfar + zil. Bunun için araç
+çıktısına/komutuna yalnızca evet-hayır kontrolü yapılır, içerik tutulmaz.
+
 **Repertuvar:** Varsayılan `karisik`: Bella Ciao → Für Elise → Greensleeves → Neşeye Övgü
 sırayla döner; her şarkı en az 2 dk çalar (tekrarlanır), heyecanlı anda değişmez, geçişte kapanış akoru + kısa nefes. Tek şarkı için `--song bella-ciao|fur-elise|greensleeves|ode-to-joy`.
 
@@ -54,7 +59,7 @@ kaldığı yere ve menü çubuğuna dokunmaz. Ses motorunu ölçmek için: `swif
 
 **Kaynak:** ~33 MB RAM, ortalama %0,1 işlemci; hiç token harcamaz.
 
-Yalnızca adım türü okunur; mesaj, kod ve araç girdisi tutulmaz.
+Yalnızca adım türü (ve yukarıdaki evet-hayır kontrolleri) kullanılır; mesaj, kod ve araç girdisi tutulmaz.
 
 ## Klasör modu: tek projenin dosya kayıtlarını dinle
 

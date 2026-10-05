@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import queue
 import random
+import re
 import select
 import sys
 import termios
@@ -45,13 +46,38 @@ def tool_kind(name):
     return "tool"
 
 
+PASSED = re.compile(r"\b\d+ (?:passed|passing)\b")
+FAILED = re.compile(r"\b\d+ (?:failed|failing)\b|\bFAILED\b")
+SHIP = re.compile(r"\bgit\s+(?:commit|push)\b")
+
+
+def result_text(block):
+    """Text of a tool_result, capped. Used only for yes/no checks, never kept."""
+    content = block.get("content")
+    if isinstance(content, list):
+        content = " ".join(part.get("text", "") for part in content if isinstance(part, dict))
+    return str(content or "")[-4000:]
+
+
 def classify(entry):
     """One transcript line -> list of step kinds. Unknown shapes are ignored."""
     if not isinstance(entry, dict):
         return []
     kind = entry.get("type")
     if kind == "user":  # Claude Code: a prompt or a tool result -> the model is working now
-        return ["busy"]
+        kinds = ["busy"]
+        content = (entry.get("message") or {}).get("content")
+        for block in content if isinstance(content, list) else []:
+            if not isinstance(block, dict) or block.get("type") != "tool_result":
+                continue
+            text = result_text(block)
+            if FAILED.search(text):
+                kinds.append("testfail")
+            elif PASSED.search(text):
+                kinds.append("pass")
+            elif block.get("is_error"):
+                kinds.append("fail")
+        return kinds
     if kind == "assistant":  # Claude Code
         message = entry.get("message") or {}
         kinds = []
@@ -61,6 +87,9 @@ def classify(entry):
             block_type = block.get("type")
             if block_type == "tool_use":
                 kinds.append(tool_kind(block.get("name")))
+                command = (block.get("input") or {}).get("command") if isinstance(block.get("input"), dict) else None
+                if isinstance(command, str) and SHIP.search(command[:500]):
+                    kinds.append("ship")
             elif block_type in ("thinking", "redacted_thinking"):
                 kinds.append("think")
             elif block_type == "text":
@@ -168,7 +197,9 @@ class AgentWatcher:
 
 
 HINTS = {"edit": "def edit", "bash": "for item", "read": "if condition",
-         "tool": "# tool", "think": "# think", "text": "# text", "done": "return", "busy": "# think"}
+         "tool": "# tool", "think": "# think", "text": "# text", "done": "return", "busy": "# think",
+         "fail": "# fail", "testfail": "# fail", "pass": "return", "ship": "return"}
+SIGNALS = {"fail", "testfail", "pass", "ship", "wait"}  # one-off motifs, not working steps
 
 
 GAIN = 1.7
@@ -262,6 +293,9 @@ class AgentMusic:
                 self.working[path] = now
             if kind == "busy":
                 continue  # a prompt or tool result: keeps the flow, no note of its own
+            if kind in SIGNALS:
+                self.signal(kind, now)
+                continue
             self.last_step = now
             self.energy[path] = min(4.0, self.energy.get(path, 0) + 1)
             self.hint = HINTS[kind]
@@ -285,6 +319,27 @@ class AgentMusic:
             # Agents pause while the model streams; keep the phrase alive meanwhile.
             self.until = max(self.until, now + min(10, 4 + math.log2(1 + len(events))))
             self.next_pulse = min(self.next_pulse, now)
+
+    def signal(self, kind, now):
+        """Short motifs that mean something: waiting for you, error, tests, shipped."""
+        if now - self.last_accent.get(("signal", kind), -9) < 2:
+            return
+        self.last_accent[("signal", kind)] = now
+        tonic = self.chord(60)
+        if kind == "wait":  # gentle bell, rising: "your turn"
+            self.accents += [(p, 46, 1.6 - i * .2, 5) for i, p in enumerate((tonic[0] + 24, tonic[1] + 24, tonic[2] + 24))]
+            self.accents += [(tonic[0] + 36, 40, 1.8, 7)]
+        elif kind in ("fail", "testfail"):  # dark: low diminished tremolo + timpani
+            low = self.chord(36)[0]
+            weight = 1.3 if kind == "testfail" else 1.0
+            self.accents += [(p, int(40 * weight), 1.4, TREMOLO) for p in (low + 12, low + 15, low + 18)]
+            self.accents += [(low, int(55 * weight), 1.0, TIMPANI)]
+        elif kind == "pass":  # small victory: horn arpeggio up
+            self.accents += [(p, 48, .5 + i * .2, 6) for i, p in enumerate(tonic + [tonic[0] + 12])]
+        elif kind == "ship":  # fanfare: horn + strings chord, crash, timpani
+            self.accents += [(p, 55, 1.6, 6) for p in tonic + [tonic[0] + 12]]
+            self.accents += [(p, 40, 1.8, 1) for p in self.chord(48)]
+            self.accents += [(CRASH, 85, 2.0, DRUMS), (self.chord(36)[0], 70, 1.2, TIMPANI)]
 
     def level(self, path, now=None):
         floor = .6 if path in self.working else .45
@@ -541,6 +596,8 @@ def run(silent=False, duration=None, song="karisik", roots=ROOTS):
                         muted = {"mute": True, "unmute": False}.get(command, not muted)
                         if piano:
                             piano.send("quiet")
+                    elif command == "wait":
+                        music.signal("wait", now)
                     elif command == "next" and hasattr(music.composer, "next_song"):
                         music.composer.next_song()
                         print(f"Şarkı: {TITLES[music.composer.song]}", flush=True)
