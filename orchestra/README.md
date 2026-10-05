@@ -14,6 +14,13 @@ Her makine salonda bir koltuk; ajanları adım attıkça ışığı parlar.
   `control.py start --global <URL>`. Gönderilen tek şey: adım sayısı, çalışıyor mu,
   oturum sayısı, ship/pass/fail sinyali. Kod, prompt, proje adı gitmez.
 
+Repertuvar (yalnız telifsiz: bestecisi 70+ yıl önce ölmüş ya da anonim): Bella Ciao, Für Elise,
+Greensleeves, Ode to Joy, Pachelbel Kanon, Grieg Dağ Kralının Salonunda, Mozart Eine kleine Nachtmusik.
+Her şarkının nota kâğıdı akorları ve ölçüsü (`METERS`, 3'lük/4'lük + giriş) `music.mjs`'de; ekleme
+sonrası doğrula: ölçüler tam, uzun notalar akorda. Seçim ruh haline göre (`MOODS`): sakin / orta /
+coşkulu; şarkı en az 2 dk çalar, sakin anda ya da coşkuya geçerken değişir, son ikisi tekrar etmez.
+Test: `PORT=4481 START_SONG=canon MIN_SONG_MS=6000 node orchestra/server.mjs` + `crowd.mjs` + `measure.mjs`.
+
 Yerel: `PORT=4480 node orchestra/server.mjs` → http://localhost:4480 (port listede kayıtlı).
 Gizlilik/kötüye kullanım: IP başına 8 istek/sn, 2 KB gövde, rastgele hex kimlik,
 30 sn sessiz makine koltuğunu bırakır, en fazla 100.000 makine.
