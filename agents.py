@@ -393,20 +393,22 @@ class AgentMusic:
                 self.calm_since = self.calm_since or now
                 if self.shift and now - self.calm_since > 4:
                     self.shift = 0
-        if level < .3 or now < self.next_drive:
+        if level < .45 or now < self.next_drive:
             return out
         self.next_drive = now + 30 / bpm  # eighth notes
         e = self.eighth % 8
         self.eighth += 1
         vel = lambda base, span: int(base + span * level)
-        out.append((OPEN_HAT if level > .85 and e % 2 else HIHAT, vel(18, 40), .1, DRUMS))
-        if level > .4:  # pulsing low octave: the heartbeat
-            root = self.chord(36)[0]
-            out.append((root if e % 2 == 0 else root + 12, vel(22, 45), .18, 0))
-        if level > .5 and (e in (0, 4) or (level > .8 and e % 2 == 0)):
-            out.append((KICK, vel(40, 55), .2, DRUMS))
-        if level > .65 and e in (2, 6):
-            out.append((SNARE, vel(35, 55), .15, DRUMS))
+        # No ticking clock: a soft offbeat hat only when really excited.
+        if level > .7 and e % 2:
+            out.append((OPEN_HAT if level > .9 else HIHAT, vel(4, 22), .08, DRUMS))
+        if level > .45 and e % 2 == 0:  # walking bass on the beat: root, fifth, octave, fifth
+            low = self.chord(36)
+            out.append(((low[0], low[2], low[0] + 12, low[2])[(e // 2) % 4], vel(22, 40), 30 / bpm * 1.8, 0))
+        if level > .6 and e in (0, 4):
+            out.append((KICK, vel(36, 50), .2, DRUMS))
+        if level > .72 and e in (2, 6):
+            out.append((SNARE, vel(30, 45), .15, DRUMS))
         if level > .6 and e == 0:  # tremolo strings: tension under the theme
             out += [(p, vel(15, 35), 30 / bpm * 8, TREMOLO) for p in self.chord(48)]
         if level > .7 and e == 0:

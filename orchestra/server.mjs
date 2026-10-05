@@ -37,12 +37,16 @@ const players = new Map();      // id -> {section, seat, last, working, sessions
 const seatsTaken = SECTIONS.map(() => []);   // section -> array of ids (holes = null)
 let seatsVersion = 0;
 
+// Real orchestra proportions: many strings, a few harps, one piano soloist row.
+const SHARE = { piano: .03, strings: .28, choir: .17, cello: .17, flute: .1, vibraphone: .07, horn: .12, harp: .06 };
+const seated = SECTIONS.map(() => 0);
+
 function seatFor(id) {
   let best = 0;
   for (let s = 1; s < SECTIONS.length; s++) {
-    const count = seatsTaken[s].filter(Boolean).length;
-    if (count < seatsTaken[best].filter(Boolean).length) best = s;
+    if ((seated[s] + 1) / SHARE[SECTIONS[s]] < (seated[best] + 1) / SHARE[SECTIONS[best]]) best = s;
   }
+  seated[best]++;
   const row = seatsTaken[best];
   let seat = row.indexOf(null);
   if (seat < 0) { seat = row.length; row.push(id); } else row[seat] = id;
@@ -80,6 +84,7 @@ function expire(now) {
   for (const [id, p] of players) {
     if (now - p.last > PLAYER_TTL) {
       seatsTaken[p.section][p.seat] = null;
+      seated[p.section]--;
       players.delete(id);
       seatsVersion++;
     }
@@ -133,7 +138,7 @@ const conductor = {
     this.climax(now);
     if (!working) { this.nextNote = now; return { working, total }; }
     if (now >= this.nextNote) this.beat(now, active);
-    if (this.intensity >= .3 && now >= this.nextDrive) this.drive(now);
+    if (this.intensity >= .45 && now >= this.nextDrive) this.drive(now);
     return { working, total };
   },
 
@@ -198,10 +203,11 @@ const conductor = {
     this.nextDrive = now + 30000 / this.bpm;
     const e = this.eighth++ % 8;
     const vel = (b, s) => (b + s * level) * 1.7 * (1 + .35 * level);
-    this.emit(at, level > .85 && e % 2 ? 46 : 42, vel(18, 40), .1, DRUMS);
-    if (level > .4) { const r = this.chordAt(36)[0]; this.emit(at, e % 2 ? r + 12 : r, vel(22, 45), .18, 0); }
-    if (level > .5 && (e === 0 || e === 4 || (level > .8 && e % 2 === 0))) this.emit(at, 36, vel(40, 55), .2, DRUMS);
-    if (level > .65 && (e === 2 || e === 6)) this.emit(at, 38, vel(35, 55), .15, DRUMS);
+    // No ticking clock: a soft offbeat hat only when really excited; walking bass on the beat.
+    if (level > .7 && e % 2) this.emit(at, level > .9 ? 46 : 42, vel(4, 22), .08, DRUMS);
+    if (level > .45 && e % 2 === 0) { const low = this.chordAt(36); this.emit(at, [low[0], low[2], low[0] + 12, low[2]][(e >> 1) % 4], vel(22, 40), 30 / this.bpm * 1.8, 0); }
+    if (level > .6 && (e === 0 || e === 4)) this.emit(at, 36, vel(36, 50), .2, DRUMS);
+    if (level > .72 && (e === 2 || e === 6)) this.emit(at, 38, vel(30, 45), .15, DRUMS);
     if (level > .6 && e === 0) for (const p of this.chordAt(48)) this.emit(at, p, vel(15, 35), 30 / this.bpm * 8, TREMOLO);
     if (level > .7 && e === 0) this.emit(at, this.chordAt(36)[0], vel(25, 50), .6, TIMPANI);
   },

@@ -1,7 +1,7 @@
 // Agent Orchestra listener: draws the hall and plays the conductor's notes in sync.
 const SECTIONS = ["piano", "strings", "choir", "cello", "flute", "vibraphone", "horn", "harp"];
-// Left to right across the stage, like a real orchestra (violins left, cellos right).
-const STAGE = ["strings", "piano", "harp", "flute", "horn", "choir", "vibraphone", "cello"];
+// Stereo position from the real seating plan (violins left, cellos right).
+const PAN = { strings: -.7, harp: -.6, piano: 0, flute: 0, horn: .1, choir: 0, vibraphone: .6, cello: .7 };
 const COLORS = { piano: "#f4ead8", strings: "#e8b65a", choir: "#c9a4ff", cello: "#d97a4a", flute: "#7fd1c7", vibraphone: "#8fb8ff", horn: "#f2d06b", harp: "#ff9fb2" };
 const SOUNDFONT = ["acoustic_grand_piano", "string_ensemble_1", "choir_aahs", "cello", "flute", "vibraphone", "french_horn", "orchestral_harp", "timpani", "tremolo_strings"];
 const $ = (id) => document.getElementById(id);
@@ -69,8 +69,8 @@ function onFrame(event) {
   offsets.push(frame.t - Date.now());
   if (offsets.length > 40) offsets.shift();
   offset = Math.max(...offsets);         // least delayed sample
-  if (frame.seats) seats = frame.seats;
-  if (frame.audience) audience = frame.audience;
+  if (frame.seats) { seats = frame.seats; version++; }
+  if (frame.audience) { audience = frame.audience; version++; }
   if (frame.you) you = frame.you;
   if (frame.countries) showCountries(frame);
   if (frame.teams) teams = frame.teams;
@@ -102,7 +102,7 @@ async function startAudio() {
   // Piano first so the hall is audible quickly; the rest load behind it.
   for (const [i, name] of SOUNDFONT.entries()) {
     const section = SECTIONS[i];
-    const pan = section ? (STAGE.indexOf(section) / (STAGE.length - 1) - .5) * 1.4 : 0;
+    const pan = PAN[section] ?? 0;
     const voice = Soundfont(ctx, { instrument: name, kit: "FluidR3_GM", destination: master, pan, volume: 100 });
     audio.voices[i] = null;
     voice.ready.then(() => { audio.voices[i] = voice; }).catch(() => {});
@@ -138,8 +138,8 @@ function drumKit(ctx, out) {
       g.gain.setValueAtTime(level * 1.2, time); g.gain.exponentialRampToValueAtTime(.001, time + .35);
       osc.connect(g).connect(out); osc.start(time); osc.stop(time + .4);
     } else if (pitch === 38) burst(time, .18, level * .7, "bandpass", 1800);
-    else if (pitch === 42) burst(time, .05, level * .35, "highpass", 7000);
-    else if (pitch === 46) burst(time, .22, level * .35, "highpass", 6000);
+    else if (pitch === 42) burst(time, .04, level * .16, "highpass", 8000);
+    else if (pitch === 46) burst(time, .16, level * .16, "highpass", 7000);
     else if (pitch === 49) burst(time, 2.2, level * .45, "highpass", 4500);
   };
 }
@@ -163,126 +163,98 @@ for (const button of document.querySelectorAll("[data-team]")) {
 
 // ---------- hall ----------
 const canvas = $("hall"), g = canvas.getContext("2d");
-let width = 0, height = 0, dpr = 1;
+let width = 0, height = 0, dpr = 1, version = 0, cached = null;
 function resize() {
   dpr = Math.min(2, devicePixelRatio || 1);
   width = innerWidth; height = innerHeight;
   canvas.width = width * dpr; canvas.height = height * dpr;
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  cached = null;
 }
 addEventListener("resize", resize);
 resize();
 
-function layout() {
-  const cx = width / 2, cy = height * .52;
-  const r0 = Math.min(width, height) * .1, rMax = Math.min(width * .3, height * .3);
-  const wedge = (Math.PI * .92) / STAGE.length, start = Math.PI * 1.04;
-  const most = Math.max(1, ...seats.map((row) => row.length));
-  const area = (wedge / 2) * (rMax * rMax - r0 * r0);
-  const spacing = Math.max(3, Math.min(20, Math.sqrt(area / most) * .8));
-  return { cx, cy, r0, rMax, wedge, start, spacing };
-}
+// A real symphony seating plan, seen from the audience. Angles in degrees: 0 = straight
+// back, -90 = far left, +90 = far right. Bands are fractions of the stage radius.
+const REGIONS = {
+  piano:      { band: [.08, .28], arc: [-14, 14], label: "piano (soloist)" },
+  strings:    { band: [.16, .54], arc: [-86, -17], label: "violins" },
+  cello:      { band: [.16, .54], arc: [17, 86], label: "cellos" },
+  flute:      { band: [.56, .70], arc: [-30, 30], label: "woodwinds" },
+  harp:       { band: [.56, .86], arc: [-86, -34], label: "harp" },
+  vibraphone: { band: [.56, .86], arc: [34, 86], label: "percussion" },
+  horn:       { band: [.72, .86], arc: [-30, 30], label: "brass" },
+  choir:      { band: [.89, 1.0], arc: [-72, 72], label: "choir" },
+};
+// Audience blocks in the stalls, left to right, split by aisles.
+const BLOCKS = ["claude", "listen", "codex", "other"];
+const BLOCK_COLORS = { claude: "#e0784f", codex: "#3fbf8a", other: "#9b7bff", listen: "#e8b65a" };
+const rad = (d) => (d * Math.PI) / 180;
 
-function seatPoint(L, column, index) {
-  let r = L.r0, i = index;
-  for (;;) {
-    const perRow = Math.max(1, Math.floor((r * L.wedge * .9) / L.spacing));
-    if (i < perRow) {
-      const a = L.start + column * L.wedge + L.wedge * (.05 + .9 * (i + .5) / perRow);
-      return [L.cx + Math.cos(a) * r, L.cy + Math.sin(a) * r];
+// Fill a wedge row by row from the front; null if it does not fit at this spacing.
+function fillWedge(n, r0, r1, a0, a1, spacing, point) {
+  const out = [];
+  for (let r = r0 + spacing / 2; out.length < n; r += spacing) {
+    if (r > r1) return null;
+    const perRow = Math.max(1, Math.floor((r * rad(a1 - a0)) / spacing));
+    const take = Math.min(perRow, n - out.length);
+    for (let k = 0; k < take; k++) {
+      const along = (k + .5 + (perRow - take) / 2) / perRow;
+      out.push({ ...point(r, a0 + (a1 - a0) * along), along });
     }
-    i -= perRow; r += L.spacing;
   }
+  return out;
 }
 
-// Horseshoe stadium around the stage. One stand per team, a mascot in front of each.
-const STANDS = ["claude", "codex", "other", "listen"];
-const STAND_COLORS = { claude: "#e0784f", codex: "#3fbf8a", other: "#9b7bff", listen: "#e8b65a" };
+function fit(build) {
+  for (let spacing = 26; spacing > 2.4; spacing *= .92) {
+    const result = build(spacing);
+    if (result) return { ...result, spacing };
+  }
+  return { ...build(2.4, true), spacing: 2.4 };
+}
 
-function stadium(L) {
-  const inRx = L.rMax + 40, inRy = Math.max(70, (height - L.cy) * .28);
-  const crowd = STANDS.reduce((n, t) => n + (audience[t] || []).length, 0);
-  const fill = Math.max(.35, Math.min(1, Math.sqrt(crowd / 3000)));   // stands grow with the crowd
-  const outRx = Math.min(width / 2 - 12, inRx + Math.min(width, height) * .26 * fill);
-  const outRy = Math.max(inRy + 40, inRy + (height - L.cy - 18 - inRy) * fill);
-  const from = Math.PI + .22, to = -.22;  // left side, under the conductor, right side
-  const weights = STANDS.map((t) => 1 + Math.sqrt((audience[t] || []).filter((x) => x !== null).length));
-  const sum = weights.reduce((a, b) => a + b, 0);
-  let angle = from;
-  const stands = STANDS.map((t, i) => {
-    const span = ((from - to) * weights[i]) / sum;
-    const stand = { team: t, a0: angle, a1: angle - span };
-    angle -= span;
-    return stand;
+function geometry() {
+  if (cached && cached.version === version) return cached;
+  const cx = width / 2, cy = height * .55;
+  const R = Math.min(width * .42, height * .41);
+  const stagePoint = (r, a) => ({ x: cx + Math.sin(rad(a)) * r, y: cy - Math.cos(rad(a)) * r });
+  // Each section fills its own region (a lone harpist gets a big chair, violins pack tight).
+  const stage = { sections: {}, spacing: {} };
+  for (const [name, reg] of Object.entries(REGIONS)) {
+    const n = (seats[SECTIONS.indexOf(name)] || []).length;
+    const one = fit((spacing, force) => {
+      const pts = fillWedge(n, reg.band[0] * R, force ? 1e9 : reg.band[1] * R, reg.arc[0], reg.arc[1], Math.min(spacing, 20), stagePoint);
+      return pts && { pts };
+    });
+    stage.sections[name] = one.pts;
+    stage.spacing[name] = Math.min(one.spacing, 20);
+  }
+  // Stalls: rows are arcs around the stage front, squashed for perspective.
+  const A0 = R * .42, A1 = Math.min(width / 2 - 16, R * 1.3);
+  const aisleY = cy + 58;                 // mascots walk the front aisle
+  const squash = Math.max(.3, (height - aisleY - 90) / (A1 - A0 * .9));
+  const hallPoint = (r, a) => ({ x: cx + Math.sin(rad(a)) * r, y: aisleY + 44 + (Math.cos(rad(a)) * r - A0 * .9) * squash });
+  const weights = BLOCKS.map((t) => 1.5 + Math.sqrt((audience[t] || []).length));
+  const sum = weights.reduce((a, b) => a + b, 0), aisle = 2.5, span = 124 - aisle * (BLOCKS.length - 1);
+  let a = -62;
+  const ranges = BLOCKS.map((t, i) => { const w = (span * weights[i]) / sum; const r = [a, a + w]; a += w + aisle; return r; });
+  const stalls = fit((spacing, force) => {
+    const out = {};
+    BLOCKS.forEach((t, i) => {
+      if (out === null) return;
+      const pts = fillWedge((audience[t] || []).length, A0, force ? 1e9 : A1, ranges[i][0], ranges[i][1], spacing, hallPoint);
+      out[t] = pts;
+    });
+    return Object.values(out).some((v) => v === null) ? null : { blocks: out };
   });
-  return { inRx, inRy, outRx, outRy, stands };
-}
-
-function drawStadium(L, now) {
-  const S = stadium(L);
-  const total = STANDS.reduce((n, t) => n + (audience[t] || []).length, 0) || 1;
-  const ringArea = (Math.PI / 2) * (S.outRx * S.outRy - S.inRx * S.inRy) * 1.15;
-  const size = Math.max(6, Math.min(26, Math.sqrt(ringArea / total) * .78));
-  // Stand floors.
-  for (const st of S.stands) {
-    g.fillStyle = "rgba(244, 234, 216, .035)";
-    g.beginPath();
-    g.ellipse(L.cx, L.cy, S.outRx, S.outRy, 0, st.a1, st.a0, false);
-    g.ellipse(L.cx, L.cy, S.inRx, S.inRy, 0, st.a0, st.a1, true);
-    g.closePath(); g.fill();
-  }
-  g.textAlign = "center"; g.textBaseline = "middle";
-  for (const st of S.stands) {
-    const fans = audience[st.team] || [];
-    const waveAge = (now - (waves[st.team] || -1e9)) / 1000;
-    let i = 0;
-    for (let t = 0; i < fans.length; t += size / Math.max(1, S.outRy - S.inRy)) {
-      if (t > 1) break;
-      const rx = S.inRx + (S.outRx - S.inRx) * t + size * .6, ry = S.inRy + (S.outRy - S.inRy) * t + size * .6;
-      const arc = Math.abs(st.a0 - st.a1) * (rx + ry) / 2;
-      const perRow = Math.max(1, Math.floor(arc / size));
-      for (let k = 0; k < perRow && i < fans.length; k++, i++) {
-        const cc = fans[i];
-        if (cc === null) continue;
-        const along = (k + .5) / perRow;
-        const a = st.a0 + (st.a1 - st.a0) * along;
-        // Mexican wave: a bump that runs across the stand for ~1.4 s.
-        const lift = waveAge < 1.6 ? Math.exp(-Math.pow((waveAge / 1.4 - along) * 7, 2)) : 0;
-        const x = L.cx + Math.cos(a) * rx, y = L.cy + Math.sin(a) * ry - lift * size * .9;
-        const mine = you && you.team === st.team && you.seat === i;
-        const w = size * .8, h = size * .7;
-        g.globalAlpha = .8 + lift * .2;
-        g.fillStyle = mine ? "#e8b65a" : lift > .2 ? STAND_COLORS[st.team] : "rgba(244, 234, 216, .16)";
-        g.beginPath(); g.roundRect(x - w / 2, y - h / 2, w, h, Math.min(5, size * .2)); g.fill();
-        g.globalAlpha = 1;
-        if (cc && size >= 10) { g.font = `${Math.round(size * .66)}px system-ui`; g.fillText(flag(cc), x, y + 1); }
-        if (mine) { g.font = "500 11px Inter, sans-serif"; g.fillStyle = "#e8b65a"; g.fillText("you", x, y - h / 2 - 9); }
-      }
-    }
-  }
-  for (const st of S.stands) {
-    const waveAge = (now - (waves[st.team] || -1e9)) / 1000;
-    // Mascot on the track in front of its stand, label under it.
-    const mid = (st.a0 + st.a1) / 2;
-    const mx = L.cx + Math.cos(mid) * (S.inRx - 34), my = L.cy + Math.sin(mid) * (S.inRy - 30) - 10;
-    const jump = waveAge < 1 ? Math.sin(waveAge * Math.PI) * 14 : 0;
-    const bob = info.working ? Math.abs(Math.sin(((Date.now() + offset) / (60000 / (info.bpm || 64))) * Math.PI)) * 3 : 0;
-    mascot(st.team, mx, my - 6 - jump - bob, Math.max(14, Math.min(24, size * 1.1)));
-    const agents = st.team === "listen" ? null : teams.agents?.[st.team] || 0;
-    const sub = agents === null ? `${(teams.fans?.listen || 0).toLocaleString()} in the stands` : `${agents.toLocaleString()} agents on stage`;
-    g.font = "500 11px Inter, sans-serif";
-    const plate = Math.max(g.measureText(TEAM_NAMES[st.team]).width, g.measureText(sub).width) + 16;
-    g.fillStyle = "rgba(13, 11, 9, .78)";
-    g.beginPath(); g.roundRect(mx - plate / 2, my + 14, plate, 32, 8); g.fill();
-    g.fillStyle = "rgba(244, 234, 216, .9)"; g.fillText(TEAM_NAMES[st.team], mx, my + 23);
-    g.fillStyle = "rgba(163, 150, 132, .95)"; g.fillText(sub, mx, my + 37);
-  }
-  g.textBaseline = "alphabetic";
+  cached = { version, cx, cy, R, stage, stalls, ranges, A0, A1, aisleY, hallPoint };
+  return cached;
 }
 
 // Original mascots (drawn here, not brand logos).
 function mascot(team, x, y, r) {
-  const color = STAND_COLORS[team];
+  const color = BLOCK_COLORS[team];
   g.save(); g.translate(x, y);
   g.fillStyle = color;
   if (team === "codex") {                 // robot drummer
@@ -324,57 +296,92 @@ function mascot(team, x, y, r) {
 let last = performance.now();
 function frame(now) {
   const dt = Math.min(.1, (now - last) / 1000); last = now;
-  const L = layout();
+  const G = geometry();
+  const { cx, cy, R } = G;
   g.clearRect(0, 0, width, height);
-  // Stage floor: warmer and wider with excitement.
   const heat = info.working ? info.intensity : 0;
-  const floor = g.createRadialGradient(L.cx, L.cy, 0, L.cx, L.cy, L.rMax * (1 + heat * .25));
-  floor.addColorStop(0, `rgba(232, 182, 90, ${.10 + heat * .14 + (info.climax ? .08 : 0)})`);
-  floor.addColorStop(1, "rgba(232, 182, 90, 0)");
-  g.fillStyle = floor; g.fillRect(0, 0, width, height);
-  // Section labels and seats.
-  g.font = "500 11px Inter, sans-serif"; g.textAlign = "center";
-  STAGE.forEach((name, column) => {
-    const s = SECTIONS.indexOf(name), color = COLORS[name];
+  // Stage platform: a warm shell that brightens with excitement.
+  const light = g.createRadialGradient(cx, cy, 0, cx, cy, R * (1.05 + heat * .2));
+  light.addColorStop(0, `rgba(232, 182, 90, ${.12 + heat * .14 + (info.climax ? .08 : 0)})`);
+  light.addColorStop(1, "rgba(232, 182, 90, .02)");
+  g.fillStyle = light;
+  g.beginPath(); g.moveTo(cx, cy); g.arc(cx, cy, R * 1.05, rad(-92 - 90), rad(92 - 90)); g.closePath(); g.fill();
+  g.strokeStyle = "rgba(232, 182, 90, .25)"; g.lineWidth = 1;
+  g.beginPath(); g.arc(cx, cy, R * 1.05, rad(-92 - 90), rad(92 - 90)); g.stroke();
+  // Musicians.
+  for (const [name, pts] of Object.entries(G.stage.sections)) {
+    const s = SECTIONS.indexOf(name), color = COLORS[name], sp = G.stage.spacing[name];
     (seats[s] || []).forEach((entry, i) => {
-      if (!entry) return;
-      const [sessions, cc] = entry;
-      const [x, y] = seatPoint(L, column, i);
+      if (!entry || !pts[i]) return;
+      const { x, y } = pts[i];
       const key = `${s}:${i}`;
       const lit = glow.get(key) || 0;
       if (lit) glow.set(key, Math.max(0, lit - dt * 1.6));
-      const size = Math.max(1.2, L.spacing * (.16 + .035 * Math.min(4, sessions)));
-      if (lit > .02) {          // thin expanding ring: readable even when the whole hall is lit
-        g.globalAlpha = lit * .55;
-        g.strokeStyle = color; g.lineWidth = 1;
+      const size = Math.max(1.1, sp * (.18 + .035 * Math.min(4, entry[0])));
+      if (lit > .02) {
+        g.globalAlpha = lit * .55; g.strokeStyle = color; g.lineWidth = 1;
         g.beginPath(); g.arc(x, y, size * (1.3 + (1 - lit) * 1.6), 0, Math.PI * 2); g.stroke();
       }
-      g.globalAlpha = .28 + lit * .72;
-      g.fillStyle = color;
+      g.globalAlpha = .3 + lit * .7; g.fillStyle = color;
       g.beginPath(); g.arc(x, y, size, 0, Math.PI * 2); g.fill();
       g.globalAlpha = 1;
-      if (cc && L.spacing >= 24) {   // room for a flag next to the musician
-        g.font = `${Math.round(L.spacing * .5)}px system-ui`;
-        g.fillText(flag(cc), x, y - size - 2);
-        g.font = "500 11px Inter, sans-serif";
-      }
     });
-  });
-  g.fillStyle = "rgba(163, 150, 132, .85)";
-  g.font = "500 10px Inter, sans-serif";
-  STAGE.forEach((name, column) => {
-    const a = L.start + (column + .5) * L.wedge, r = L.rMax + 16;
-    g.fillText(name.toUpperCase(), L.cx + Math.cos(a) * r, L.cy + Math.sin(a) * r);
-  });
-  drawStadium(L, now);
-  // Conductor's podium and a baton that keeps time.
-  g.fillStyle = "rgba(244, 234, 216, .06)";
-  g.beginPath(); g.arc(L.cx, L.cy, 22, 0, Math.PI * 2); g.fill();
+  }
+  // Section names, quietly, at the front edge of each region.
+  g.font = "500 10px Inter, sans-serif"; g.textAlign = "center"; g.fillStyle = "rgba(163, 150, 132, .8)";
+  for (const reg of Object.values(REGIONS)) {
+    const a = rad((reg.arc[0] + reg.arc[1]) / 2), r = reg.band[0] * R - 7;
+    g.fillText(reg.label.toUpperCase(), cx + Math.sin(a) * r, cy - Math.cos(a) * r);
+  }
+  // Conductor on the podium, baton keeping time.
   const beat = (Date.now() + offset) / (60000 / (info.bpm || 64));
   const swing = info.working ? Math.sin(beat * Math.PI) * .5 : 0;
+  g.fillStyle = "rgba(244, 234, 216, .07)"; g.beginPath(); g.arc(cx, cy + 4, 18, 0, Math.PI * 2); g.fill();
   g.strokeStyle = "rgba(244, 234, 216, .9)"; g.lineWidth = 2;
-  g.beginPath(); g.moveTo(L.cx, L.cy - 6); g.lineTo(L.cx + Math.sin(swing) * 26, L.cy - 6 - Math.cos(swing) * 26); g.stroke();
-  g.fillStyle = "#f4ead8"; g.beginPath(); g.arc(L.cx, L.cy, 6, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.moveTo(cx, cy - 2); g.lineTo(cx + Math.sin(swing) * 24, cy - 2 - Math.cos(swing) * 24); g.stroke();
+  g.fillStyle = "#f4ead8"; g.beginPath(); g.arc(cx, cy + 4, 6, 0, Math.PI * 2); g.fill();
+  drawStalls(G, now);
   requestAnimationFrame(frame);
+}
+
+function drawStalls(G, now) {
+  const sp = G.stalls.spacing;
+  g.textAlign = "center"; g.textBaseline = "middle";
+  BLOCKS.forEach((team, b) => {
+    const pts = G.stalls.blocks[team] || [], fans = audience[team] || [];
+    const waveAge = (now - (waves[team] || -1e9)) / 1000;
+    fans.forEach((cc, i) => {
+      if (cc === null || !pts[i]) return;
+      const { x, along } = pts[i];
+      const lift = waveAge < 1.6 ? Math.exp(-Math.pow((waveAge / 1.4 - along) * 7, 2)) : 0;
+      const y = pts[i].y - lift * sp * .8;
+      const mine = you && you.team === team && you.seat === i;
+      const w = sp * .82, h = sp * .66;
+      g.fillStyle = mine ? "#e8b65a" : lift > .2 ? BLOCK_COLORS[team] : "rgba(244, 234, 216, .14)";
+      g.beginPath(); g.roundRect(x - w / 2, y - h / 2, w, h, Math.min(4, sp * .2)); g.fill();
+      if (cc && sp >= 10) { g.font = `${Math.round(sp * .62)}px system-ui`; g.fillText(flag(cc), x, y + 1); }
+      if (mine) { g.font = "500 11px Inter, sans-serif"; g.fillStyle = "#e8b65a"; g.fillText("you", x, y - h / 2 - 9); }
+    });
+  });
+  // Mascots last, so no seat ever covers a name plate.
+  BLOCKS.forEach((team, b) => {
+    const waveAge = (now - (waves[team] || -1e9)) / 1000;
+    const mid = (G.ranges[b][0] + G.ranges[b][1]) / 2;
+    const jump = waveAge < 1 ? Math.sin(waveAge * Math.PI) * 12 : 0;
+    const bob = info.working ? Math.abs(Math.sin(((Date.now() + offset) / (60000 / (info.bpm || 64))) * Math.PI)) * 3 : 0;
+    // Spread along the aisle in the direction of the block, never closer than a plate apart.
+    const lane = (b - (BLOCKS.length - 1) / 2) * Math.max(150, Math.min(G.A1 * .55, 230));
+    const mx = G.cx + (Math.abs(Math.sin(rad(mid))) > .01 ? lane : 0), my = G.aisleY - 16;
+    mascot(team, mx, my - jump - bob, 15);
+    const agents = team === "listen" ? null : teams.agents?.[team] || 0;
+    const sub = agents === null ? `${(teams.fans?.listen || 0).toLocaleString()} listening` : `${agents.toLocaleString()} agents on stage`;
+    g.font = "500 11px Inter, sans-serif";
+    const plate = Math.max(g.measureText(TEAM_NAMES[team]).width, g.measureText(sub).width) + 16;
+    g.fillStyle = "rgba(13, 11, 9, .8)";
+    g.beginPath(); g.roundRect(mx - plate / 2, my + 18, plate, 30, 7); g.fill();
+    g.fillStyle = "rgba(244, 234, 216, .92)"; g.fillText(TEAM_NAMES[team], mx, my + 26);
+    g.fillStyle = "rgba(163, 150, 132, .95)"; g.fillText(sub, mx, my + 40);
+  });
+  g.textBaseline = "alphabetic";
 }
 requestAnimationFrame(frame);
