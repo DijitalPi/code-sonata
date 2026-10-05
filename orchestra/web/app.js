@@ -7,11 +7,26 @@ const SOUNDFONT = ["acoustic_grand_piano", "string_ensemble_1", "choir_aahs", "c
 const $ = (id) => document.getElementById(id);
 
 // ---------- state from the server ----------
-let seats = SECTIONS.map(() => []);      // section -> [sessions or 0]
+let seats = SECTIONS.map(() => []);      // section -> [[sessions, country] or 0]
+let audience = [];                       // seat -> country code, "" unknown, null empty
+let you = null;                          // {seat, cc}
+const flag = (cc) => (cc && cc.length === 2 ? String.fromCodePoint(...[...cc].map((c) => 0x1f1a5 + c.charCodeAt(0))) : "");
 const glow = new Map();                  // "s:i" -> 0..1
 let info = { bpm: 64, intensity: 0, climax: false, song: "", working: 0 };
 const offsets = [];
 let offset = 0;                          // serverTime - localTime (best estimate)
+
+function showCountries(frame) {
+  $("countries").textContent = (frame.countryCount || 0).toLocaleString();
+  const legend = $("legend");
+  legend.replaceChildren();
+  for (const [cc, count] of frame.countries) {
+    const item = document.createElement("span");
+    item.textContent = `${flag(cc)} ${count}`;
+    item.title = cc;
+    legend.append(item);
+  }
+}
 
 function showNow(frame) {
   const now = $("now");
@@ -35,13 +50,31 @@ function showNow(frame) {
   now.append(heat);
 }
 
-const stream = new EventSource("/api/stream");
-stream.onmessage = (event) => {
+const TEAM_NAMES = { claude: "Claude Code fans", codex: "Codex fans", other: "Other agents", listen: "Listeners" };
+const TOOL_NAMES = { claude: "Claude Code", codex: "Codex", other: "other tools" };
+let team = "listen";
+try { team = localStorage.getItem("team") || "listen"; } catch {}
+let teams = { agents: {}, fans: {} };
+const waves = {};                        // team -> wave start (ms)
+let stream = null;
+
+function connect() {
+  if (stream) stream.close();
+  stream = new EventSource(`/api/stream?team=${encodeURIComponent(team)}`);
+  stream.onmessage = onFrame;
+}
+
+function onFrame(event) {
   const frame = JSON.parse(event.data);
   offsets.push(frame.t - Date.now());
   if (offsets.length > 40) offsets.shift();
   offset = Math.max(...offsets);         // least delayed sample
   if (frame.seats) seats = frame.seats;
+  if (frame.audience) audience = frame.audience;
+  if (frame.you) you = frame.you;
+  if (frame.countries) showCountries(frame);
+  if (frame.teams) teams = frame.teams;
+  for (const t of frame.cheers || []) waves[t] = performance.now();
   for (const [s, i] of frame.pulses || []) glow.set(`${s}:${i}`, 1);
   if (frame.players !== undefined) {
     info = frame;
@@ -51,7 +84,9 @@ stream.onmessage = (event) => {
     showNow(frame);
   }
   if (audio) for (const note of frame.notes || []) schedule(note);
-};
+}
+connect();
+if (location.hash === "#tv") $("enter").classList.add("hidden");   // wall display: watch only, no sound
 
 // ---------- audio ----------
 let audio = null;
@@ -109,17 +144,22 @@ function drumKit(ctx, out) {
   };
 }
 
-$("play").addEventListener("click", async () => {
-  $("play").disabled = true;
-  $("loading").textContent = "Opening the doors";
-  try {
-    await startAudio();
-    $("enter").classList.add("hidden");
-  } catch (error) {
-    $("play").disabled = false;
-    $("loading").textContent = "Sound could not start in this browser.";
-  }
-});
+for (const button of document.querySelectorAll("[data-team]")) {
+  button.addEventListener("click", async () => {
+    team = button.dataset.team;
+    try { localStorage.setItem("team", team); } catch {}
+    connect();                            // take a seat in the chosen stand
+    document.querySelectorAll("[data-team]").forEach((b) => { b.disabled = true; });
+    $("loading").textContent = "Opening the doors";
+    try {
+      await startAudio();
+      $("enter").classList.add("hidden");
+    } catch (error) {
+      document.querySelectorAll("[data-team]").forEach((b) => { b.disabled = false; });
+      $("loading").textContent = "Sound could not start in this browser.";
+    }
+  });
+}
 
 // ---------- hall ----------
 const canvas = $("hall"), g = canvas.getContext("2d");
@@ -134,8 +174,8 @@ addEventListener("resize", resize);
 resize();
 
 function layout() {
-  const cx = width / 2, cy = height * .88;
-  const r0 = Math.min(width, height) * .17, rMax = Math.min(width * .47, height * .66);
+  const cx = width / 2, cy = height * .52;
+  const r0 = Math.min(width, height) * .1, rMax = Math.min(width * .3, height * .3);
   const wedge = (Math.PI * .92) / STAGE.length, start = Math.PI * 1.04;
   const most = Math.max(1, ...seats.map((row) => row.length));
   const area = (wedge / 2) * (rMax * rMax - r0 * r0);
@@ -155,6 +195,132 @@ function seatPoint(L, column, index) {
   }
 }
 
+// Horseshoe stadium around the stage. One stand per team, a mascot in front of each.
+const STANDS = ["claude", "codex", "other", "listen"];
+const STAND_COLORS = { claude: "#e0784f", codex: "#3fbf8a", other: "#9b7bff", listen: "#e8b65a" };
+
+function stadium(L) {
+  const inRx = L.rMax + 40, inRy = Math.max(70, (height - L.cy) * .28);
+  const crowd = STANDS.reduce((n, t) => n + (audience[t] || []).length, 0);
+  const fill = Math.max(.35, Math.min(1, Math.sqrt(crowd / 3000)));   // stands grow with the crowd
+  const outRx = Math.min(width / 2 - 12, inRx + Math.min(width, height) * .26 * fill);
+  const outRy = Math.max(inRy + 40, inRy + (height - L.cy - 18 - inRy) * fill);
+  const from = Math.PI + .22, to = -.22;  // left side, under the conductor, right side
+  const weights = STANDS.map((t) => 1 + Math.sqrt((audience[t] || []).filter((x) => x !== null).length));
+  const sum = weights.reduce((a, b) => a + b, 0);
+  let angle = from;
+  const stands = STANDS.map((t, i) => {
+    const span = ((from - to) * weights[i]) / sum;
+    const stand = { team: t, a0: angle, a1: angle - span };
+    angle -= span;
+    return stand;
+  });
+  return { inRx, inRy, outRx, outRy, stands };
+}
+
+function drawStadium(L, now) {
+  const S = stadium(L);
+  const total = STANDS.reduce((n, t) => n + (audience[t] || []).length, 0) || 1;
+  const ringArea = (Math.PI / 2) * (S.outRx * S.outRy - S.inRx * S.inRy) * 1.15;
+  const size = Math.max(6, Math.min(26, Math.sqrt(ringArea / total) * .78));
+  // Stand floors.
+  for (const st of S.stands) {
+    g.fillStyle = "rgba(244, 234, 216, .035)";
+    g.beginPath();
+    g.ellipse(L.cx, L.cy, S.outRx, S.outRy, 0, st.a1, st.a0, false);
+    g.ellipse(L.cx, L.cy, S.inRx, S.inRy, 0, st.a0, st.a1, true);
+    g.closePath(); g.fill();
+  }
+  g.textAlign = "center"; g.textBaseline = "middle";
+  for (const st of S.stands) {
+    const fans = audience[st.team] || [];
+    const waveAge = (now - (waves[st.team] || -1e9)) / 1000;
+    let i = 0;
+    for (let t = 0; i < fans.length; t += size / Math.max(1, S.outRy - S.inRy)) {
+      if (t > 1) break;
+      const rx = S.inRx + (S.outRx - S.inRx) * t + size * .6, ry = S.inRy + (S.outRy - S.inRy) * t + size * .6;
+      const arc = Math.abs(st.a0 - st.a1) * (rx + ry) / 2;
+      const perRow = Math.max(1, Math.floor(arc / size));
+      for (let k = 0; k < perRow && i < fans.length; k++, i++) {
+        const cc = fans[i];
+        if (cc === null) continue;
+        const along = (k + .5) / perRow;
+        const a = st.a0 + (st.a1 - st.a0) * along;
+        // Mexican wave: a bump that runs across the stand for ~1.4 s.
+        const lift = waveAge < 1.6 ? Math.exp(-Math.pow((waveAge / 1.4 - along) * 7, 2)) : 0;
+        const x = L.cx + Math.cos(a) * rx, y = L.cy + Math.sin(a) * ry - lift * size * .9;
+        const mine = you && you.team === st.team && you.seat === i;
+        const w = size * .8, h = size * .7;
+        g.globalAlpha = .8 + lift * .2;
+        g.fillStyle = mine ? "#e8b65a" : lift > .2 ? STAND_COLORS[st.team] : "rgba(244, 234, 216, .16)";
+        g.beginPath(); g.roundRect(x - w / 2, y - h / 2, w, h, Math.min(5, size * .2)); g.fill();
+        g.globalAlpha = 1;
+        if (cc && size >= 10) { g.font = `${Math.round(size * .66)}px system-ui`; g.fillText(flag(cc), x, y + 1); }
+        if (mine) { g.font = "500 11px Inter, sans-serif"; g.fillStyle = "#e8b65a"; g.fillText("you", x, y - h / 2 - 9); }
+      }
+    }
+  }
+  for (const st of S.stands) {
+    const waveAge = (now - (waves[st.team] || -1e9)) / 1000;
+    // Mascot on the track in front of its stand, label under it.
+    const mid = (st.a0 + st.a1) / 2;
+    const mx = L.cx + Math.cos(mid) * (S.inRx - 34), my = L.cy + Math.sin(mid) * (S.inRy - 30) - 10;
+    const jump = waveAge < 1 ? Math.sin(waveAge * Math.PI) * 14 : 0;
+    const bob = info.working ? Math.abs(Math.sin(((Date.now() + offset) / (60000 / (info.bpm || 64))) * Math.PI)) * 3 : 0;
+    mascot(st.team, mx, my - 6 - jump - bob, Math.max(14, Math.min(24, size * 1.1)));
+    const agents = st.team === "listen" ? null : teams.agents?.[st.team] || 0;
+    const sub = agents === null ? `${(teams.fans?.listen || 0).toLocaleString()} in the stands` : `${agents.toLocaleString()} agents on stage`;
+    g.font = "500 11px Inter, sans-serif";
+    const plate = Math.max(g.measureText(TEAM_NAMES[st.team]).width, g.measureText(sub).width) + 16;
+    g.fillStyle = "rgba(13, 11, 9, .78)";
+    g.beginPath(); g.roundRect(mx - plate / 2, my + 14, plate, 32, 8); g.fill();
+    g.fillStyle = "rgba(244, 234, 216, .9)"; g.fillText(TEAM_NAMES[st.team], mx, my + 23);
+    g.fillStyle = "rgba(163, 150, 132, .95)"; g.fillText(sub, mx, my + 37);
+  }
+  g.textBaseline = "alphabetic";
+}
+
+// Original mascots (drawn here, not brand logos).
+function mascot(team, x, y, r) {
+  const color = STAND_COLORS[team];
+  g.save(); g.translate(x, y);
+  g.fillStyle = color;
+  if (team === "codex") {                 // robot drummer
+    g.beginPath(); g.roundRect(-r, -r, r * 2, r * 1.8, r * .35); g.fill();
+    g.strokeStyle = color; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(0, -r); g.lineTo(0, -r * 1.45); g.stroke();
+    g.beginPath(); g.arc(0, -r * 1.5, r * .16, 0, Math.PI * 2); g.fill();
+    g.fillStyle = "#10201a"; g.beginPath(); g.roundRect(-r * .7, -r * .65, r * 1.4, r * .8, r * .2); g.fill();
+    g.fillStyle = "#7dffc8"; g.fillRect(-r * .42, -r * .38, r * .22, r * .22); g.fillRect(r * .2, -r * .38, r * .22, r * .22);
+    g.strokeStyle = "#f4ead8"; g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(r * .9, r * .2); g.lineTo(r * 1.5, -r * .4); g.moveTo(-r * .9, r * .2); g.lineTo(-r * 1.5, -r * .4); g.stroke();
+  } else {
+    g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2); g.fill();
+    if (team === "other") {               // cat with a violin
+      g.beginPath(); g.moveTo(-r * .85, -r * .45); g.lineTo(-r * .55, -r * 1.25); g.lineTo(-r * .15, -r * .85); g.fill();
+      g.beginPath(); g.moveTo(r * .85, -r * .45); g.lineTo(r * .55, -r * 1.25); g.lineTo(r * .15, -r * .85); g.fill();
+      g.fillStyle = "#8a4b2a"; g.beginPath(); g.ellipse(r * .95, r * .45, r * .32, r * .2, -.5, 0, Math.PI * 2); g.fill();
+    }
+    if (team === "listen") {              // headphones
+      g.strokeStyle = "#f4ead8"; g.lineWidth = 2.2;
+      g.beginPath(); g.arc(0, -r * .1, r * 1.12, Math.PI * 1.1, Math.PI * 1.9); g.stroke();
+      g.fillStyle = "#f4ead8"; g.fillRect(-r * 1.2, -r * .35, r * .3, r * .6); g.fillRect(r * .9, -r * .35, r * .3, r * .6);
+    }
+    g.fillStyle = "#1a120c";               // eyes and smile
+    g.beginPath(); g.arc(-r * .35, -r * .15, r * .13, 0, Math.PI * 2); g.arc(r * .35, -r * .15, r * .13, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = "#1a120c"; g.lineWidth = 1.6;
+    g.beginPath(); g.arc(0, r * .12, r * .32, .15 * Math.PI, .85 * Math.PI); g.stroke();
+    if (team === "claude") {              // maestro: bow tie and baton
+      g.fillStyle = "#1a120c";
+      g.beginPath(); g.moveTo(0, r * .78); g.lineTo(-r * .38, r * .58); g.lineTo(-r * .38, r * .98); g.closePath();
+      g.moveTo(0, r * .78); g.lineTo(r * .38, r * .58); g.lineTo(r * .38, r * .98); g.closePath(); g.fill();
+      g.strokeStyle = "#f4ead8"; g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(r * .9, r * .1); g.lineTo(r * 1.65, -r * .7); g.stroke();
+    }
+  }
+  g.restore();
+}
+
 let last = performance.now();
 function frame(now) {
   const dt = Math.min(.1, (now - last) / 1000); last = now;
@@ -170,8 +336,9 @@ function frame(now) {
   g.font = "500 11px Inter, sans-serif"; g.textAlign = "center";
   STAGE.forEach((name, column) => {
     const s = SECTIONS.indexOf(name), color = COLORS[name];
-    (seats[s] || []).forEach((sessions, i) => {
-      if (!sessions) return;
+    (seats[s] || []).forEach((entry, i) => {
+      if (!entry) return;
+      const [sessions, cc] = entry;
       const [x, y] = seatPoint(L, column, i);
       const key = `${s}:${i}`;
       const lit = glow.get(key) || 0;
@@ -186,13 +353,20 @@ function frame(now) {
       g.fillStyle = color;
       g.beginPath(); g.arc(x, y, size, 0, Math.PI * 2); g.fill();
       g.globalAlpha = 1;
+      if (cc && L.spacing >= 24) {   // room for a flag next to the musician
+        g.font = `${Math.round(L.spacing * .5)}px system-ui`;
+        g.fillText(flag(cc), x, y - size - 2);
+        g.font = "500 11px Inter, sans-serif";
+      }
     });
   });
   g.fillStyle = "rgba(163, 150, 132, .85)";
+  g.font = "500 10px Inter, sans-serif";
   STAGE.forEach((name, column) => {
-    const a = L.start + (column + .5) * L.wedge, r = L.r0 - 16;
+    const a = L.start + (column + .5) * L.wedge, r = L.rMax + 16;
     g.fillText(name.toUpperCase(), L.cx + Math.cos(a) * r, L.cy + Math.sin(a) * r);
   });
+  drawStadium(L, now);
   // Conductor's podium and a baton that keeps time.
   g.fillStyle = "rgba(244, 234, 216, .06)";
   g.beginPath(); g.arc(L.cx, L.cy, 22, 0, Math.PI * 2); g.fill();

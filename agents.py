@@ -539,9 +539,13 @@ class GlobalReporter:
         self.stop = threading.Event()
         threading.Thread(target=self.loop, daemon=True).start()
 
+    @staticmethod
+    def tool_of(path):
+        return "codex" if "/.codex/" in str(path) else "claude"
+
     def add(self, events):
         with self.lock:
-            for _, kind in events:
+            for path, kind in events:
                 if kind in self.STEPS:
                     self.steps += 1
                 elif kind in ("ship", "pass", "fail", "testfail") and len(self.signals) < 4:
@@ -558,8 +562,12 @@ class GlobalReporter:
             quiet = 0 if steps or working else quiet + 1
             if quiet and quiet % 10 and self.seat is not None:  # idle: heartbeat every 10 s keeps the seat
                 continue
+            tools = {}
+            for path in list(self.music.sessions):
+                tool = self.tool_of(path)
+                tools[tool] = tools.get(tool, 0) + 1
             body = json.dumps({"id": self.id, "steps": steps, "signals": signals, "working": working,
-                               "sessions": max(1, len(self.music.sessions))}).encode()
+                               "sessions": max(1, len(self.music.sessions)), "tools": tools}).encode()
             try:
                 request = self.request.Request(self.url, data=body, headers={"content-type": "application/json"})
                 with self.request.urlopen(request, timeout=3) as response:

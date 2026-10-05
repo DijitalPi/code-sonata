@@ -8,6 +8,7 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SONGS, KEYS, TITLES, PLAYLIST, harmonize, chordTones } from "./music.mjs";
+import { loadGeo, country } from "./geo.mjs";
 
 const PORT = Number(process.env.PORT || 4480);
 const WEB = join(fileURLToPath(new URL(".", import.meta.url)), "web");
@@ -17,6 +18,19 @@ const LEAD_MS = 900;            // notes are scheduled this far ahead so every l
 const PLAYER_TTL = 30_000;      // a machine that stops reporting leaves its seat
 const MAX_PLAYERS = 100_000;
 const MIN_SONG_MS = 120_000;
+const MAX_AUDIENCE = 20_000;    // drawn seats per stand; more listeners are still counted
+const TEAMS = ["claude", "codex", "other", "listen"];   // stadium stands
+const TOOLS = ["claude", "codex", "other"];
+try { console.log(`geo: ${loadGeo(join(fileURLToPath(new URL(".", import.meta.url)), "geo/dbip-country-ipv4.csv.gz"))} ranges`); }
+catch (error) { console.log(`geo: disabled (${error.message})`); }
+
+// Country from the request; the IP itself is never stored. Cloudflare's header wins if present.
+function countryOf(req) {
+  const header = String(req.headers["cf-ipcountry"] || "").toUpperCase();
+  if (/^[A-Z]{2}$/.test(header) && header !== "XX" && header !== "T1") return header;
+  const ip = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
+  return country(ip);
+}
 
 // ---------- players ----------
 const players = new Map();      // id -> {section, seat, last, working, sessions, energy, pulse}
@@ -36,24 +50,31 @@ function seatFor(id) {
   return { section: best, seat };
 }
 
-function report(id, body, now) {
+function report(id, body, now, cc) {
   let p = players.get(id);
   if (!p) {
     if (players.size >= MAX_PLAYERS) return null;
-    p = { ...seatFor(id), energy: 0, pulse: 0 };
+    p = { ...seatFor(id), energy: 0, pulse: 0, cc: cc || "" };
     players.set(id, p);
-  }
+  } else if (cc && p.cc !== cc) { p.cc = cc; seatsVersion++; }
   const steps = Math.max(0, Math.min(200, Number(body.steps) || 0));
   p.last = now;
   p.working = Boolean(body.working);
   p.sessions = Math.max(1, Math.min(64, Number(body.sessions) || 1));
+  const tools = body.tools && typeof body.tools === "object" ? body.tools : {};
+  p.tools = Object.fromEntries(TOOLS.map((t) => [t, Math.max(0, Math.min(64, Number(tools[t]) || 0))]));
+  const tool = TOOLS.reduce((a, b) => (p.tools[b] > p.tools[a] ? b : a), "claude");
+  if (p.tool !== tool) { p.tool = tool; seatsVersion++; }
   p.energy = Math.min(6, p.energy + steps);
   if (steps) { p.pulse = now; conductor.steps += steps; }
   for (const signal of (Array.isArray(body.signals) ? body.signals.slice(0, 4) : [])) {
     if (["ship", "pass", "fail"].includes(signal)) conductor.signal(signal, p.section, now);
+    if (signal === "ship") cheers.add(p.tool || "claude");
   }
   return p;
 }
+
+const cheers = new Set();       // stands that start a wave this frame
 
 function expire(now) {
   for (const [id, p] of players) {
@@ -186,16 +207,57 @@ const conductor = {
   },
 };
 
-// ---------- listeners (SSE) ----------
-const listeners = new Set();
+// ---------- listeners (SSE) = the audience ----------
+const listeners = new Map();     // res -> {cc, team, seat}
+const audience = Object.fromEntries(TEAMS.map((t) => [t, []]));   // team -> seat -> country ("" unknown) | null
+let audienceVersion = 0;
+
+function sit(res, cc, team) {
+  const stand = audience[team];
+  let seat = stand.indexOf(null);
+  if (seat < 0 && stand.length < MAX_AUDIENCE) { seat = stand.length; stand.push(null); }
+  if (seat >= 0) { stand[seat] = cc || ""; audienceVersion++; }
+  listeners.set(res, { cc, team, seat });
+  return seat;
+}
+
+function leave(res) {
+  const l = listeners.get(res);
+  if (l && l.seat >= 0) {
+    const stand = audience[l.team];
+    stand[l.seat] = null;
+    while (stand.length && stand[stand.length - 1] === null) stand.pop();
+    audienceVersion++;
+  }
+  listeners.delete(res);
+}
+
+function teamStats() {
+  const agents = Object.fromEntries(TOOLS.map((t) => [t, 0]));
+  for (const p of players.values()) for (const t of TOOLS) agents[t] += p.tools?.[t] || 0;
+  const fans = Object.fromEntries(TEAMS.map((t) => [t, 0]));
+  for (const l of listeners.values()) fans[l.team]++;
+  return { agents, fans };
+}
 
 function seatsSnapshot() {
-  return SECTIONS.map((_, s) => seatsTaken[s].map((id) => (id ? players.get(id)?.sessions || 1 : 0)));
+  return SECTIONS.map((_, s) => seatsTaken[s].map((id) => {
+    const p = id && players.get(id);
+    return p ? [p.sessions || 1, p.cc || "", p.tool || "claude"] : 0;
+  }));
+}
+
+function countries() {
+  const count = new Map();
+  for (const p of players.values()) if (p.cc) count.set(p.cc, (count.get(p.cc) || 0) + 1);
+  for (const l of listeners.values()) if (l.cc) count.set(l.cc, (count.get(l.cc) || 0) + 1);
+  return [...count].sort((a, b) => b[1] - a[1]);
 }
 
 function send(res, data) { res.write(`data: ${JSON.stringify(data)}\n\n`); }
 
-let lastSeats = -1, lastTick = Date.now(), frameNotes = [], stats = { working: 0, total: 0 };
+let lastSeats = -1, lastAudience = -1, lastTick = Date.now(), frameNotes = [], stats = { working: 0, total: 0 };
+let countryList = [], countryAt = 0;
 setInterval(() => {
   const now = Date.now();
   stats = conductor.tick(now, now - lastTick);
@@ -216,7 +278,15 @@ setInterval(() => {
     climax: Boolean(conductor.shift), song: TITLES[conductor.song],
   };
   if (seatsVersion !== lastSeats) { frame.seats = seatsSnapshot(); lastSeats = seatsVersion; }
-  for (const res of listeners) send(res, frame);
+  if (audienceVersion !== lastAudience) { frame.audience = audience; lastAudience = audienceVersion; }
+  if (now - countryAt > 1000) { countryList = countries(); countryAt = now; }
+  frame.countries = countryList.slice(0, 12);
+  frame.teams = teamStats();
+  if (conductor.shift && Math.random() < .08) TEAMS.forEach((t) => cheers.add(t));   // climax: the whole stadium waves now and then
+  if (cheers.size) frame.cheers = [...cheers];
+  cheers.clear();
+  frame.countryCount = countryList.length;
+  for (const res of listeners.keys()) send(res, frame);
 }, 200);
 
 // ---------- http ----------
@@ -248,16 +318,18 @@ const server = http.createServer(async (req, res) => {
     let body;
     try { body = JSON.parse(raw); } catch { return json(res, 400, { error: "json" }); }
     if (typeof body.id !== "string" || !/^[a-f0-9]{16,64}$/.test(body.id)) return json(res, 400, { error: "id" });
-    const p = report(body.id, body, now);
+    const p = report(body.id, body, now, countryOf(req));
     if (!p) return json(res, 503, { error: "full" });
     return json(res, 200, { section: SECTIONS[p.section], seat: p.seat, players: players.size });
   }
   if (req.method === "GET" && url.pathname === "/api/stream") {
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive", "x-accel-buffering": "no" });
     res.write("retry: 2000\n\n");
-    listeners.add(res);
-    send(res, { t: now, seats: seatsSnapshot(), sections: SECTIONS, notes: [], pulses: [] });
-    req.on("close", () => listeners.delete(res));
+    const cc = countryOf(req);
+    const team = TEAMS.includes(url.searchParams.get("team")) ? url.searchParams.get("team") : "listen";
+    const seat = sit(res, cc, team);
+    send(res, { t: now, seats: seatsSnapshot(), audience, you: { seat, cc, team }, sections: SECTIONS, notes: [], pulses: [] });
+    req.on("close", () => leave(res));
     return;
   }
   if (req.method === "GET" && url.pathname === "/api/health") return json(res, 200, { ok: true, players: players.size, listeners: listeners.size });
