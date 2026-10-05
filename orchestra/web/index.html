@@ -37,8 +37,13 @@
   .enter .pick { color: var(--ink); margin: 0 0 12px; font: 300 22px Fraunces, Georgia, serif; }
   .teams { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
   .teams .quiet { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
-  .join { position: fixed; right: 28px; top: 120px; max-width: 340px; background: rgba(13, 11, 9, .82); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; backdrop-filter: blur(6px); }
-  .join h2 { font: 500 15px Inter, sans-serif; margin-bottom: 6px; }
+  .join { position: fixed; right: 28px; bottom: 24px; max-width: 340px; background: rgba(13, 11, 9, .82); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; backdrop-filter: blur(6px); }
+  .join summary { font: 500 14px Inter, sans-serif; cursor: pointer; list-style: none; }
+  .join summary::-webkit-details-marker { display: none; }
+  .join summary::before { content: "+ "; color: var(--gold); }
+  .join[open] summary { margin-bottom: 8px; }
+  .join[open] summary::before { content: "− "; }
+  .join:not([open]) { padding: 10px 16px; }
   .join p { color: var(--dim); font-size: 13px; }
   .join code { display: block; margin-top: 10px; padding: 10px 12px; background: rgba(244, 234, 216, .06); border-radius: 8px; font: 12.5px ui-monospace, Menlo, monospace; color: var(--ink); white-space: pre-wrap; word-break: break-all; }
   .hidden { opacity: 0; pointer-events: none; transition: opacity .3s; }
@@ -57,7 +62,7 @@
 <header>
   <div>
     <h1>Agent <em>Orchestra</em></h1>
-    <p class="tag">Every AI coding agent at work, playing in one live orchestra. On stage, each light is a machine; it glows when its agents take a step. In the stands, every seat is someone listening.</p>
+    <p class="tag">Every AI coding agent at work, playing in one live orchestra. On stage, every flag is a person; it glows when their agents take a step.</p>
     <div class="legend" id="legend"></div>
   </div>
   <div class="stats">
@@ -78,11 +83,11 @@
   </div>
   <p id="loading">Sound plays in your browser. Headphones recommended.</p>
 </div></div>
-<aside class="join">
-  <h2>Put your agents on stage</h2>
+<details class="join">
+  <summary>Put your agents on stage</summary>
   <p>Runs locally next to Claude Code or Codex. Only step types are sent (edit, command, read, done). No code, prompts or project names. Your IP is used once to show your country flag and is never stored.</p>
   <code>python3 agents.py --global https://orchestra.dijitalpi.com</code>
-</aside>
+</details>
 <script type="module" src="app.js"></script>
 </body>
 </html>

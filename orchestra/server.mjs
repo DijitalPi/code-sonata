@@ -18,7 +18,6 @@ const LEAD_MS = 900;            // notes are scheduled this far ahead so every l
 const PLAYER_TTL = 30_000;      // a machine that stops reporting leaves its seat
 const MAX_PLAYERS = 100_000;
 const MIN_SONG_MS = 120_000;
-const MAX_AUDIENCE = 20_000;    // drawn seats per stand; more listeners are still counted
 const TEAMS = ["claude", "codex", "other", "listen"];   // stadium stands
 const TOOLS = ["claude", "codex", "other"];
 try { console.log(`geo: ${loadGeo(join(fileURLToPath(new URL(".", import.meta.url)), "geo/dbip-country-ipv4.csv.gz"))} ranges`); }
@@ -233,29 +232,10 @@ const conductor = {
 };
 
 // ---------- listeners (SSE) = the audience ----------
-const listeners = new Map();     // res -> {cc, team, seat}
-const audience = Object.fromEntries(TEAMS.map((t) => [t, []]));   // team -> seat -> country ("" unknown) | null
-let audienceVersion = 0;
+const listeners = new Map();     // res -> {cc, team}
 
-function sit(res, cc, team) {
-  const stand = audience[team];
-  let seat = stand.indexOf(null);
-  if (seat < 0 && stand.length < MAX_AUDIENCE) { seat = stand.length; stand.push(null); }
-  if (seat >= 0) { stand[seat] = cc || ""; audienceVersion++; }
-  listeners.set(res, { cc, team, seat });
-  return seat;
-}
-
-function leave(res) {
-  const l = listeners.get(res);
-  if (l && l.seat >= 0) {
-    const stand = audience[l.team];
-    stand[l.seat] = null;
-    while (stand.length && stand[stand.length - 1] === null) stand.pop();
-    audienceVersion++;
-  }
-  listeners.delete(res);
-}
+function sit(res, cc, team) { listeners.set(res, { cc, team }); }
+function leave(res) { listeners.delete(res); }
 
 function teamStats() {
   const agents = Object.fromEntries(TOOLS.map((t) => [t, 0]));
@@ -281,7 +261,7 @@ function countries() {
 
 function send(res, data) { res.write(`data: ${JSON.stringify(data)}\n\n`); }
 
-let lastSeats = -1, lastAudience = -1, lastTick = Date.now(), frameNotes = [], stats = { working: 0, total: 0 };
+let lastSeats = -1, lastTick = Date.now(), frameNotes = [], stats = { working: 0, total: 0 };
 let countryList = [], countryAt = 0;
 setInterval(() => {
   const now = Date.now();
@@ -303,7 +283,6 @@ setInterval(() => {
     climax: Boolean(conductor.shift), song: TITLES[conductor.song],
   };
   if (seatsVersion !== lastSeats) { frame.seats = seatsSnapshot(); lastSeats = seatsVersion; }
-  if (audienceVersion !== lastAudience) { frame.audience = audience; lastAudience = audienceVersion; }
   if (now - countryAt > 1000) { countryList = countries(); countryAt = now; }
   frame.countries = countryList.slice(0, 12);
   frame.teams = teamStats();
@@ -352,8 +331,8 @@ const server = http.createServer(async (req, res) => {
     res.write("retry: 2000\n\n");
     const cc = countryOf(req);
     const team = TEAMS.includes(url.searchParams.get("team")) ? url.searchParams.get("team") : "listen";
-    const seat = sit(res, cc, team);
-    send(res, { t: now, seats: seatsSnapshot(), audience, you: { seat, cc, team }, sections: SECTIONS, notes: [], pulses: [] });
+    sit(res, cc, team);
+    send(res, { t: now, seats: seatsSnapshot(), you: { cc, team }, sections: SECTIONS, notes: [], pulses: [] });
     req.on("close", () => leave(res));
     return;
   }

@@ -8,8 +8,7 @@ const $ = (id) => document.getElementById(id);
 
 // ---------- state from the server ----------
 let seats = SECTIONS.map(() => []);      // section -> [[sessions, country] or 0]
-let audience = [];                       // seat -> country code, "" unknown, null empty
-let you = null;                          // {seat, cc}
+let you = null;                          // {cc, team}
 const flag = (cc) => (cc && cc.length === 2 ? String.fromCodePoint(...[...cc].map((c) => 0x1f1a5 + c.charCodeAt(0))) : "");
 const glow = new Map();                  // "s:i" -> 0..1
 let info = { bpm: 64, intensity: 0, climax: false, song: "", working: 0 };
@@ -70,7 +69,6 @@ function onFrame(event) {
   if (offsets.length > 40) offsets.shift();
   offset = Math.max(...offsets);         // least delayed sample
   if (frame.seats) { seats = frame.seats; version++; }
-  if (frame.audience) { audience = frame.audience; version++; }
   if (frame.you) you = frame.you;
   if (frame.countries) showCountries(frame);
   if (frame.teams) teams = frame.teams;
@@ -205,7 +203,7 @@ const REGIONS = {
   horn:       { band: [.72, .86], arc: [-30, 30], label: "brass" },
   choir:      { band: [.89, 1.0], arc: [-72, 72], label: "choir" },
 };
-// Audience blocks in the stalls, left to right, split by aisles.
+// Teams in the strip under the stage, left to right.
 const BLOCKS = ["claude", "listen", "codex", "other"];
 const BLOCK_COLORS = { claude: "#e0784f", codex: "#3fbf8a", other: "#9b7bff", listen: "#e8b65a" };
 const rad = (d) => (d * Math.PI) / 180;
@@ -225,8 +223,8 @@ function fillWedge(n, r0, r1, a0, a1, spacing, point) {
   return out;
 }
 
-function fit(build) {
-  for (let spacing = 26; spacing > 2.4; spacing *= .92) {
+function fit(build, start = 26) {
+  for (let spacing = start; spacing > 2.4; spacing *= .92) {
     const result = build(spacing);
     if (result) return { ...result, spacing };
   }
@@ -235,39 +233,23 @@ function fit(build) {
 
 function geometry() {
   if (cached && cached.version === version) return cached;
-  const cx = width / 2, cy = height * .55;
-  const R = Math.min(width * .42, height * .41);
+  const cx = width / 2, cy = height * .8;
+  const R = Math.min(width * .42, height * .6);
   const stagePoint = (r, a) => ({ x: cx + Math.sin(rad(a)) * r, y: cy - Math.cos(rad(a)) * r });
   // Each section fills its own region (a lone harpist gets a big chair, violins pack tight).
+  // Few people: big flags. A crowd: they shrink to fit.
+  const biggest = Math.max(18, Math.min(44, R * .075));
   const stage = { sections: {}, spacing: {} };
   for (const [name, reg] of Object.entries(REGIONS)) {
     const n = (seats[SECTIONS.indexOf(name)] || []).length;
     const one = fit((spacing, force) => {
-      const pts = fillWedge(n, reg.band[0] * R, force ? 1e9 : reg.band[1] * R, reg.arc[0], reg.arc[1], Math.min(spacing, 20), stagePoint);
+      const pts = fillWedge(n, reg.band[0] * R, force ? 1e9 : reg.band[1] * R, reg.arc[0], reg.arc[1], spacing, stagePoint);
       return pts && { pts };
-    });
+    }, biggest);
     stage.sections[name] = one.pts;
-    stage.spacing[name] = Math.min(one.spacing, 20);
+    stage.spacing[name] = one.spacing;
   }
-  // Stalls: rows are arcs around the stage front, squashed for perspective.
-  const A0 = R * .42, A1 = Math.min(width / 2 - 16, R * 1.3);
-  const aisleY = cy + 58;                 // mascots walk the front aisle
-  const squash = Math.max(.3, (height - aisleY - 90) / (A1 - A0 * .9));
-  const hallPoint = (r, a) => ({ x: cx + Math.sin(rad(a)) * r, y: aisleY + 44 + (Math.cos(rad(a)) * r - A0 * .9) * squash });
-  const weights = BLOCKS.map((t) => 1.5 + Math.sqrt((audience[t] || []).length));
-  const sum = weights.reduce((a, b) => a + b, 0), aisle = 2.5, span = 124 - aisle * (BLOCKS.length - 1);
-  let a = -62;
-  const ranges = BLOCKS.map((t, i) => { const w = (span * weights[i]) / sum; const r = [a, a + w]; a += w + aisle; return r; });
-  const stalls = fit((spacing, force) => {
-    const out = {};
-    BLOCKS.forEach((t, i) => {
-      if (out === null) return;
-      const pts = fillWedge((audience[t] || []).length, A0, force ? 1e9 : A1, ranges[i][0], ranges[i][1], spacing, hallPoint);
-      out[t] = pts;
-    });
-    return Object.values(out).some((v) => v === null) ? null : { blocks: out };
-  });
-  cached = { version, cx, cy, R, stage, stalls, ranges, A0, A1, aisleY, hallPoint };
+  cached = { version, cx, cy, R, stage };
   return cached;
 }
 
@@ -368,47 +350,31 @@ function frame(now) {
   g.strokeStyle = "rgba(244, 234, 216, .9)"; g.lineWidth = 2;
   g.beginPath(); g.moveTo(cx, cy - 2); g.lineTo(cx + Math.sin(swing) * 24, cy - 2 - Math.cos(swing) * 24); g.stroke();
   g.fillStyle = "#f4ead8"; g.beginPath(); g.arc(cx, cy + 4, 6, 0, Math.PI * 2); g.fill();
-  drawStalls(G, now);
+  drawTeams(G, now);
   requestAnimationFrame(frame);
 }
 
-function drawStalls(G, now) {
-  const sp = G.stalls.spacing;
+// Team strip in front of the stage: one mascot per team with its numbers; it jumps when
+// that team's agents ship something.
+function drawTeams(G, now) {
+  const gap = Math.max(130, Math.min(220, (width - 80) / BLOCKS.length));
   g.textAlign = "center"; g.textBaseline = "middle";
   BLOCKS.forEach((team, b) => {
-    const pts = G.stalls.blocks[team] || [], fans = audience[team] || [];
-    const waveAge = (now - (waves[team] || -1e9)) / 1000;
-    fans.forEach((cc, i) => {
-      if (cc === null || !pts[i]) return;
-      const { x, along } = pts[i];
-      const lift = waveAge < 1.6 ? Math.exp(-Math.pow((waveAge / 1.4 - along) * 7, 2)) : 0;
-      const y = pts[i].y - lift * sp * .8;
-      const mine = you && you.team === team && you.seat === i;
-      const w = sp * .82, h = sp * .66;
-      g.fillStyle = mine ? "#e8b65a" : lift > .2 ? BLOCK_COLORS[team] : "rgba(244, 234, 216, .14)";
-      g.beginPath(); g.roundRect(x - w / 2, y - h / 2, w, h, Math.min(4, sp * .2)); g.fill();
-      if (cc && sp >= 10) { g.font = `${Math.round(sp * .62)}px system-ui`; g.fillText(flag(cc), x, y + 1); }
-      if (mine) { g.font = "500 11px Inter, sans-serif"; g.fillStyle = "#e8b65a"; g.fillText("you", x, y - h / 2 - 9); }
-    });
-  });
-  // Mascots last, so no seat ever covers a name plate.
-  BLOCKS.forEach((team, b) => {
-    const waveAge = (now - (waves[team] || -1e9)) / 1000;
-    const mid = (G.ranges[b][0] + G.ranges[b][1]) / 2;
-    const jump = waveAge < 1 ? Math.sin(waveAge * Math.PI) * 12 : 0;
+    const mx = G.cx + (b - (BLOCKS.length - 1) / 2) * gap, my = G.cy + 46;
+    const age = (now - (waves[team] || -1e9)) / 1000;
+    const jump = age < 1 ? Math.sin(age * Math.PI) * 12 : 0;
     const bob = info.working ? Math.abs(Math.sin(((Date.now() + offset) / (60000 / (info.bpm || 64))) * Math.PI)) * 3 : 0;
-    // Spread along the aisle in the direction of the block, never closer than a plate apart.
-    const lane = (b - (BLOCKS.length - 1) / 2) * Math.max(150, Math.min(G.A1 * .55, 230));
-    const mx = G.cx + (Math.abs(Math.sin(rad(mid))) > .01 ? lane : 0), my = G.aisleY - 16;
     mascot(team, mx, my - jump - bob, 15);
     const agents = team === "listen" ? null : teams.agents?.[team] || 0;
-    const sub = agents === null ? `${(teams.fans?.listen || 0).toLocaleString()} listening` : `${agents.toLocaleString()} agents on stage`;
+    const fans = teams.fans?.[team] || 0;
+    const sub = agents === null ? `${fans.toLocaleString()} listening` : `${agents.toLocaleString()} agents · ${fans.toLocaleString()} fans`;
     g.font = "500 11px Inter, sans-serif";
-    const plate = Math.max(g.measureText(TEAM_NAMES[team]).width, g.measureText(sub).width) + 16;
-    g.fillStyle = "rgba(13, 11, 9, .8)";
-    g.beginPath(); g.roundRect(mx - plate / 2, my + 18, plate, 30, 7); g.fill();
-    g.fillStyle = "rgba(244, 234, 216, .92)"; g.fillText(TEAM_NAMES[team], mx, my + 26);
-    g.fillStyle = "rgba(163, 150, 132, .95)"; g.fillText(sub, mx, my + 40);
+    g.fillStyle = "rgba(244, 234, 216, .92)"; g.fillText(TEAM_NAMES[team], mx, my + 30);
+    g.fillStyle = "rgba(163, 150, 132, .95)"; g.fillText(sub, mx, my + 44);
+    if (you && you.team === team) {
+      g.fillStyle = "#e8b65a"; g.font = "600 11px Inter, sans-serif";
+      g.fillText("you", mx, my - 34 - jump);
+    }
   });
   g.textBaseline = "alphabetic";
 }
