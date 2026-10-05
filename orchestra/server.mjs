@@ -7,7 +7,7 @@ import http from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SONGS, KEYS, TITLES, PLAYLIST, harmonize, chordTones } from "./music.mjs";
+import { SONGS, KEYS, TITLES, PLAYLIST, PLANS, chordTones } from "./music.mjs";
 import { loadGeo, country } from "./geo.mjs";
 
 const PORT = Number(process.env.PORT || 4480);
@@ -120,8 +120,7 @@ function updateLeague(now, dt) {
       if (previous && top && now - league.fanfareAt > LEAD_FANFARE_GAP) {
         league.fanfareAt = now;
         league.announce = { cc: top, previous };
-        const t = conductor.chordAt(60), at = now + LEAD_MS;
-        [t[0], t[1], t[2], t[0] + 12].forEach((p, i) => conductor.emit(at + i * 140, p, 62, .45 + i * .15, 6));
+        conductor.cue("lead");                  // a horn call on the next bar line
       }
     }
   } else league.candidate = top;
@@ -144,36 +143,35 @@ function expire(now) {
 }
 
 // ---------- conductor ----------
+// One clock for everything: notes sit on an ideal timeline (not "whenever the 25 ms timer
+// fires"), and every part, drums included, comes from the same song beat grid.
+const LOOKAHEAD_MS = 150;
+const BAR = 4;                                   // beats per bar on the shared grid
+const eq = (a, b) => Math.abs(a - b) < 1e-9;
+
 const conductor = {
-  index: 0, position: 0, chord: null, bpm: 64, intensity: 0, shift: 0,
-  nextNote: 0, nextDrive: 0, eighth: 0, steps: 0, rate: 0, songMs: 0,
-  peakSince: null, calmSince: null, out: [],
+  index: 0, position: 0, songBeat: 0, chord: null, nextChange: 0,
+  bpm: 66, intensity: 0, shift: 0, targetShift: 0,
+  clock: 0, steps: 0, short: 0, long: 0, songMs: 0,
+  peakSince: null, calmSince: null, climaxSince: 0, coolUntil: 0,
+  active: [], working: 0, cues: [], lastSignal: {}, solo: 0, out: [],
 
   get song() { return PLAYLIST[this.index % PLAYLIST.length]; },
   chordAt(octave) { return chordTones(this.chord, KEYS[this.song], octave); },
+  band(p, lo) { while (p >= lo + 12) p -= 12; while (p < lo) p += 12; return p; },
 
   emit(at, p, v, d, i) {
     if (i !== DRUMS) p += this.shift;
     this.out.push([Math.round(at), Math.max(0, Math.min(127, p)), Math.max(1, Math.min(120, Math.round(v))), Math.round(d * 1000) / 1000, i]);
   },
 
-  lastSignal: {},
-
+  // Signals become cues that play on the next bar line, in key and in time.
   signal(kind, section, now) {
-    // In a crowd these would never stop: one fanfare per 10 s, no error chords on the site.
-    if (kind === "fail" || now - (this.lastSignal[kind] || 0) < 10_000) return;
+    if (kind === "fail" || now - (this.lastSignal[kind] || 0) < 10_000) return;   // no error chords on the site
     this.lastSignal[kind] = now;
-    const at = now + LEAD_MS, t = this.chordAt(60);
-    if (kind === "ship") {
-      for (const p of [...t, t[0] + 12]) this.emit(at, p, 70, 1.6, 6);
-      this.emit(at, 49, 80, 2, DRUMS);
-    } else if (kind === "pass") {
-      [...t, t[0] + 12].forEach((p, i) => this.emit(at + i * 110, p, 55, .5, 6));
-    } else if (kind === "fail") {
-      const low = this.chordAt(36)[0];
-      for (const p of [low + 12, low + 15, low + 18]) this.emit(at, p, 40, 1.2, TREMOLO);
-    }
+    this.cue(kind);
   },
+  cue(kind) { if (!this.cues.includes(kind)) this.cues.push(kind); },
 
   tick(now, dt) {
     expire(now);
@@ -181,110 +179,145 @@ const conductor = {
     const active = SECTIONS.map(() => 0);
     for (const p of players.values()) {
       total++;
-      p.energy *= Math.pow(0.5, dt / 4000);
-      if (p.working) { working++; active[p.section] += 1 + Math.min(1, p.energy / 2); }
+      p.energy *= Math.pow(.5, dt / 4000);
+      if (p.working) { working++; active[p.section]++; }
     }
-    // Steps per second across the world, smoothed; tempo follows steps per working machine.
-    this.rate += (this.steps / (dt / 1000) - this.rate) * Math.min(1, dt / 2000);
+    this.active = active; this.working = working;
+    // Excitement follows a speed-up (pace now vs. the last two minutes) plus some absolute pace:
+    // a steady crowd settles, a speed-up builds, a burst peaks.
+    const rate = this.steps / Math.max(.001, dt / 1000);
     this.steps = 0;
-    const perMachine = working ? this.rate / working : 0;
-    const crowd = Math.log2(1 + working) / 10;           // a bigger orchestra is a little more exciting
-    const target = working ? Math.min(1, perMachine / 2.2 + crowd) : 0;
-    this.intensity += (target - this.intensity) * Math.min(1, dt / 1200);
-    this.bpm += (62 + 66 * this.intensity - this.bpm) * Math.min(1, dt / 1500);
+    this.short += (rate - this.short) * Math.min(1, dt / 3000);
+    this.long += (rate - this.long) * Math.min(1, dt / 120_000);
+    const pace = working ? Math.min(1, this.short / working / 2) : 0;
+    const surge = working ? Math.max(0, Math.min(1, (this.short / Math.max(this.long, .4 * working) - .9) / 1.2)) : 0;
+    let target = working ? Math.min(1, .55 * pace + .45 * surge) : 0;
+    if (now < this.coolUntil) target = Math.min(target, .6);            // after a climax, breathe
+    this.intensity += (target - this.intensity) * Math.min(1, dt / 1500);
+    this.bpm += (66 + 50 * this.intensity - this.bpm) * Math.min(1, dt / 2500);   // 66..116
     this.climax(now);
-    if (!working) { this.nextNote = now; return { working, total }; }
-    if (now >= this.nextNote) this.beat(now, active);
-    if (this.intensity >= .45 && now >= this.nextDrive) this.drive(now);
+    if (!working) { this.clock = 0; return { working, total }; }
+    if (!this.clock || this.clock < now - 500) this.clock = now;        // start, or recover from a stall
+    while (this.clock <= now + LOOKAHEAD_MS) this.note(this.clock);
     return { working, total };
   },
 
+  // A climax is a moment, not a state: at most 20 s, then 30 s below it.
   climax(now) {
-    if (this.intensity > .8) {
+    if (this.intensity > .8 && now >= this.coolUntil) {
       this.calmSince = null;
       this.peakSince ??= now;
-      if (!this.shift && now - this.peakSince > 3000) {
-        this.shift = 2;
-        this.emit(now + LEAD_MS, 49, 100, 2.5, DRUMS);
-        this.emit(now + LEAD_MS, this.chordAt(36)[0], 90, 1.5, TIMPANI);
-      }
+      if (!this.targetShift && now - this.peakSince > 3000) { this.targetShift = 2; this.climaxSince = now; this.cue("climax"); }
+      if (this.targetShift && now - this.climaxSince > 20_000) { this.coolUntil = now + 30_000; this.targetShift = 0; }
     } else {
       this.peakSince = null;
-      if (this.intensity < .5) {
+      if (this.intensity < .55) {
         this.calmSince ??= now;
-        if (this.shift && now - this.calmSince > 4000) this.shift = 0;
+        if (this.targetShift && now - this.calmSince > 3000) this.targetShift = 0;
       }
     }
   },
 
-  // Arranged like an orchestra, not everyone at once: one voice carries the melody per
-  // phrase, sections join as excitement grows, each in its own register.
-  beat(now, active) {
-    const score = SONGS[this.song], key = KEYS[this.song];
+  // One melody note, plus everything on the grid while it sounds.
+  note(t) {
+    const score = SONGS[this.song], plan = PLANS[this.song], key = KEYS[this.song];
     const [pitch, beats] = score[this.position];
-    const beat = 60 / this.bpm, seconds = beat * beats;
-    this.nextNote = now + seconds * 1000;
-    const at = now + LEAD_MS, I = this.intensity;
-    const previous = this.chord;
-    this.chord = harmonize(pitch, key, this.chord);
-    const changed = this.chord !== previous || this.position % 8 === 0;
-    const loud = (1 + .3 * I) * 1.7;
-    const most = Math.max(1, ...active);
-    const level = (s) => (.6 + .4 * Math.log2(1 + active[s]) / Math.log2(1 + most)) * loud;
+    const step = plan[this.position];
+    const beatMs = 60_000 / this.bpm, I = this.intensity, active = this.active;
+    const at = t + LEAD_MS;
+    this.chord = step.chord;
+    this.nextChange = step.nextChange;
     const on = (s, from) => active[s] > 0 && I >= from;
-    const pad = Math.min(2.4, beat * 2.2);       // pads end before the next chord can clash
-    // Melody: one voice per phrase, rotating among the sections that are playing.
-    const singers = [0, 8, 4, 1, 2].filter((s) => s === 0 || on(s, s === 2 ? .55 : s === 8 ? 0 : .3));
+    const crowd = .85 + .15 * Math.min(1, Math.log2(1 + this.working) / 6);   // a bigger orchestra, a bit fuller
+    const vel = (base) => base * 1.7 * (1 + .25 * I) * crowd;
+    // Melody: one section per phrase (8 notes), rotating among the sections on stage.
+    const singers = [0, 8, 4, 1, 2].filter((s) => s === 0 || on(s, s === 2 ? .5 : s === 8 ? 0 : .25));
     const lead = singers[Math.floor(this.position / 8 + this.index) % singers.length];
-    const leadPitch = lead === 4 ? pitch + 12 : pitch;                    // flute an octave up
-    const voiceOf = (s) => (s === 8 ? ACCORDION : s);
-    this.solo = at;                              // the leading country's flags light up on melody notes
-    this.emit(at, leadPitch, (lead === 0 ? 56 : 48) * (lead === 0 ? Math.max(.75, level(0) / loud) * loud : level(lead)), Math.min(2.6, seconds * .92), voiceOf(lead));
-    if (this.shift) this.emit(at, leadPitch + 12, 22 * loud, Math.min(2.6, seconds * .9), 0);   // climax only
-    // Accompaniment leaves the melody's note (and its neighbours) to the melody.
-    const clear = (p) => (Math.abs(p - leadPitch) <= 2 ? null : p);
-    // Bass, low register: cello once it has joined, otherwise the piano's left hand.
-    const low = this.chordAt(36);
-    if (changed) {
-      if (on(3, .25)) this.emit(at, low[0], 40 * level(3), pad, 3);
-      else this.emit(at, low[0] < 40 ? low[0] + 12 : low[0], 28 * loud, pad, 0);
-    } else if (on(3, .45) && this.position % 2 === 0) this.emit(at, low[2], 26 * level(3), beat * .9, 3);
-    // Middle: strings pad (unless they lead), horns and choir only when it builds.
-    // Registers like a real score: bass 36-47, horns 48-59, strings 60-71, choir 72-83, harp/vibes 84+.
-    const band = (p, lo) => { while (p >= lo + 12) p -= 12; while (p < lo) p += 12; return p; };
-    const mid = this.chordAt(60).map((p) => band(p, 60));
-    if (changed && lead !== 1 && on(1, 0)) for (const p of mid.map(clear).filter(Boolean)) this.emit(at, p, 20 * level(1), pad, 1);
-    if (changed && on(6, .6)) { const h = this.chordAt(48); this.emit(at, band(h[0], 48), 24 * level(6), pad, 6); this.emit(at, band(h[2], 48), 22 * level(6), pad, 6); }
-    if (changed && lead !== 2 && on(2, .75)) for (const p of mid.map((x) => clear(band(x, 72))).filter(Boolean)) this.emit(at, p, 16 * level(2), pad, 2);
-    // Accordion "oom-pah": short off-beat chords when it is not singing the melody.
-    if (lead !== 8 && on(8, .3) && this.position % 2 === 1) for (const p of mid.map(clear).filter(Boolean)) this.emit(at, p, 16 * level(8), beat * .35, ACCORDION);
-    // Top: harp and vibraphone sparkle, sparse and high.
-    const top = this.chordAt(84);
-    if (on(7, .2) && this.position % 2 === 1) this.emit(at, band(top[this.position % 3], 84), 20 * level(7), beat * 1.2, 7);
-    if (changed && on(5, .5) && this.position % 2 === 0) this.emit(at, band(top[1], 84), 18 * level(5), .5, 5);
-    this.songMs += seconds * 1000;
+    const leadPitch = lead === 4 ? pitch + 12 : pitch;                  // flute an octave up
+    const ctx = { lead, leadPitch, on, vel, beatMs };
+    for (let k = 0; k < beats - 1e-9; k += .5) this.grid(at + k * beatMs, this.songBeat + k, step, ctx, k === 0);
+    this.solo = at;                                                     // the leading country glows on melody notes
+    this.emit(at, leadPitch, vel(lead === 0 ? 54 : 46), Math.min(2.6, (beats * beatMs) / 1000 * .92), lead === 8 ? ACCORDION : lead);
+    this.songMs += beats * beatMs;
+    this.songBeat += beats;
+    this.clock = t + beats * beatMs;
     this.position++;
     if (this.position >= score.length) {
-      this.position = 0;
-      if (this.songMs >= MIN_SONG_MS && this.intensity <= .5) {
-        const tonic = chordTones(null, key, 48);
-        for (const p of [tonic[0] - 12, ...tonic.map((x) => x + 12)]) this.emit(at + seconds * 900, p, 55, 2.5, 0);
-        this.nextNote = now + seconds * 1000 + 2 * 60000 / this.bpm;
-        this.index++; this.songMs = 0; this.chord = null;
+      this.position = 0; this.songBeat = 0;
+      if (this.songMs >= MIN_SONG_MS && I <= .5) {
+        // Close the song: the tonic rings for two beats, then two beats of breath.
+        const tonic = chordTones(null, key, 48), end = this.clock + LEAD_MS;
+        for (const p of [tonic[0] - 12, ...tonic.map((x) => x + 12)]) this.emit(end, p, vel(30), (2 * beatMs) / 1000, 0);
+        this.clock += 4 * beatMs;
+        this.index++; this.songMs = 0;
       }
     }
   },
 
-  drive(now) {
-    const level = this.intensity, at = now + LEAD_MS;
-    this.nextDrive = now + 30000 / this.bpm;
-    const e = this.eighth++ % 8;
-    const vel = (b, s) => (b + s * level) * 1.7 * (1 + .35 * level);
-    // No ticking clock: a soft offbeat hat only when really excited; walking bass on the beat.
-    if (level > .7 && e % 2) this.emit(at, level > .9 ? 46 : 42, vel(4, 22), .08, DRUMS);
-    if (level > .6 && (e === 0 || e === 4)) this.emit(at, 36, vel(36, 50), .2, DRUMS);
-    if (level > .72 && (e === 2 || e === 6)) this.emit(at, 38, vel(30, 45), .15, DRUMS);
-    if (level > .8 && e === 0) this.emit(at, this.chordAt(36)[0], vel(20, 40), .6, TIMPANI);
+  grid(at, beat, step, { lead, leadPitch, on, vel, beatMs }, onset) {
+    const I = this.intensity, inBar = beat % BAR;
+    const barLine = eq(inBar, 0), onBeat = eq(beat % 1, 0), change = onset && step.change;
+    if (barLine) this.shift = this.targetShift;                         // key changes on a bar line only
+    if (barLine && this.cues.length) this.playCues(at, vel, beatMs);
+    // Harmony is struck on a chord change and on each bar line, and lasts exactly until the
+    // next of the two: two chords never ring on top of each other.
+    if (change || barLine) {
+      const until = Math.min(this.nextChange, (Math.floor(beat / BAR + 1e-9) + 1) * BAR);
+      this.harmony(at, (Math.max(.25, until - beat) * beatMs) / 1000 * .94, lead, leadPitch, on, vel);
+    }
+    // The cello steps to the fifth halfway through a bar when the chord holds.
+    if (eq(inBar, 2) && !change && on(3, .35) && this.nextChange - beat >= 2) {
+      const fifth = this.chordAt(36)[2];
+      this.emit(at, fifth >= 48 ? fifth - 12 : fifth, vel(26), (2 * beatMs) / 1000 * .9, 3);
+    }
+    // Colour: one voice up high, on the beat: harp (every beat) or vibraphone (beats 1 and 3).
+    if (onBeat && I >= .25) {
+      const colour = [7, 5].filter((s) => on(s, s === 5 ? .45 : .25));
+      if (colour.length) {
+        const s = colour[Math.floor(this.position / 8) % colour.length];
+        if (s === 7 || eq(inBar, 0) || eq(inBar, 2)) {
+          const p = this.chordAt(84)[Math.floor(beat) % 3];
+          this.emit(at, p, vel(s === 7 ? 18 : 16), s === 7 ? (beatMs / 1000) * 1.2 : .45, s);
+        }
+      }
+    }
+    // Small orchestra, no pad yet: the piano's left hand plays a flowing broken chord
+    // (root, fifth, third, fifth), like a pianist accompanying alone.
+    if (onBeat && ![1, 6, 2].some((s) => s !== lead && on(s, s === 1 ? 0 : s === 6 ? .45 : .6)) && !barLine && !change) {
+      const c = this.chordAt(60).map((p) => this.band(p, 55));        // above the muddy low register
+      let p = [c[0], c[2], c[1], c[2]][Math.floor(beat) % 4];
+      if (Math.abs(p - leadPitch) <= 2) p = c.find((x) => Math.abs(x - leadPitch) > 2) ?? null;
+      if (p !== null) this.emit(at, p, vel(15), (beatMs / 1000) * .95, 0);
+    }
+    // Accordion "pah" on beats 2 and 4 when it is not singing.
+    if (onBeat && eq(inBar % 2, 1) && lead !== 8 && on(8, .3)) {
+      for (const p of this.mid(leadPitch)) this.emit(at, p, vel(14), (beatMs / 1000) * .3, ACCORDION);
+    }
+    // Drums only at the climax: kick on 1 and 3, snare on 2 and 4. No hi-hat.
+    if (onBeat && this.shift) this.emit(at, eq(inBar % 2, 0) ? 36 : 38, vel(eq(inBar % 2, 0) ? 30 : 22), .15, DRUMS);
+  },
+
+  // Bass plus one pad (two at a peak), each in its own register, never on the melody's note.
+  harmony(at, len, lead, leadPitch, on, vel) {
+    const low = this.chordAt(36)[0];
+    if (on(3, .2)) this.emit(at, low, vel(34), len, 3);                 // cello, 36-47
+    else this.emit(at, low < 40 ? low + 12 : low, vel(26), len, 0);     // piano left hand
+    const pads = [1, 6, 2].filter((s) => s !== lead && on(s, s === 1 ? 0 : s === 6 ? .45 : .6));
+    for (const s of pads.slice(0, this.intensity >= .75 ? 2 : 1)) {
+      const notes = s === 6 ? this.horn() : this.mid(leadPitch, s === 2 ? 72 : 60);
+      for (const p of notes) this.emit(at, p, vel(s === 6 ? 20 : 16), len, s);
+    }
+  },
+  mid(leadPitch, lo = 60) { return this.chordAt(60).map((p) => this.band(p, lo)).filter((p) => Math.abs(p - leadPitch) > 2); },
+  horn() { const h = this.chordAt(48); return [this.band(h[0], 48), this.band(h[2], 48)]; },
+
+  playCues(at, vel, beatMs) {
+    const t = this.chordAt(60), base = this.band(t[0], 55), up = [0, t[1] - t[0], t[2] - t[0], 12];
+    for (const kind of this.cues.splice(0)) {
+      if (kind === "climax") { this.emit(at, 49, vel(40), 2.2, DRUMS); this.emit(at, this.chordAt(36)[0], vel(46), 1.2, TIMPANI); }
+      else if (kind === "ship") for (const d of [0, up[2], 12]) this.emit(at, base + d, vel(24), (beatMs / 1000) * 2, 6);
+      else up.forEach((d, i) => this.emit(at + (i * beatMs) / 2, base + d, vel(26), (beatMs / 1000) * .45, 6));   // lead / pass: rising call
+    }
   },
 };
 

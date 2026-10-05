@@ -130,12 +130,40 @@ if (location.hash === "#tv") $("enter").classList.add("hidden");   // wall displ
 // ---------- audio ----------
 let audio = null;
 
+// Mix: the melody instruments sit in front, sustained pads further back. Gentle bus
+// compression only (hard compression made everything pump together).
+const VOLUME = [100, 78, 72, 92, 92, 74, 82, 82, 88, 70, 0, 88];
+
+// One tab plays at a time: a second tab that starts sound quiets the first.
+const tabs = "BroadcastChannel" in window ? new BroadcastChannel("agent-orchestra-audio") : null;
+const tabId = Math.random().toString(36).slice(2);
+if (tabs) tabs.onmessage = (event) => {
+  if (event.data?.playing && event.data.id !== tabId && audio && audio.ctx.state === "running") {
+    audio.ctx.suspend();
+    $("loading").textContent = "Playing in another tab. Pick a stand to play here.";
+    document.querySelectorAll("[data-team]").forEach((b) => { b.disabled = false; });
+    $("enter").classList.remove("hidden");
+  }
+};
+
 async function startAudio() {
+  if (audio) {                               // coming back from another tab
+    await audio.ctx.resume();
+    tabs?.postMessage({ playing: true, id: tabId });
+    return;
+  }
   const ctx = new AudioContext();
   const master = ctx.createDynamicsCompressor();
-  master.threshold.value = -14; master.ratio.value = 4;
-  const out = ctx.createGain(); out.gain.value = .9;
-  master.connect(out).connect(ctx.destination);
+  master.threshold.value = -20; master.knee.value = 12; master.ratio.value = 2.5;
+  master.attack.value = .01; master.release.value = .25;
+  // Measured offline: the mix peaked at -17 dBFS (too quiet). +9 dB makeup, then a limiter
+  // so a full orchestra can never clip.
+  const out = ctx.createGain(); out.gain.value = 2.4;
+  const limiter = ctx.createDynamicsCompressor();
+  limiter.threshold.value = -3; limiter.knee.value = 0; limiter.ratio.value = 20;
+  limiter.attack.value = .002; limiter.release.value = .1;
+  master.connect(out).connect(limiter).connect(ctx.destination);
+  tabs?.postMessage({ playing: true, id: tabId });
   audio = { ctx, master, voices: [], drums: drumKit(ctx, master) };
   const { Soundfont } = await import("https://cdn.jsdelivr.net/npm/smplr@1.1.0/+esm");
   // Piano first so the hall is audible quickly; the rest load behind it.
@@ -143,7 +171,7 @@ async function startAudio() {
     if (!name) continue;
     const section = VOICE_SECTION[i] || (i < 8 ? SECTIONS[i] : null);
     const pan = PAN[section] ?? 0;
-    const voice = Soundfont(ctx, { instrument: name, kit: "FluidR3_GM", destination: master, pan, volume: 100 });
+    const voice = Soundfont(ctx, { instrument: name, kit: "FluidR3_GM", destination: master, pan, volume: VOLUME[i] });
     audio.voices[i] = null;
     voice.ready.then(() => { audio.voices[i] = voice; }).catch(() => {});
     if (i === 0) { $("loading").textContent = "Tuning the piano"; await voice.ready; }
@@ -152,6 +180,7 @@ async function startAudio() {
 
 function schedule([at, pitch, velocity, duration, voice]) {
   const { ctx } = audio;
+  if (ctx.state !== "running") return;
   const delay = (at - offset - Date.now()) / 1000;
   if (delay < -.05) return;              // too late for this one
   const time = ctx.currentTime + Math.max(0, delay);
