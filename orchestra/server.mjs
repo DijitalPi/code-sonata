@@ -197,6 +197,7 @@ const conductor = {
   clock: 0, steps: 0, short: 0, long: 0, songMs: 0,
   peakSince: null, calmSince: null, climaxSince: 0, coolUntil: 0,
   active: [], working: 0, cues: [], lastSignal: {}, solo: 0, out: [],
+  house: false, lastActive: 0, peak: 0, peakDay: "",
 
   // The next song follows the agents' pace: calm, warm or wild. No repeats of the last two.
   pickSong() {
@@ -247,7 +248,14 @@ const conductor = {
     this.intensity += (target - this.intensity) * Math.min(1, dt / 1500);
     this.bpm += (66 + 50 * this.intensity - this.bpm) * Math.min(1, dt / 2500);   // 66..116
     this.climax(now);
-    if (!working) { this.clock = 0; return { working, total }; }
+    // Nobody working but someone listening: the house pianist plays (piano only, calm, soft)
+    // until the agents return. Never shown as a participant; the page says it is the house.
+    if (working) this.lastActive = now;
+    const day = new Date(now).toISOString().slice(0, 10);
+    if (day !== this.peakDay) { this.peakDay = day; this.peak = 0; }
+    this.peak = Math.max(this.peak, total);
+    this.house = !working && listeners.size > 0;
+    if (!working && !this.house) { this.clock = 0; return { working, total }; }
     if (!this.clock || this.clock < now - 500) this.clock = now;        // start, or recover from a stall
     while (this.clock <= now + LOOKAHEAD_MS) this.note(this.clock);
     return { working, total };
@@ -279,7 +287,7 @@ const conductor = {
     this.chord = step.chord;
     this.nextChange = step.nextChange;
     const on = (s, from) => active[s] > 0 && I >= from;
-    const crowd = .85 + .15 * Math.min(1, Math.log2(1 + this.working) / 6);   // a bigger orchestra, a bit fuller
+    const crowd = this.house ? .7 : .85 + .15 * Math.min(1, Math.log2(1 + this.working) / 6);   // house: softer; a bigger orchestra, a bit fuller
     const vel = (base) => base * 1.7 * (1 + .25 * I) * crowd;
     // Melody: one section per phrase (8 notes), rotating among the sections on stage.
     const singers = [0, 8, 4, 1, 2].filter((s) => s === 0 || on(s, s === 2 ? .5 : s === 8 ? 0 : .25));
@@ -424,6 +432,22 @@ function seatEntry(section, seat) {
 // league, teams. Seats travel as changes only; the full list goes once, on connect. A frame is
 // serialised once and the same bytes go to every listener.
 const FRAME_MS = 250, META_MS = 1000, MAX_PULSES = 60;
+
+// Counters, league and teams: once a second in the stream, and at once for a new listener.
+function meta() {
+  countryList = countries();
+  let claudes = 0;
+  for (const p of players.values()) claudes += p.sessions;
+  return {
+    players: stats.total, working: stats.working, claudes, listeners: listeners.size,
+    bpm: Math.round(conductor.bpm), intensity: Math.round(conductor.intensity * 100) / 100,
+    climax: Boolean(conductor.shift), song: TITLES[conductor.song],
+    house: !stats.working && listeners.size > 0, lastActive: conductor.lastActive, peak: conductor.peak,
+    countries: countryList.slice(0, 12), countryCount: countryList.length, teams: teamStats(),
+    league: { leader: league.leader, total: league.total.slice(0, 6), passion: league.passion.slice(0, 6) },
+    ranks: league.total.map((r) => r.cc),
+  };
+}
 let lastTick = Date.now(), frameNotes = [], stats = { working: 0, total: 0 };
 let countryList = [], metaAt = 0;
 setInterval(() => {
@@ -453,17 +477,7 @@ setInterval(() => {
   if (cheers.size) { frame.cheers = [...cheers]; cheers.clear(); }
   if (now - metaAt >= META_MS) {
     metaAt = now;
-    countryList = countries();
-    let claudes = 0;
-    for (const p of players.values()) claudes += p.sessions;
-    Object.assign(frame, {
-      players: stats.total, working: stats.working, claudes, listeners: listeners.size,
-      bpm: Math.round(conductor.bpm), intensity: Math.round(conductor.intensity * 100) / 100,
-      climax: Boolean(conductor.shift), song: TITLES[conductor.song],
-      countries: countryList.slice(0, 12), countryCount: countryList.length, teams: teamStats(),
-      league: { leader: league.leader, total: league.total.slice(0, 6), passion: league.passion.slice(0, 6) },
-      ranks: league.total.map((r) => r.cc),
-    });
+    Object.assign(frame, meta());
   }
   const line = `data: ${JSON.stringify(frame)}\n\n`;
   for (const res of listeners.keys()) res.write(line);
@@ -508,7 +522,7 @@ const server = http.createServer(async (req, res) => {
     const cc = countryOf(req, ip);
     const team = TEAMS.includes(url.searchParams.get("team")) ? url.searchParams.get("team") : "listen";
     sit(res, cc, team);
-    send(res, { t: now, seats: seatsSnapshot(), you: { cc, team }, sections: SECTIONS, notes: [], pulses: [] });
+    send(res, { t: now, seats: seatsSnapshot(), you: { cc, team }, sections: SECTIONS, notes: [], pulses: [], ...meta() });
     req.on("close", () => leave(res));
     return;
   }

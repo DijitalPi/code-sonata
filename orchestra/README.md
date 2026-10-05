@@ -21,6 +21,10 @@ sonrası doğrula: ölçüler tam, uzun notalar akorda. Seçim ruh haline göre 
 coşkulu; şarkı en az 2 dk çalar, sakin anda ya da coşkuya geçerken değişir, son ikisi tekrar etmez.
 Test: `PORT=4481 START_SONG=canon MIN_SONG_MS=6000 node orchestra/server.mjs` + `crowd.mjs` + `measure.mjs`.
 
+Boş salon: çalışan ajan yokken ve en az bir dinleyici varken salon piyanisti çalar (yalnız piyano,
+sakin, yumuşak). Katılımcı gibi gösterilmez; sayfa açıkça "house pianist" der, son ajanın ne zaman
+çaldığını ve günün zirvesini (makine sayısı) yazar. Yeni dinleyici sayaçları bağlandığı an alır.
+
 Yerel: `PORT=4480 node orchestra/server.mjs` → http://localhost:4480 (port listede kayıtlı).
 Gizlilik/kötüye kullanım: IP hiç tutulmaz (hız sınırı için açılışta değişen tuzlu özet), ülke
 çıkarılıp atılır. IP başına 8 istek/sn, en fazla 20 makine, saatte 10 yeni makine; makine başına

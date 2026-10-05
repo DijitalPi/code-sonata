@@ -26,6 +26,12 @@ function showCountries(frame) {
 function leagueList(id, rows, value) {
   const list = $(id);
   list.replaceChildren();
+  if (!rows.length) {
+    const li = document.createElement("li");
+    li.textContent = "No notes yet";
+    list.append(li);
+    return;
+  }
   rows.forEach((r, i) => {
     const li = document.createElement("li");
     const name = document.createElement("span"), score = document.createElement("b");
@@ -60,15 +66,24 @@ function announce({ cc }) {
   announceTimer = setTimeout(() => box.classList.remove("show"), 4000);
 }
 
+function ago(t) {
+  const min = Math.round((Date.now() + offset - t) / 60000);
+  return min < 1 ? "just now" : min < 60 ? `${min} min ago` : `${Math.round(min / 60)} h ago`;
+}
+
 let lastNow = "";
 function showNow(frame) {
-  const key = `${frame.working}|${frame.players}|${frame.song}|${frame.bpm}|${frame.climax}|${Math.round(frame.intensity * 20)}`;
+  const key = `${frame.working}|${frame.players}|${frame.song}|${frame.bpm}|${frame.climax}|${Math.round(frame.intensity * 20)}|${frame.house}|${frame.lastActive && ago(frame.lastActive)}|${frame.peak}`;
   if (key === lastNow) return;
   lastNow = key;
   const now = $("now");
   now.replaceChildren();
   if (!frame.working) {
-    now.textContent = frame.players ? "The orchestra is resting. Music starts when an agent works." : "Waiting for the first agent";
+    // Empty hall: the house pianist plays; say so plainly, with when an agent last played.
+    const parts = [frame.house ? `The hall is quiet. The house pianist plays ${frame.song} until the agents return.` : "Waiting for the first agent."];
+    if (frame.lastActive) parts.push(`Last agent played ${ago(frame.lastActive)}.`);
+    if (frame.peak) parts.push(`Today's peak: ${frame.peak.toLocaleString()} machines.`);
+    now.textContent = parts.join(" ");
     return;
   }
   const song = document.createElement("strong");
@@ -436,6 +451,13 @@ function frame(now) {
     const a = rad(name === "piano" ? 0 : (reg.arc[0] + reg.arc[1]) / 2), r = reg.band[0] * R - 7;
     if (name === "piano") { g.fillText("SOLOISTS", cx, cy - r); continue; }
     g.fillText(reg.label.toUpperCase(), cx + Math.sin(a) * r, cy - Math.cos(a) * r);
+  }
+  if (info.house) {                       // the house pianist, at the piano, glowing on each note
+    const reg = REGIONS.piano, a = rad((reg.arc[0] + reg.arc[1]) / 2), r = ((reg.band[0] + reg.band[1]) / 2) * R;
+    const x = cx + Math.sin(a) * r, y = cy - Math.cos(a) * r;
+    g.globalAlpha = .25 + soloGlow * .5; g.fillStyle = "#f4ead8";
+    g.beginPath(); g.arc(x, y, 7 + soloGlow * 4, 0, Math.PI * 2); g.fill();
+    g.globalAlpha = 1;
   }
   // Conductor on the podium, baton keeping time.
   const beat = (Date.now() + offset) / (60000 / (info.bpm || 64));
