@@ -105,7 +105,12 @@ const conductor = {
     this.out.push([Math.round(at), Math.max(0, Math.min(127, p)), Math.max(1, Math.min(120, Math.round(v))), Math.round(d * 1000) / 1000, i]);
   },
 
+  lastSignal: {},
+
   signal(kind, section, now) {
+    // In a crowd these would never stop: one fanfare per 10 s, no error chords on the site.
+    if (kind === "fail" || now - (this.lastSignal[kind] || 0) < 10_000) return;
+    this.lastSignal[kind] = now;
     const at = now + LEAD_MS, t = this.chordAt(60);
     if (kind === "ship") {
       for (const p of [...t, t[0] + 12]) this.emit(at, p, 70, 1.6, 6);
@@ -160,31 +165,47 @@ const conductor = {
     }
   },
 
+  // Arranged like an orchestra, not everyone at once: one voice carries the melody per
+  // phrase, sections join as excitement grows, each in its own register.
   beat(now, active) {
     const score = SONGS[this.song], key = KEYS[this.song];
     const [pitch, beats] = score[this.position];
-    const seconds = 60 / this.bpm * beats;
+    const beat = 60 / this.bpm, seconds = beat * beats;
     this.nextNote = now + seconds * 1000;
-    const at = now + LEAD_MS, d = Math.min(3, seconds * .9);
+    const at = now + LEAD_MS, I = this.intensity;
     const previous = this.chord;
     this.chord = harmonize(pitch, key, this.chord);
-    const changed = this.chord !== previous || this.position % 4 === 0;
-    const loud = 1 + .35 * this.intensity;
+    const changed = this.chord !== previous || this.position % 8 === 0;
+    const loud = (1 + .3 * I) * 1.7;
     const most = Math.max(1, ...active);
-    const level = (s) => active[s] ? (.55 + .45 * Math.log2(1 + active[s]) / Math.log2(1 + most)) * loud : 0;
-    const v = (base, s) => base * level(s) * 1.7;
-    // Piano always carries the theme (quietly when its section is empty).
-    this.emit(at, pitch, 54 * Math.max(level(0), .6 * loud) * 1.7, d, 0);
-    const bass = this.chordAt(36)[0] < 40 ? this.chordAt(36)[0] + 12 : this.chordAt(36)[0];
-    if (changed) this.emit(at, bass, 30 * 1.7 * loud, Math.min(3, seconds * 1.8), 0);
-    if (active[1] && changed) for (const p of this.chordAt(60)) this.emit(at, p, v(27, 1), Math.min(3, seconds * 3), 1);
-    if (active[2]) this.emit(at, pitch, v(30, 2), Math.min(3, seconds * 1.3), 2);
-    if (active[3]) this.emit(at, changed ? this.chordAt(36)[0] : this.chordAt(36)[2], v(changed ? 40 : 27, 3), changed ? Math.min(3, seconds * 2) : d, 3);
-    if (active[4]) this.emit(at, pitch + 12, v(24, 4), d, 4);
-    if (active[5]) this.emit(at, this.chordAt(84)[this.position % 3], v(24, 5), .4, 5);
-    if (active[6] && changed) { const m = this.chordAt(48); this.emit(at, m[0], v(24, 6), Math.min(3, seconds * 3), 6); this.emit(at, m[2], v(24, 6), Math.min(3, seconds * 3), 6); }
-    if (active[7]) this.emit(at, this.chordAt(60)[(this.position + 1) % 3], v(22, 7), Math.min(2, seconds * 1.5), 7);
-    if (this.intensity > .6) this.emit(at, pitch + 12, 27 * loud * 1.7, d, 0);
+    const level = (s) => (.6 + .4 * Math.log2(1 + active[s]) / Math.log2(1 + most)) * loud;
+    const on = (s, from) => active[s] > 0 && I >= from;
+    const pad = Math.min(2.4, beat * 2.2);       // pads end before the next chord can clash
+    // Melody: one voice per phrase, rotating among the sections that are playing.
+    const singers = [0, 4, 1, 2].filter((s) => s === 0 || on(s, s === 2 ? .55 : .3));
+    const lead = singers[Math.floor(this.position / 8 + this.index) % singers.length];
+    const leadPitch = lead === 4 ? pitch + 12 : pitch;                    // flute an octave up
+    this.emit(at, leadPitch, (lead === 0 ? 56 : 48) * (lead === 0 ? Math.max(.75, level(0) / loud) * loud : level(lead)), Math.min(2.6, seconds * .92), lead === 1 ? 1 : lead);
+    if (this.shift) this.emit(at, leadPitch + 12, 22 * loud, Math.min(2.6, seconds * .9), 0);   // climax only
+    // Accompaniment leaves the melody's note (and its neighbours) to the melody.
+    const clear = (p) => (Math.abs(p - leadPitch) <= 2 ? null : p);
+    // Bass, low register: cello once it has joined, otherwise the piano's left hand.
+    const low = this.chordAt(36);
+    if (changed) {
+      if (on(3, .25)) this.emit(at, low[0], 40 * level(3), pad, 3);
+      else this.emit(at, low[0] < 40 ? low[0] + 12 : low[0], 28 * loud, pad, 0);
+    } else if (on(3, .45) && this.position % 2 === 0) this.emit(at, low[2], 26 * level(3), beat * .9, 3);
+    // Middle: strings pad (unless they lead), horns and choir only when it builds.
+    // Registers like a real score: bass 36-47, horns 48-59, strings 60-71, choir 72-83, harp/vibes 84+.
+    const band = (p, lo) => { while (p >= lo + 12) p -= 12; while (p < lo) p += 12; return p; };
+    const mid = this.chordAt(60).map((p) => band(p, 60));
+    if (changed && lead !== 1 && on(1, 0)) for (const p of mid.map(clear).filter(Boolean)) this.emit(at, p, 20 * level(1), pad, 1);
+    if (changed && on(6, .6)) { const h = this.chordAt(48); this.emit(at, band(h[0], 48), 24 * level(6), pad, 6); this.emit(at, band(h[2], 48), 22 * level(6), pad, 6); }
+    if (changed && lead !== 2 && on(2, .75)) for (const p of mid.map((x) => clear(band(x, 72))).filter(Boolean)) this.emit(at, p, 16 * level(2), pad, 2);
+    // Top: harp and vibraphone sparkle, sparse and high.
+    const top = this.chordAt(84);
+    if (on(7, .2) && this.position % 2 === 1) this.emit(at, band(top[this.position % 3], 84), 20 * level(7), beat * 1.2, 7);
+    if (changed && on(5, .5) && this.position % 2 === 0) this.emit(at, band(top[1], 84), 18 * level(5), .5, 5);
     this.songMs += seconds * 1000;
     this.position++;
     if (this.position >= score.length) {
@@ -205,11 +226,9 @@ const conductor = {
     const vel = (b, s) => (b + s * level) * 1.7 * (1 + .35 * level);
     // No ticking clock: a soft offbeat hat only when really excited; walking bass on the beat.
     if (level > .7 && e % 2) this.emit(at, level > .9 ? 46 : 42, vel(4, 22), .08, DRUMS);
-    if (level > .45 && e % 2 === 0) { const low = this.chordAt(36); this.emit(at, [low[0], low[2], low[0] + 12, low[2]][(e >> 1) % 4], vel(22, 40), 30 / this.bpm * 1.8, 0); }
     if (level > .6 && (e === 0 || e === 4)) this.emit(at, 36, vel(36, 50), .2, DRUMS);
     if (level > .72 && (e === 2 || e === 6)) this.emit(at, 38, vel(30, 45), .15, DRUMS);
-    if (level > .6 && e === 0) for (const p of this.chordAt(48)) this.emit(at, p, vel(15, 35), 30 / this.bpm * 8, TREMOLO);
-    if (level > .7 && e === 0) this.emit(at, this.chordAt(36)[0], vel(25, 50), .6, TIMPANI);
+    if (level > .8 && e === 0) this.emit(at, this.chordAt(36)[0], vel(20, 40), .6, TIMPANI);
   },
 };
 
