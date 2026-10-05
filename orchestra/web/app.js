@@ -375,8 +375,8 @@ function frame(now) {
       // Each musician is a person: their country's flag, ringed in the section colour.
       const size = Math.max(2.2, sp * .42);
       if (lit > .02) {
-        g.globalAlpha = lit * .6; g.strokeStyle = color; g.lineWidth = 1.2;
-        g.beginPath(); g.arc(x, y, size * (1.25 + (1 - lit) * 1.4), 0, Math.PI * 2); g.stroke();
+        g.globalAlpha = lit * .45; g.strokeStyle = color; g.lineWidth = 1;
+        g.beginPath(); g.arc(x, y, size * (1.15 + (1 - lit) * .5), 0, Math.PI * 2); g.stroke();
       }
       const cc = entry[1];
       const leading = cc && cc === leader;  // spotlight: thin gold ring, a soft flash on melody notes

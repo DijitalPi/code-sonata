@@ -402,7 +402,9 @@ const server = http.createServer(async (req, res) => {
   const path = normalize(url.pathname === "/" ? "/index.html" : url.pathname).replace(/^(\.\.[/\\])+/, "");
   try {
     const file = await readFile(join(WEB, path));
-    res.writeHead(200, { "content-type": TYPES[extname(path)] || "application/octet-stream", "cache-control": "public, max-age=300" });
+    // Page and code revalidate every load, so a new version shows up right away.
+    const fresh = [".html", ".js", ".css"].includes(extname(path));
+    res.writeHead(200, { "content-type": TYPES[extname(path)] || "application/octet-stream", "cache-control": fresh ? "no-cache" : "public, max-age=3600" });
     res.end(file);
   } catch {
     res.writeHead(404); res.end("not found");
