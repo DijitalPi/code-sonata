@@ -4,6 +4,7 @@
 //
 //   PORT=4480 node orchestra/server.mjs
 import http from "node:http";
+import { createHash, randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,24 +18,44 @@ const TIMPANI = 8, TREMOLO = 9, DRUMS = 10, ACCORDION = 11;   // engine voices; 
 const LEAD_MS = 900;            // notes are scheduled this far ahead so every listener can play them on time
 const PLAYER_TTL = 30_000;      // a machine that stops reporting leaves its seat
 const MAX_PLAYERS = 100_000;
+// Fair play: one office may run many machines, one script may not run thousands.
+const MAX_MACHINES_PER_IP = 20, NEW_MACHINES_PER_IP_HOUR = 10;
+const STEP_RATE = 12, STEP_BURST = 40;   // steps per second a machine can score, and its burst
 const MIN_SONG_MS = Number(process.env.MIN_SONG_MS || 120_000);   // shorter only for tests
 const TEAMS = ["claude", "codex", "other", "listen"];   // stadium stands
 const TOOLS = ["claude", "codex", "other"];
 try { console.log(`geo: ${loadGeo(join(fileURLToPath(new URL(".", import.meta.url)), "geo/dbip-country-ipv4.csv.gz"))} ranges`); }
 catch (error) { console.log(`geo: disabled (${error.message})`); }
 
-// Country from the request; the IP itself is never stored. Cloudflare's header wins if present.
-function countryOf(req) {
+// Behind our own proxy (TRUST_PROXY=1) the real client is the last address the proxy appended
+// to X-Forwarded-For; anything before it was written by the client and can be forged. Without a
+// proxy, only the socket address counts.
+const TRUST_PROXY = process.env.TRUST_PROXY === "1";
+function clientIp(req) {
+  if (TRUST_PROXY) {
+    const chain = String(req.headers["x-forwarded-for"] || "").split(",").map((x) => x.trim()).filter(Boolean);
+    if (chain.length) return chain[chain.length - 1];
+  }
+  return String(req.socket.remoteAddress || "");
+}
+
+// Rate limits need to recognise an address, not know it: a salted hash that changes every
+// restart. The IP itself is never kept, not even in memory.
+const SALT = randomBytes(16);
+const ipKey = (ip) => createHash("sha256").update(SALT).update(ip).digest("base64url").slice(0, 16);
+
+// Country from the request, then the IP is dropped. Cloudflare's header only behind our proxy.
+function countryOf(req, ip) {
   const header = String(req.headers["cf-ipcountry"] || "").toUpperCase();
-  if (/^[A-Z]{2}$/.test(header) && header !== "XX" && header !== "T1") return header;
-  const ip = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
+  if (TRUST_PROXY && /^[A-Z]{2}$/.test(header) && header !== "XX" && header !== "T1") return header;
   return country(ip);
 }
 
 // ---------- players ----------
 const players = new Map();      // id -> {section, seat, last, working, sessions, energy, pulse}
 const seatsTaken = SECTIONS.map(() => []);   // section -> array of ids (holes = null)
-let seatsVersion = 0;
+const changedSeats = new Set();   // "section:seat" to send as a delta (full list only on connect)
+const markSeat = (section, seat) => changedSeats.add(`${section}:${seat}`);
 
 // Real orchestra proportions: many strings, a few harps, one piano soloist row.
 const SHARE = { piano: .03, strings: .26, choir: .16, cello: .16, flute: .1, vibraphone: .07, horn: .11, harp: .06, accordion: .05 };
@@ -62,25 +83,44 @@ function seatFor(id, cc) {
   const row = seatsTaken[best];
   let seat = row.indexOf(null);
   if (seat < 0) { seat = row.length; row.push(id); } else row[seat] = id;
-  seatsVersion++;
+  markSeat(best, seat);
   return { section: best, seat };
 }
 
-function report(id, body, now, cc) {
+const ipMachines = new Map();     // ip key -> machines seated from it
+const ipNew = new Map();          // ip key -> [window start, new machines in the last hour]
+
+function admit(key, now) {
+  const w = ipNew.get(key);
+  if (!w || now - w[0] > 3_600_000) ipNew.set(key, [now, 0]);
+  if ((ipMachines.get(key) || 0) >= MAX_MACHINES_PER_IP || ipNew.get(key)[1] >= NEW_MACHINES_PER_IP_HOUR) return false;
+  ipNew.get(key)[1]++;
+  ipMachines.set(key, (ipMachines.get(key) || 0) + 1);
+  if (ipNew.size > 200_000) ipNew.clear();
+  return true;
+}
+
+function report(id, body, now, cc, key) {
   let p = players.get(id);
   if (!p) {
-    if (players.size >= MAX_PLAYERS) return null;
-    p = { ...seatFor(id, cc), energy: 0, pulse: 0, cc: cc || "" };
+    if (players.size >= MAX_PLAYERS || !admit(key, now)) return null;
+    p = { ...seatFor(id, cc), energy: 0, pulse: 0, cc: cc || "", key, allow: STEP_BURST, allowAt: now };
     players.set(id, p);
   }
-  const steps = Math.max(0, Math.min(200, Number(body.steps) || 0));
+  // A machine scores at most STEP_RATE steps a second (burst STEP_BURST): a script cannot
+  // flood the league, while a busy developer with many sessions never hits it.
+  p.allow = Math.min(STEP_BURST, p.allow + ((now - p.allowAt) / 1000) * STEP_RATE);
+  p.allowAt = now;
+  const steps = Math.min(Math.floor(p.allow), Math.max(0, Math.min(200, Number(body.steps) || 0)));
+  p.allow -= steps;
   p.last = now;
   p.working = Boolean(body.working);
-  p.sessions = Math.max(1, Math.min(64, Number(body.sessions) || 1));
+  const sessions = Math.max(1, Math.min(64, Number(body.sessions) || 1));
+  if (sessions !== p.sessions) { p.sessions = sessions; markSeat(p.section, p.seat); }
   const tools = body.tools && typeof body.tools === "object" ? body.tools : {};
   p.tools = Object.fromEntries(TOOLS.map((t) => [t, Math.max(0, Math.min(64, Number(tools[t]) || 0))]));
   const tool = TOOLS.reduce((a, b) => (p.tools[b] > p.tools[a] ? b : a), "claude");
-  if (p.tool !== tool) { p.tool = tool; seatsVersion++; }
+  if (p.tool !== tool) { p.tool = tool; markSeat(p.section, p.seat); }
   p.energy = Math.min(6, p.energy + steps);
   if (steps) { p.pulse = now; conductor.steps += steps; score(p.cc, steps); }
   for (const signal of (Array.isArray(body.signals) ? body.signals.slice(0, 4) : [])) {
@@ -131,13 +171,15 @@ function expire(now) {
     if (now - p.last > PLAYER_TTL) {
       seatsTaken[p.section][p.seat] = null;
       seated[p.section]--;
+      markSeat(p.section, p.seat);
+      const fromIp = (ipMachines.get(p.key) || 1) - 1;
+      if (fromIp > 0) ipMachines.set(p.key, fromIp); else ipMachines.delete(p.key);
       if (p.cc) {
         const left = (countryCount.get(p.cc) || 1) - 1;
         if (left > 0) countryCount.set(p.cc, left);
         else { countryCount.delete(p.cc); countrySection.delete(p.cc); }
       }
       players.delete(id);
-      seatsVersion++;
     }
   }
 }
@@ -372,8 +414,18 @@ function countries() {
 
 function send(res, data) { res.write(`data: ${JSON.stringify(data)}\n\n`); }
 
-let lastSeats = -1, lastTick = Date.now(), frameNotes = [], stats = { working: 0, total: 0 };
-let countryList = [], countryAt = 0;
+function seatEntry(section, seat) {
+  const id = seatsTaken[section][seat];
+  const p = id && players.get(id);
+  return p ? [p.sessions || 1, p.cc || "", p.tool || "claude"] : 0;
+}
+
+// Every frame (4 a second): notes, who just played, one-off events. Once a second: counters,
+// league, teams. Seats travel as changes only; the full list goes once, on connect. A frame is
+// serialised once and the same bytes go to every listener.
+const FRAME_MS = 250, META_MS = 1000, MAX_PULSES = 60;
+let lastTick = Date.now(), frameNotes = [], stats = { working: 0, total: 0 };
+let countryList = [], metaAt = 0;
 setInterval(() => {
   const now = Date.now();
   stats = conductor.tick(now, now - lastTick);
@@ -384,39 +436,48 @@ setInterval(() => {
 
 setInterval(() => {
   const now = Date.now();
-  const pulses = [];
-  for (const p of players.values()) if (now - p.pulse < 400) pulses.push([p.section, p.seat]);
-  let claudes = 0;
-  for (const p of players.values()) claudes += p.sessions;
-  const frame = {
-    t: now, notes: frameNotes.splice(0), pulses,
-    players: stats.total, working: stats.working, claudes, listeners: listeners.size,
-    bpm: Math.round(conductor.bpm), intensity: Math.round(conductor.intensity * 100) / 100,
-    climax: Boolean(conductor.shift), song: TITLES[conductor.song],
-  };
-  if (seatsVersion !== lastSeats) { frame.seats = seatsSnapshot(); lastSeats = seatsVersion; }
-  if (now - countryAt > 1000) { countryList = countries(); countryAt = now; frame.ranks = league.total.map((r) => r.cc); }
-  frame.countries = countryList.slice(0, 12);
-  frame.teams = teamStats();
-  frame.league = { leader: league.leader, total: league.total.slice(0, 6), passion: league.passion.slice(0, 6) };
+  let pulses = [];
+  for (const p of players.values()) if (now - p.pulse < 2 * FRAME_MS) pulses.push([p.section, p.seat]);
+  if (pulses.length > MAX_PULSES) {           // a crowd: a fair sample still looks alive
+    for (let i = pulses.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pulses[i], pulses[j]] = [pulses[j], pulses[i]]; }
+    pulses = pulses.slice(0, MAX_PULSES);
+  }
+  const frame = { t: now, notes: frameNotes.splice(0), pulses };
+  if (changedSeats.size) {
+    frame.seatDelta = [...changedSeats].map((k) => { const [s, i] = k.split(":").map(Number); return [s, i, seatEntry(s, i)]; });
+    changedSeats.clear();
+  }
   if (conductor.solo) { frame.solo = conductor.solo; conductor.solo = 0; }
   if (league.announce) { frame.announce = league.announce; league.announce = null; }
-  if (conductor.shift && Math.random() < .08) TEAMS.forEach((t) => cheers.add(t));   // climax: the whole stadium waves now and then
-  if (cheers.size) frame.cheers = [...cheers];
-  cheers.clear();
-  frame.countryCount = countryList.length;
-  for (const res of listeners.keys()) send(res, frame);
-}, 200);
+  if (conductor.shift && Math.random() < .02) TEAMS.forEach((t) => cheers.add(t));   // climax: the whole hall waves now and then
+  if (cheers.size) { frame.cheers = [...cheers]; cheers.clear(); }
+  if (now - metaAt >= META_MS) {
+    metaAt = now;
+    countryList = countries();
+    let claudes = 0;
+    for (const p of players.values()) claudes += p.sessions;
+    Object.assign(frame, {
+      players: stats.total, working: stats.working, claudes, listeners: listeners.size,
+      bpm: Math.round(conductor.bpm), intensity: Math.round(conductor.intensity * 100) / 100,
+      climax: Boolean(conductor.shift), song: TITLES[conductor.song],
+      countries: countryList.slice(0, 12), countryCount: countryList.length, teams: teamStats(),
+      league: { leader: league.leader, total: league.total.slice(0, 6), passion: league.passion.slice(0, 6) },
+      ranks: league.total.map((r) => r.cc),
+    });
+  }
+  const line = `data: ${JSON.stringify(frame)}\n\n`;
+  for (const res of listeners.keys()) res.write(line);
+}, FRAME_MS);
 
 // ---------- http ----------
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon" };
-const hits = new Map();         // ip -> [windowStart, count]
+const hits = new Map();         // ip key -> [windowStart, count]
 
-function limited(ip, now) {
-  const h = hits.get(ip) || [now, 0];
+function limited(key, now) {
+  const h = hits.get(key) || [now, 0];
   if (now - h[0] > 1000) { h[0] = now; h[1] = 0; }
   h[1]++;
-  hits.set(ip, h);
+  hits.set(key, h);
   if (hits.size > 50_000) hits.clear();
   return h[1] > 8;
 }
@@ -429,22 +490,22 @@ function json(res, code, data) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://x");
   const now = Date.now();
-  const ip = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
+  const ip = clientIp(req), key = ipKey(ip);
   if (req.method === "POST" && url.pathname === "/api/play") {
-    if (limited(ip, now)) return json(res, 429, { error: "slow down" });
+    if (limited(key, now)) return json(res, 429, { error: "slow down" });
     let raw = "";
     for await (const chunk of req) { raw += chunk; if (raw.length > 2048) return json(res, 413, { error: "too big" }); }
     let body;
     try { body = JSON.parse(raw); } catch { return json(res, 400, { error: "json" }); }
     if (typeof body.id !== "string" || !/^[a-f0-9]{16,64}$/.test(body.id)) return json(res, 400, { error: "id" });
-    const p = report(body.id, body, now, countryOf(req));
-    if (!p) return json(res, 503, { error: "full" });
+    const p = report(body.id, body, now, players.has(body.id) ? null : countryOf(req, ip), key);
+    if (!p) return json(res, 429, { error: "too many machines from here" });
     return json(res, 200, { section: SECTIONS[p.section], seat: p.seat, players: players.size });
   }
   if (req.method === "GET" && url.pathname === "/api/stream") {
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive", "x-accel-buffering": "no" });
     res.write("retry: 2000\n\n");
-    const cc = countryOf(req);
+    const cc = countryOf(req, ip);
     const team = TEAMS.includes(url.searchParams.get("team")) ? url.searchParams.get("team") : "listen";
     sit(res, cc, team);
     send(res, { t: now, seats: seatsSnapshot(), you: { cc, team }, sections: SECTIONS, notes: [], pulses: [] });

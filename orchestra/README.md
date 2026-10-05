@@ -22,5 +22,10 @@ coşkulu; şarkı en az 2 dk çalar, sakin anda ya da coşkuya geçerken değiş
 Test: `PORT=4481 START_SONG=canon MIN_SONG_MS=6000 node orchestra/server.mjs` + `crowd.mjs` + `measure.mjs`.
 
 Yerel: `PORT=4480 node orchestra/server.mjs` → http://localhost:4480 (port listede kayıtlı).
-Gizlilik/kötüye kullanım: IP başına 8 istek/sn, 2 KB gövde, rastgele hex kimlik,
-30 sn sessiz makine koltuğunu bırakır, en fazla 100.000 makine.
+Gizlilik/kötüye kullanım: IP hiç tutulmaz (hız sınırı için açılışta değişen tuzlu özet), ülke
+çıkarılıp atılır. IP başına 8 istek/sn, en fazla 20 makine, saatte 10 yeni makine; makine başına
+saniyede 12 adım (40 patlama), fazlası lige yansımaz. 2 KB gövde, 30 sn sessiz makine koltuğunu bırakır.
+Canlıda Traefik arkasında `TRUST_PROXY=1` ŞART (yalnız vekilin eklediği son X-Forwarded-For sayılır;
+yoksa sadece soket adresi). Yerel kalabalık testi de `TRUST_PROXY=1` ister.
+Yayın: 4 kare/sn, sayaç ve lig saniyede bir, koltuklar yalnız değişiklik olarak, kare bir kez
+serileştirilir (120 makinede dinleyici başına 7,1 -> 2,7 KB/sn).

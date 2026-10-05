@@ -106,6 +106,10 @@ function onFrame(event) {
   if (offsets.length > 40) offsets.shift();
   offset = Math.max(...offsets);         // least delayed sample
   if (frame.seats) { seats = frame.seats; version++; }
+  if (frame.seatDelta) {                  // only the seats that changed since the last frame
+    for (const [s, i, entry] of frame.seatDelta) (seats[s] ||= [])[i] = entry;
+    version++;
+  }
   if (frame.you) you = frame.you;
   if (frame.countries) showCountries(frame);
   if (frame.teams) teams = frame.teams;
