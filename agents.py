@@ -516,7 +516,65 @@ def save_position(song, position, path=STATE):
         pass
 
 
-def run(silent=False, duration=None, song="karisik", roots=ROOTS):
+class GlobalReporter:
+    """Opt-in: send step counts (never content) to an Agent Orchestra server once a second."""
+
+    STEPS = {"edit", "bash", "read", "tool", "think", "text", "done"}
+
+    def __init__(self, url, music):
+        import secrets
+        import urllib.request
+        self.request = urllib.request
+        self.url = url.rstrip("/") + "/api/play"
+        self.music = music
+        id_file = CACHE / "global-id"
+        try:
+            self.id = id_file.read_text().strip()
+        except OSError:
+            self.id = secrets.token_hex(16)
+            CACHE.mkdir(parents=True, exist_ok=True)
+            id_file.write_text(self.id)
+        self.lock = threading.Lock()
+        self.steps, self.signals, self.seat = 0, [], None
+        self.stop = threading.Event()
+        threading.Thread(target=self.loop, daemon=True).start()
+
+    def add(self, events):
+        with self.lock:
+            for _, kind in events:
+                if kind in self.STEPS:
+                    self.steps += 1
+                elif kind in ("ship", "pass", "fail", "testfail") and len(self.signals) < 4:
+                    self.signals.append("fail" if kind == "testfail" else kind)
+
+    def loop(self):
+        quiet = 0
+        while not self.stop.wait(1):
+            now = time.monotonic()
+            with self.lock:
+                steps, signals = self.steps, self.signals
+                self.steps, self.signals = 0, []
+            working = self.music.is_working(now)
+            quiet = 0 if steps or working else quiet + 1
+            if quiet and quiet % 10 and self.seat is not None:  # idle: heartbeat every 10 s keeps the seat
+                continue
+            body = json.dumps({"id": self.id, "steps": steps, "signals": signals, "working": working,
+                               "sessions": max(1, len(self.music.sessions))}).encode()
+            try:
+                request = self.request.Request(self.url, data=body, headers={"content-type": "application/json"})
+                with self.request.urlopen(request, timeout=3) as response:
+                    seat = json.loads(response.read())
+                if seat.get("section") != (self.seat or {}).get("section"):
+                    print(f"Dünya orkestrası: {seat.get('section')} bölümü, {seat.get('seat', 0) + 1}. koltuk · "
+                          f"{seat.get('players')} makine", flush=True)
+                self.seat = seat
+            except (OSError, ValueError) as exc:
+                if self.seat is not None:
+                    print(f"Dünya orkestrası bağlantısı koptu: {exc}", flush=True)
+                self.seat = None
+
+
+def run(silent=False, duration=None, song="karisik", roots=ROOTS, global_url=None):
     print("CODE SONATA · Bütün Claude / Codex oturumları dinleniyor", flush=True)
     watcher = AgentWatcher(roots)
     print(f"{len(watcher.offsets)} aktif oturum kaydı bulundu. Geçmiş sessiz, yeni adımlar çalacak.\n"
@@ -530,6 +588,7 @@ def run(silent=False, duration=None, song="karisik", roots=ROOTS):
     real = tuple(map(Path, roots)) == tuple(ROOTS)  # demo/test runs never touch the real position or menu bar
     music = AgentMusic(song, position=load_position(song) if real else (0, 0))
     last_save = time.monotonic()
+    reporter = GlobalReporter(global_url, music) if global_url else None
     inbox = queue.Queue(maxsize=64)
     stop = threading.Event()
 
@@ -577,6 +636,8 @@ def run(silent=False, duration=None, song="karisik", roots=ROOTS):
                     break
             if batch:
                 music.accept(batch, now)
+                if reporter:
+                    reporter.add(batch)
                 for _, kind in batch:
                     counts[kind] = counts.get(kind, 0) + 1
             if counts and now - last_report >= 3:
@@ -640,11 +701,13 @@ def main():
     parser.add_argument("--duration", type=float, help="Belirtilen saniye sonra dur (deneme için)")
     parser.add_argument("--song", choices=CHOICES, default="karisik", help="Melodi (karisik: sırayla hepsi)")
     parser.add_argument("--roots", nargs="+", type=Path, default=ROOTS, help=argparse.SUPPRESS)
+    parser.add_argument("--global", dest="global_url", metavar="URL",
+                        help="Dünya orkestrasına katıl (yalnızca adım sayısı gönderilir)")
     args = parser.parse_args()
     if args.duration is not None and args.duration <= 0:
         parser.error("Süre sıfırdan büyük olmalı.")
     CACHE.mkdir(parents=True, exist_ok=True)
-    return run(args.silent, args.duration, args.song, args.roots)
+    return run(args.silent, args.duration, args.song, args.roots, args.global_url)
 
 
 if __name__ == "__main__":

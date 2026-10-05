@@ -70,10 +70,13 @@ def indicator():
         print(f'Gösterge açılamadı: {exc}', file=sys.stderr)
 
 
-def start(project, song):
+def start(project, song, global_url=None):
     if project is None:
         target, label = 'agents.py', 'bütün Claude / Codex oturumları'
         expected = [sys.executable, str(APP / target), '--song', song]
+        if global_url:
+            expected += ['--global', global_url]
+            label += f' + dünya orkestrası ({global_url})'
         workdir = APP
     else:
         project = project.expanduser().resolve()
@@ -118,6 +121,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=['start', 'stop', 'status'])
     parser.add_argument('project', nargs='?', type=Path, help='Verilmezse bütün Claude/Codex oturumları dinlenir')
+    parser.add_argument('--global', dest='global_url', metavar='URL', help='Dünya orkestrasına katıl')
     parser.add_argument('--song', choices=['karisik', 'bella-ciao', 'fur-elise', 'greensleeves', 'ode-to-joy', 'original'],
                         default='karisik')
     args = parser.parse_args()
@@ -126,7 +130,7 @@ def main():
         fcntl.flock(lock, fcntl.LOCK_EX)
         try:
             if args.action == 'start':
-                start(args.project, args.song)
+                start(args.project, args.song, args.global_url)
             elif args.action == 'stop':
                 stop()
                 print('Kod müziği kapalı.')
@@ -135,7 +139,9 @@ def main():
                 if running:
                     params = settings().get('ProgramArguments', [])
                     where = 'bütün Claude / Codex oturumları' if len(params) > 1 and params[1].endswith('agents.py') else (params[2] if len(params) > 2 else 'bilinmiyor')
-                    print(f'Dinleniyor: {where} · {params[-1] if "--song" in params else "original"}')
+                    song = params[params.index('--song') + 1] if '--song' in params else 'original'
+                    world = f" + dünya orkestrası ({params[params.index('--global') + 1]})" if '--global' in params else ''
+                    print(f'Dinleniyor: {where}{world} · {song}')
                 else:
                     print('Kod müziği kapalı.' if not loaded else f'Dinleyici durmuş. Günlük: {LOG}')
         except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as exc:
