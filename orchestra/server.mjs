@@ -12,8 +12,8 @@ import { loadGeo, country } from "./geo.mjs";
 
 const PORT = Number(process.env.PORT || 4480);
 const WEB = join(fileURLToPath(new URL(".", import.meta.url)), "web");
-const SECTIONS = ["piano", "strings", "choir", "cello", "flute", "vibraphone", "horn", "harp"];
-const TIMPANI = 8, TREMOLO = 9, DRUMS = 10;
+const SECTIONS = ["piano", "strings", "choir", "cello", "flute", "vibraphone", "horn", "harp", "accordion"];
+const TIMPANI = 8, TREMOLO = 9, DRUMS = 10, ACCORDION = 11;   // engine voices; section 8 plays voice 11
 const LEAD_MS = 900;            // notes are scheduled this far ahead so every listener can play them on time
 const PLAYER_TTL = 30_000;      // a machine that stops reporting leaves its seat
 const MAX_PLAYERS = 100_000;
@@ -37,7 +37,7 @@ const seatsTaken = SECTIONS.map(() => []);   // section -> array of ids (holes =
 let seatsVersion = 0;
 
 // Real orchestra proportions: many strings, a few harps, one piano soloist row.
-const SHARE = { piano: .03, strings: .28, choir: .17, cello: .17, flute: .1, vibraphone: .07, horn: .12, harp: .06 };
+const SHARE = { piano: .03, strings: .26, choir: .16, cello: .16, flute: .1, vibraphone: .07, horn: .11, harp: .06, accordion: .05 };
 const seated = SECTIONS.map(() => 0);
 
 function seatFor(id) {
@@ -69,7 +69,7 @@ function report(id, body, now, cc) {
   const tool = TOOLS.reduce((a, b) => (p.tools[b] > p.tools[a] ? b : a), "claude");
   if (p.tool !== tool) { p.tool = tool; seatsVersion++; }
   p.energy = Math.min(6, p.energy + steps);
-  if (steps) { p.pulse = now; conductor.steps += steps; }
+  if (steps) { p.pulse = now; conductor.steps += steps; score(p.cc, steps); }
   for (const signal of (Array.isArray(body.signals) ? body.signals.slice(0, 4) : [])) {
     if (["ship", "pass", "fail"].includes(signal)) conductor.signal(signal, p.section, now);
     if (signal === "ship") cheers.add(p.tool || "claude");
@@ -78,6 +78,41 @@ function report(id, body, now, cc) {
 }
 
 const cheers = new Set();       // stands that start a wave this frame
+
+// ---------- country league ----------
+// Score = steps with a 5 minute half-life, so a country that falls behind can catch up.
+const HALF_LIFE = 5 * 60_000, MIN_PASSION_PLAYERS = 3, LEAD_HOLD = 5_000, LEAD_FANFARE_GAP = 20_000;
+const scores = new Map();       // cc -> score
+const league = { leader: null, since: 0, candidate: null, fanfareAt: 0, announce: null, total: [], passion: [] };
+
+function score(cc, steps) { if (cc && steps) scores.set(cc, (scores.get(cc) || 0) + steps); }
+
+function updateLeague(now, dt) {
+  const decay = Math.pow(.5, dt / HALF_LIFE);
+  const members = new Map();
+  for (const p of players.values()) if (p.cc) members.set(p.cc, (members.get(p.cc) || 0) + 1);
+  for (const [cc, v] of scores) { const next = v * decay; if (next < .05 && !members.has(cc)) scores.delete(cc); else scores.set(cc, next); }
+  const rows = [...scores].map(([cc, v]) => ({ cc, score: Math.round(v), players: members.get(cc) || 0 }));
+  league.total = rows.filter((r) => r.score > 0).sort((a, b) => b.score - a.score);
+  league.passion = rows.filter((r) => r.players >= MIN_PASSION_PLAYERS && r.score > 0)
+    .map((r) => ({ ...r, perPlayer: Math.round((r.score / r.players) * 10) / 10 }))
+    .sort((a, b) => b.perPlayer - a.perPlayer);
+  // A new leader must hold first place for a few seconds before it is announced.
+  const top = league.total[0]?.cc || null;
+  if (top !== league.leader) {
+    if (top !== league.candidate) { league.candidate = top; league.since = now; }
+    else if (now - league.since > LEAD_HOLD) {
+      const previous = league.leader;
+      league.leader = top;
+      if (previous && top && now - league.fanfareAt > LEAD_FANFARE_GAP) {
+        league.fanfareAt = now;
+        league.announce = { cc: top, previous };
+        const t = conductor.chordAt(60), at = now + LEAD_MS;
+        [t[0], t[1], t[2], t[0] + 12].forEach((p, i) => conductor.emit(at + i * 140, p, 62, .45 + i * .15, 6));
+      }
+    }
+  } else league.candidate = top;
+}
 
 function expire(now) {
   for (const [id, p] of players) {
@@ -181,10 +216,12 @@ const conductor = {
     const on = (s, from) => active[s] > 0 && I >= from;
     const pad = Math.min(2.4, beat * 2.2);       // pads end before the next chord can clash
     // Melody: one voice per phrase, rotating among the sections that are playing.
-    const singers = [0, 4, 1, 2].filter((s) => s === 0 || on(s, s === 2 ? .55 : .3));
+    const singers = [0, 8, 4, 1, 2].filter((s) => s === 0 || on(s, s === 2 ? .55 : s === 8 ? 0 : .3));
     const lead = singers[Math.floor(this.position / 8 + this.index) % singers.length];
     const leadPitch = lead === 4 ? pitch + 12 : pitch;                    // flute an octave up
-    this.emit(at, leadPitch, (lead === 0 ? 56 : 48) * (lead === 0 ? Math.max(.75, level(0) / loud) * loud : level(lead)), Math.min(2.6, seconds * .92), lead === 1 ? 1 : lead);
+    const voiceOf = (s) => (s === 8 ? ACCORDION : s);
+    this.solo = at;                              // the leading country's flags light up on melody notes
+    this.emit(at, leadPitch, (lead === 0 ? 56 : 48) * (lead === 0 ? Math.max(.75, level(0) / loud) * loud : level(lead)), Math.min(2.6, seconds * .92), voiceOf(lead));
     if (this.shift) this.emit(at, leadPitch + 12, 22 * loud, Math.min(2.6, seconds * .9), 0);   // climax only
     // Accompaniment leaves the melody's note (and its neighbours) to the melody.
     const clear = (p) => (Math.abs(p - leadPitch) <= 2 ? null : p);
@@ -201,6 +238,8 @@ const conductor = {
     if (changed && lead !== 1 && on(1, 0)) for (const p of mid.map(clear).filter(Boolean)) this.emit(at, p, 20 * level(1), pad, 1);
     if (changed && on(6, .6)) { const h = this.chordAt(48); this.emit(at, band(h[0], 48), 24 * level(6), pad, 6); this.emit(at, band(h[2], 48), 22 * level(6), pad, 6); }
     if (changed && lead !== 2 && on(2, .75)) for (const p of mid.map((x) => clear(band(x, 72))).filter(Boolean)) this.emit(at, p, 16 * level(2), pad, 2);
+    // Accordion "oom-pah": short off-beat chords when it is not singing the melody.
+    if (lead !== 8 && on(8, .3) && this.position % 2 === 1) for (const p of mid.map(clear).filter(Boolean)) this.emit(at, p, 16 * level(8), beat * .35, ACCORDION);
     // Top: harp and vibraphone sparkle, sparse and high.
     const top = this.chordAt(84);
     if (on(7, .2) && this.position % 2 === 1) this.emit(at, band(top[this.position % 3], 84), 20 * level(7), beat * 1.2, 7);
@@ -266,6 +305,7 @@ let countryList = [], countryAt = 0;
 setInterval(() => {
   const now = Date.now();
   stats = conductor.tick(now, now - lastTick);
+  updateLeague(now, now - lastTick);
   lastTick = now;
   frameNotes.push(...conductor.out.splice(0));
 }, 25);
@@ -283,9 +323,12 @@ setInterval(() => {
     climax: Boolean(conductor.shift), song: TITLES[conductor.song],
   };
   if (seatsVersion !== lastSeats) { frame.seats = seatsSnapshot(); lastSeats = seatsVersion; }
-  if (now - countryAt > 1000) { countryList = countries(); countryAt = now; }
+  if (now - countryAt > 1000) { countryList = countries(); countryAt = now; frame.ranks = league.total.map((r) => r.cc); }
   frame.countries = countryList.slice(0, 12);
   frame.teams = teamStats();
+  frame.league = { leader: league.leader, total: league.total.slice(0, 6), passion: league.passion.slice(0, 6) };
+  if (conductor.solo) { frame.solo = conductor.solo; conductor.solo = 0; }
+  if (league.announce) { frame.announce = league.announce; league.announce = null; }
   if (conductor.shift && Math.random() < .08) TEAMS.forEach((t) => cheers.add(t));   // climax: the whole stadium waves now and then
   if (cheers.size) frame.cheers = [...cheers];
   cheers.clear();

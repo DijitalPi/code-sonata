@@ -1,14 +1,18 @@
 // Agent Orchestra listener: draws the hall and plays the conductor's notes in sync.
-const SECTIONS = ["piano", "strings", "choir", "cello", "flute", "vibraphone", "horn", "harp"];
+const SECTIONS = ["piano", "strings", "choir", "cello", "flute", "vibraphone", "horn", "harp", "accordion"];
 // Stereo position from the real seating plan (violins left, cellos right).
-const PAN = { strings: -.7, harp: -.6, piano: 0, flute: 0, horn: .1, choir: 0, vibraphone: .6, cello: .7 };
-const COLORS = { piano: "#f4ead8", strings: "#e8b65a", choir: "#c9a4ff", cello: "#d97a4a", flute: "#7fd1c7", vibraphone: "#8fb8ff", horn: "#f2d06b", harp: "#ff9fb2" };
-const SOUNDFONT = ["acoustic_grand_piano", "string_ensemble_1", "choir_aahs", "cello", "flute", "vibraphone", "french_horn", "orchestral_harp", "timpani", "tremolo_strings"];
+const PAN = { strings: -.7, harp: -.6, piano: -.1, accordion: .15, flute: 0, horn: .1, choir: 0, vibraphone: .6, cello: .7 };
+const COLORS = { piano: "#f4ead8", strings: "#e8b65a", choir: "#c9a4ff", cello: "#d97a4a", flute: "#7fd1c7", vibraphone: "#8fb8ff", horn: "#f2d06b", harp: "#ff9fb2", accordion: "#ff7a7a" };
+// Engine voices by index (10 = drums, synthesized; 11 = accordion, section 8).
+const SOUNDFONT = ["acoustic_grand_piano", "string_ensemble_1", "choir_aahs", "cello", "flute", "vibraphone", "french_horn", "orchestral_harp", "timpani", "tremolo_strings", null, "accordion"];
+const VOICE_SECTION = { 11: "accordion" };
 const $ = (id) => document.getElementById(id);
 
 // ---------- state from the server ----------
 let seats = SECTIONS.map(() => []);      // section -> [[sessions, country] or 0]
 let you = null;                          // {cc, team}
+let leader = null, soloAt = 0, ranks = [];
+const countryName = (() => { try { const d = new Intl.DisplayNames(["en"], { type: "region" }); return (cc) => d.of(cc) || cc; } catch { return (cc) => cc; } })();
 const flag = (cc) => (cc && cc.length === 2 ? String.fromCodePoint(...[...cc].map((c) => 0x1f1a5 + c.charCodeAt(0))) : "");
 const glow = new Map();                  // "s:i" -> 0..1
 let info = { bpm: 64, intensity: 0, climax: false, song: "", working: 0 };
@@ -17,14 +21,39 @@ let offset = 0;                          // serverTime - localTime (best estimat
 
 function showCountries(frame) {
   $("countries").textContent = (frame.countryCount || 0).toLocaleString();
-  const legend = $("legend");
-  legend.replaceChildren();
-  for (const [cc, count] of frame.countries) {
-    const item = document.createElement("span");
-    item.textContent = `${flag(cc)} ${count}`;
-    item.title = cc;
-    legend.append(item);
-  }
+}
+
+function leagueList(id, rows, value) {
+  const list = $(id);
+  list.replaceChildren();
+  rows.forEach((r, i) => {
+    const li = document.createElement("li");
+    const name = document.createElement("span"), score = document.createElement("b");
+    name.textContent = `${i + 1}. ${flag(r.cc)} ${countryName(r.cc)}`;
+    score.textContent = value(r);
+    if (you && you.cc === r.cc) li.className = "mine";
+    li.append(name, score);
+    list.append(li);
+  });
+}
+
+function showLeague(lg) {
+  leagueList("total", lg.total, (r) => r.score.toLocaleString());
+  leagueList("passion", lg.passion, (r) => r.perPlayer.toLocaleString());
+  const mine = $("mine");
+  if (you && you.cc) {
+    const rank = ranks.indexOf(you.cc);
+    mine.textContent = `Your country: ${flag(you.cc)} ${rank >= 0 ? `#${rank + 1}` : "not on the board yet"}`;
+  } else mine.textContent = "";
+}
+
+let announceTimer = 0;
+function announce({ cc }) {
+  const box = $("announce");
+  box.textContent = `${flag(cc)} ${countryName(cc)} takes the lead!`;
+  box.classList.add("show");
+  clearTimeout(announceTimer);
+  announceTimer = setTimeout(() => box.classList.remove("show"), 4000);
 }
 
 function showNow(frame) {
@@ -72,6 +101,10 @@ function onFrame(event) {
   if (frame.you) you = frame.you;
   if (frame.countries) showCountries(frame);
   if (frame.teams) teams = frame.teams;
+  if (frame.league) { leader = frame.league.leader; showLeague(frame.league); }
+  if (frame.ranks) ranks = frame.ranks;
+  if (frame.solo) soloAt = frame.solo;
+  if (frame.announce) announce(frame.announce);
   for (const t of frame.cheers || []) waves[t] = performance.now();
   for (const [s, i] of frame.pulses || []) glow.set(`${s}:${i}`, 1);
   if (frame.players !== undefined) {
@@ -99,7 +132,8 @@ async function startAudio() {
   const { Soundfont } = await import("https://cdn.jsdelivr.net/npm/smplr@1.1.0/+esm");
   // Piano first so the hall is audible quickly; the rest load behind it.
   for (const [i, name] of SOUNDFONT.entries()) {
-    const section = SECTIONS[i];
+    if (!name) continue;
+    const section = VOICE_SECTION[i] || (i < 8 ? SECTIONS[i] : null);
     const pan = PAN[section] ?? 0;
     const voice = Soundfont(ctx, { instrument: name, kit: "FluidR3_GM", destination: master, pan, volume: 100 });
     audio.voices[i] = null;
@@ -194,7 +228,8 @@ function flagImage(cc, px) {
 // A real symphony seating plan, seen from the audience. Angles in degrees: 0 = straight
 // back, -90 = far left, +90 = far right. Bands are fractions of the stage radius.
 const REGIONS = {
-  piano:      { band: [.08, .28], arc: [-14, 14], label: "piano (soloist)" },
+  piano:      { band: [.08, .28], arc: [-15, -1], label: "piano" },
+  accordion:  { band: [.08, .28], arc: [1, 15], label: "accordion" },
   strings:    { band: [.16, .54], arc: [-86, -17], label: "violins" },
   cello:      { band: [.16, .54], arc: [17, 86], label: "cellos" },
   flute:      { band: [.56, .70], arc: [-30, 30], label: "woodwinds" },
@@ -249,7 +284,19 @@ function geometry() {
     stage.sections[name] = one.pts;
     stage.spacing[name] = one.spacing;
   }
-  cached = { version, cx, cy, R, stage };
+  // Same country sits together inside each section: biggest delegation first.
+  const order = {};
+  for (const name of Object.keys(REGIONS)) {
+    const list = seats[SECTIONS.indexOf(name)] || [];
+    const size = new Map();
+    for (const e of list) if (e) size.set(e[1], (size.get(e[1]) || 0) + 1);
+    const idx = list.map((_, i) => i).sort((a, b) => {
+      const ca = list[a] ? list[a][1] : "~", cb = list[b] ? list[b][1] : "~";
+      return (size.get(cb) || 0) - (size.get(ca) || 0) || ca.localeCompare(cb) || a - b;
+    });
+    order[name] = []; idx.forEach((seat, pos) => { order[name][seat] = pos; });
+  }
+  cached = { version, cx, cy, R, stage, order };
   return cached;
 }
 
@@ -310,11 +357,13 @@ function frame(now) {
   g.strokeStyle = "rgba(232, 182, 90, .25)"; g.lineWidth = 1;
   g.beginPath(); g.arc(cx, cy, R * 1.05, rad(-92 - 90), rad(92 - 90)); g.stroke();
   // Musicians.
+  const soloGlow = Math.max(0, 1 - (Date.now() + offset - soloAt) / 500);
   for (const [name, pts] of Object.entries(G.stage.sections)) {
     const s = SECTIONS.indexOf(name), color = COLORS[name], sp = G.stage.spacing[name];
+    const order = G.order[name];
     (seats[s] || []).forEach((entry, i) => {
-      if (!entry || !pts[i]) return;
-      const { x, y } = pts[i];
+      if (!entry || !pts[order[i]]) return;
+      const { x, y } = pts[order[i]];
       const key = `${s}:${i}`;
       const lit = glow.get(key) || 0;
       if (lit) glow.set(key, Math.max(0, lit - dt * 1.6));
@@ -325,10 +374,15 @@ function frame(now) {
         g.beginPath(); g.arc(x, y, size * (1.25 + (1 - lit) * 1.4), 0, Math.PI * 2); g.stroke();
       }
       const cc = entry[1];
+      const leading = cc && cc === leader;  // spotlight: thin gold ring, a soft flash on melody notes
+      if (leading && soloGlow > .02) {
+        g.globalAlpha = soloGlow * .35; g.fillStyle = "#e8b65a";
+        g.beginPath(); g.arc(x, y, size * 1.5, 0, Math.PI * 2); g.fill();
+      }
       if (cc && sp >= 7) {
         g.globalAlpha = .55 + lit * .45;
         g.drawImage(flagImage(cc, size * 2.1), x - size * 1.05, y - size * 1.05, size * 2.1, size * 2.1);
-        g.globalAlpha = .5 + lit * .5; g.strokeStyle = color; g.lineWidth = 1;
+        g.globalAlpha = leading ? .9 : .5 + lit * .5; g.strokeStyle = leading ? "#e8b65a" : color; g.lineWidth = leading ? 1.6 : 1;
         g.beginPath(); g.arc(x, y, size * 1.02, 0, Math.PI * 2); g.stroke();
       } else {
         g.globalAlpha = .3 + lit * .7; g.fillStyle = color;
@@ -339,8 +393,10 @@ function frame(now) {
   }
   // Section names, quietly, at the front edge of each region.
   g.font = "500 10px Inter, sans-serif"; g.textAlign = "center"; g.fillStyle = "rgba(163, 150, 132, .8)";
-  for (const reg of Object.values(REGIONS)) {
-    const a = rad((reg.arc[0] + reg.arc[1]) / 2), r = reg.band[0] * R - 7;
+  for (const [name, reg] of Object.entries(REGIONS)) {
+    if (name === "accordion") continue;        // piano and accordion share one label
+    const a = rad(name === "piano" ? 0 : (reg.arc[0] + reg.arc[1]) / 2), r = reg.band[0] * R - 7;
+    if (name === "piano") { g.fillText("SOLOISTS", cx, cy - r); continue; }
     g.fillText(reg.label.toUpperCase(), cx + Math.sin(a) * r, cy - Math.cos(a) * r);
   }
   // Conductor on the podium, baton keeping time.
