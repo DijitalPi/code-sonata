@@ -523,21 +523,37 @@ class GlobalReporter:
 
     STEPS = {"edit", "bash", "read", "tool", "think", "text", "done"}
 
+    @staticmethod
+    def connection(url):
+        import urllib.parse
+        parsed = urllib.parse.urlsplit(url)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username or parsed.password:
+            raise ValueError("Orkestra adresi geçerli bir http/https URL olmalı.")
+        pair = urllib.parse.parse_qs(parsed.fragment).get("pair", [None])[0]
+        if pair and (len(pair) != 48 or any(c not in "0123456789abcdef" for c in pair)):
+            raise ValueError("Eşleştirme anahtarı geçersiz; tarayıcıdan yeni bağlantı oluştur.")
+        return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/") + "/api/play", "", "")), pair
+
     def __init__(self, url, music):
         import secrets
         import urllib.request
+        self.url, self.pair = self.connection(url)
         self.request = urllib.request
-        self.url = url.rstrip("/") + "/api/play"
         self.music = music
         id_file = CACHE / "global-id"
         try:
             self.id = id_file.read_text().strip()
+            if not 16 <= len(self.id) <= 64 or any(c not in "0123456789abcdef" for c in self.id):
+                raise OSError("invalid cached id")
         except OSError:
             self.id = secrets.token_hex(16)
             CACHE.mkdir(parents=True, exist_ok=True)
             id_file.write_text(self.id)
+            id_file.chmod(0o600)
         self.lock = threading.Lock()
         self.steps, self.signals, self.seat = 0, [], None
+        self.activity = {k: 0 for k in ("edit", "bash", "read", "think", "done")}
+        self.failed = False
         self.stop = threading.Event()
         threading.Thread(target=self.loop, daemon=True).start()
 
@@ -550,6 +566,8 @@ class GlobalReporter:
             for path, kind in events:
                 if kind in self.STEPS:
                     self.steps += 1
+                    activity = kind if kind in self.activity else "think"
+                    self.activity[activity] += 1
                 elif kind in ("ship", "pass", "fail", "testfail") and len(self.signals) < 4:
                     self.signals.append("fail" if kind == "testfail" else kind)
 
@@ -560,6 +578,7 @@ class GlobalReporter:
             with self.lock:
                 steps, signals = self.steps, self.signals
                 self.steps, self.signals = 0, []
+                activity, self.activity = self.activity, {k: 0 for k in self.activity}
             working = self.music.is_working(now)
             quiet = 0 if steps or working else quiet + 1
             if quiet and quiet % 10 and self.seat is not None:  # idle: heartbeat every 10 s keeps the seat
@@ -569,18 +588,26 @@ class GlobalReporter:
                 tool = self.tool_of(path)
                 tools[tool] = tools.get(tool, 0) + 1
             body = json.dumps({"id": self.id, "steps": steps, "signals": signals, "working": working,
-                               "sessions": max(1, len(self.music.sessions)), "tools": tools}).encode()
+                               "sessions": len(self.music.sessions), "tools": tools,
+                               "activity": activity, "pair": self.pair}).encode()
             try:
                 request = self.request.Request(self.url, data=body, headers={"content-type": "application/json"})
                 with self.request.urlopen(request, timeout=3) as response:
                     seat = json.loads(response.read())
+                # An expired or removed key ends only the browser view; keep playing anonymously.
+                if self.pair and seat.get("pair") in ("expired", "used"):
+                    self.pair = None
+                    print("Kişisel eşleştirme sona erdi; ortak orkestrada anonim olarak devam ediyorsun. "
+                          "Kendi sesini görmek için tarayıcıdan yeni komut oluştur.", flush=True)
                 if seat.get("section") != (self.seat or {}).get("section"):
                     print(f"Dünya orkestrası: {seat.get('section')} bölümü, {seat.get('seat', 0) + 1}. koltuk · "
                           f"{seat.get('players')} makine", flush=True)
                 self.seat = seat
+                self.failed = False
             except (OSError, ValueError) as exc:
-                if self.seat is not None:
-                    print(f"Dünya orkestrası bağlantısı koptu: {exc}", flush=True)
+                if not self.failed:
+                    print("Orkestra bağlantısı kurulamadı. Sunucu adresini kontrol et; yeniden denenecek.", flush=True)
+                self.failed = True
                 self.seat = None
 
 
@@ -688,6 +715,8 @@ def run(silent=False, duration=None, song="karisik", roots=ROOTS, global_url=Non
         pass
     finally:
         stop.set()
+        if reporter:
+            reporter.stop.set()
         if real and where(music):
             save_position(song, where(music))
         if real:
@@ -716,6 +745,11 @@ def main():
     args = parser.parse_args()
     if args.duration is not None and args.duration <= 0:
         parser.error("Süre sıfırdan büyük olmalı.")
+    if args.global_url:
+        try:
+            GlobalReporter.connection(args.global_url)
+        except ValueError as exc:
+            parser.error(str(exc))
     CACHE.mkdir(parents=True, exist_ok=True)
     return run(args.silent, args.duration, args.song, args.roots, args.global_url)
 

@@ -147,3 +147,9 @@ Türkçe metin desteklenir. Piyano tınısı ve müzikal zevk için gerçek dinl
 python3 -m unittest -v
 python3 sonata.py --silent
 ```
+
+## Agent Orchestra — yerel ürün geliştirmesi
+
+Kendi çalışma sesini keşfet, ortak orkestraya katıl, gerçek faaliyetlerinden PNG/WAV/sesli video oluştur. Kurulum, 60 döngü kaydı, testler ve açık kabul koşulları [orchestra/README.md](orchestra/README.md) içinde. Güncel yerel önizleme bu oturumda http://127.0.0.1:4482; genel yayın yapılmadı.
+
+Orkestra katılımı açıkça `--global` ile seçilir; anonim kimlik ve faaliyet sayıları seçilen sunucuya gider. Kod/prompt/yol aktarılmaz. Yerel izleme/editör modu hakkındaki ağsız davranış bu seçimden ayrıdır.

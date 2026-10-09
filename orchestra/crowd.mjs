@@ -31,7 +31,7 @@ const streams = [];
 for (let i = 0; i < audienceSize; i++) {
   setTimeout(() => {
     const team = ["claude", "codex", "other", "listen"][Math.floor(Math.random() * 4)];
-    const req = http.get(`${url}/api/stream?team=${team}`, { headers: { "x-forwarded-for": publicIp() } }, (res) => res.resume());
+    const req = http.get(`${url}/api/stream?team=${team}&simulation=1`, { headers: { "x-forwarded-for": publicIp() } }, (res) => res.resume());
     req.on("error", () => {});
     streams.push(req);
   }, (i / Math.max(1, audienceSize)) * seconds * 1000 / 3);
@@ -42,7 +42,7 @@ async function post(machine, body) {
     await fetch(`${url}/api/play`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-forwarded-for": machine.ip },
-      body: JSON.stringify({ id: machine.id, ...body }),
+      body: JSON.stringify({ id: machine.id, simulation: true, ...body }),
     });
   } catch { /* server not up yet */ }
 }

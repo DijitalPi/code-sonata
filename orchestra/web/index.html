@@ -1,108 +1,177 @@
 <!doctype html>
-<html lang="en">
+<html lang="tr">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Agent Orchestra</title>
-<meta name="description" content="Every AI coding agent at work, playing in one live orchestra. Join with yours.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,500&family=Inter:wght@400;500&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --bg: #0d0b09; --ink: #f4ead8; --dim: #a39684; --gold: #e8b65a; --line: rgba(244, 234, 216, .12);
-  }
-  * { box-sizing: border-box; margin: 0; }
-  html, body { height: 100%; background: var(--bg); color: var(--ink); font: 15px/1.5 Inter, system-ui, sans-serif; overflow: hidden; }
-  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
-  header { position: fixed; top: 24px; left: 28px; right: 28px; display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; pointer-events: none; }
-  h1 { font: 300 clamp(28px, 4vw, 52px)/1 Fraunces, Georgia, serif; letter-spacing: -.01em; }
-  h1 em { font-style: normal; color: var(--gold); }
-  .tag { color: var(--dim); margin-top: 8px; max-width: 34ch; }
-  .stats { display: grid; grid-template-columns: repeat(4, auto); gap: 4px 28px; text-align: right; }
-  .league { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 22px; margin-top: 14px; width: min(400px, 90vw); pointer-events: auto; }
-  .league h3 { font: 500 11px Inter, sans-serif; letter-spacing: .08em; text-transform: uppercase; color: var(--gold); margin-bottom: 4px; }
-  .league h3 small { color: var(--dim); text-transform: none; letter-spacing: 0; }
-  .league ol { list-style: none; padding: 0; font-size: 13px; }
-  .league li { display: flex; justify-content: space-between; gap: 8px; color: var(--dim); padding: 1px 0; white-space: nowrap; }
-  .league li:first-child { color: var(--ink); }
-  .league li.mine { color: var(--gold); }
-  .league li b { font-weight: 500; font-variant-numeric: tabular-nums; }
-  .league #mine { grid-column: 1 / -1; color: var(--ink); font-size: 13px; margin-top: 6px; }
-  .announce { position: fixed; left: 50%; top: 20px; transform: translate(-50%, -8px); opacity: 0; background: var(--gold); color: var(--bg); font: 500 16px Inter, sans-serif; padding: 10px 20px; border-radius: 999px; transition: opacity .3s, transform .3s; pointer-events: none; }
-  .announce.show { opacity: 1; transform: translate(-50%, 0); }
-  .stat b { display: block; font: 500 clamp(22px, 2.6vw, 34px)/1.1 Fraunces, Georgia, serif; font-variant-numeric: tabular-nums; }
-  .stat span { color: var(--dim); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
-  .now { position: fixed; left: 28px; bottom: 24px; color: var(--dim); font-size: 13px; }
-  .now strong { color: var(--ink); font-weight: 500; }
-  .heat { display: inline-block; width: 120px; height: 3px; background: var(--line); vertical-align: middle; margin-left: 10px; border-radius: 2px; overflow: hidden; }
-  .heat i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--gold), #ff6b3d); transition: width .3s; }
-  .enter { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(13, 11, 9, .62); backdrop-filter: blur(3px); text-align: center; transition: opacity .3s; }
-  .enter > div { width: min(92vw, 620px); padding: 28px; }
-  button { font: 500 16px Inter, sans-serif; color: var(--bg); background: var(--gold); border: 0; border-radius: 999px; padding: 14px 26px; cursor: pointer; transition: transform .15s, opacity .15s; }
-  button:hover { transform: translateY(-1px); }
-  button:active { transform: scale(.97); }
-  button:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
-  .enter p { color: var(--dim); margin-top: 12px; font-size: 13px; }
-  .enter .pick { color: var(--ink); margin: 0 0 12px; font: 300 22px Fraunces, Georgia, serif; }
-  .teams { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
-  .teams .quiet { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
-  .join { position: fixed; right: 28px; bottom: 24px; max-width: 340px; background: rgba(13, 11, 9, .82); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; backdrop-filter: blur(6px); }
-  .join summary { font: 500 14px Inter, sans-serif; cursor: pointer; list-style: none; }
-  .join summary::-webkit-details-marker { display: none; }
-  .join summary::before { content: "+ "; color: var(--gold); }
-  .join[open] summary { margin-bottom: 8px; }
-  .join[open] summary::before { content: "− "; }
-  .join:not([open]) { padding: 10px 16px; }
-  .join p { color: var(--dim); font-size: 13px; }
-  .join code { display: block; margin-top: 10px; padding: 10px 12px; background: rgba(244, 234, 216, .06); border-radius: 8px; font: 12.5px ui-monospace, Menlo, monospace; color: var(--ink); white-space: pre-wrap; word-break: break-all; }
-  .hidden { opacity: 0; pointer-events: none; transition: opacity .3s; }
-  @media (max-width: 720px) {
-    header { flex-direction: column; left: 16px; right: 16px; top: 16px; }
-    .stats { text-align: left; }
-    .join { left: 16px; right: 16px; top: auto; bottom: 16px; max-width: none; }
-    .enter { top: 46%; }
-    .now { left: 16px; bottom: auto; top: 210px; }
-  }
-  @media (prefers-reduced-motion: reduce) { button, .heat i, .announce { transition: none; } }
-</style>
+<title>Agent Orchestra · Bugünkü çalışmanın bir sesi var</title>
+<meta name="description" content="Claude ve Codex oturumlarındaki adımlar canlı bir orkestrada nota olarak çalar. Dinle, kendi ajanını bağla, çalışma anını indir. DijitalPi tarafından geliştirildi.">
+<meta property="og:title" content="Bugünkü çalışmanın bir sesi var · Agent Orchestra">
+<meta property="og:description" content="Claude ve Codex adımların canlı orkestrada çalar. Dinle, ajanını bağla, anını indir.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Bugünkü çalışmanın bir sesi var · Agent Orchestra">
+<meta name="twitter:description" content="Claude ve Codex adımların canlı orkestrada çalar. Dinle, ajanını bağla, anını indir.">
+<meta name="twitter:image" content="/og.png">
+<meta name="theme-color" content="#0d0b09">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cellipse cx='12' cy='23' rx='7' ry='5' fill='%23e8b65a'/%3E%3Crect x='17' y='4' width='3' height='19' fill='%23e8b65a'/%3E%3C/svg%3E">
+<link rel="preload" href="fonts/fraunces-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/fraunces-latin-ext.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-<canvas id="hall" aria-hidden="true"></canvas>
-<header>
-  <div>
-    <h1>Agent <em>Orchestra</em></h1>
-    <p class="tag">Every AI coding agent at work, playing in one live orchestra. On stage, every flag is a person; it glows when their agents take a step.</p>
-    <section class="league" aria-label="Country league">
-      <div><h3>Most notes</h3><ol id="total"></ol></div>
-      <div><h3>Most passionate <small>per player</small></h3><ol id="passion"></ol></div>
-      <p id="mine"></p>
+<a class="skip" href="#controls">Ses kontrollerine geç</a>
+
+<div class="column">
+  <header class="brand">
+    <a href="#" class="wordmark" data-open="home">Agent <em>Orchestra</em></a>
+    <span class="maker">DijitalPi</span>
+  </header>
+
+  <section data-view="home" aria-labelledby="title">
+    <h1 id="title" tabindex="-1">Bugünkü çalışmanın bir <em>sesi var.</em></h1>
+    <p class="lead">Claude ve Codex'te atılan her adım bu salonda bir nota olarak çalar. Dinlemek için kurulum gerekmez.</p>
+    <div class="actions">
+      <button data-team="listen">Orkestrayı dinle</button>
+      <button id="simple-sound" class="quiet">Sade tınıyla dinle</button>
+    </div>
+    <button id="demo" class="link">Örnek kişisel ses</button>
+    <p id="loading" role="status">Ses sen başlatınca çalar. Orkestra ses örneklerini internetten indirir; sade tını indirme yapmaz.</p>
+  </section>
+
+  <section data-view="join" hidden aria-labelledby="join-title">
+    <button class="back" data-open="home">‹ Salona dön</button>
+    <h2 id="join-title" tabindex="-1">Ajanını bağla</h2>
+    <p class="lead">macOS'taki yerel okuyucu yeni Claude ve Codex adımlarını sayıya çevirip salona gönderir. Prompt, kod ve dosya yolu gönderilmez.</p>
+    <button id="pair">Bağlantı komutumu oluştur</button>
+    <div id="setup" hidden>
+      <ol class="steps">
+        <li>Bu repoyu macOS bilgisayarında aç. Python 3 ve Xcode Command Line Tools gerekir.</li>
+        <li>Repo klasöründe Terminal'i aç ve aşağıdaki komutu çalıştır.</li>
+        <li>Claude ya da Codex ile bir adım at. Bağlantın ve ilk adımın aşağıda görünür.</li>
+      </ol>
+      <label for="command">Bu tarayıcıya özel komut</label>
+      <textarea id="command" rows="3" readonly spellcheck="false"></textarea>
+      <div class="row"><button id="copy-command" class="quiet">Komutu kopyala</button><button id="unpair" class="quiet">Eşleştirmeyi kaldır</button></div>
+      <p class="note">Komut sana özel bir anahtar içerir, paylaşma. Anahtar bir saat sonra silinir. Eşleştirmeyi kaldırmak ortak çalmayı durdurmaz; okuyucuyu durdurmak için Terminal'de Ctrl+C.</p>
+    </div>
+    <p id="personal-status" role="status">Henüz ajan bağlamadın.</p>
+    <div id="personal" hidden>
+      <p id="seat-label"></p>
+      <p class="count"><b id="my-steps">0</b> <span>adım bu bağlantıdan geldi</span></p>
+      <p id="activity-label"></p>
+      <p class="note">Düzenleme melodiyi, komut bası, okuma ince notaları, düşünme akoru, bitiş kapanışı çalar. Kendi sesini duymak için alttaki Dinleme seçiminden "Yalnız benim sesim"i seç.</p>
+    </div>
+    <details>
+      <summary>Neler gönderiliyor, bağlanmazsa ne yapmalı</summary>
+      <p>Sunucuya anonim makine kimliği, adım türü sayıları, çalışıyor bilgisi, oturum ve araç sayıları gider. Prompt, kaynak kod, proje adı ve dosya yolu gitmez. IP yalnız ülkeyi bulmak için kullanılır; hız sınırı için her açılışta değişen tuzlu özeti tutulur. Eşleştirme ve adım toplamları sunucu belleğinde en fazla bir saat kalır.</p>
+      <p>Bağlanmıyorsa yerel sunucunun çalıştığını ve adresin aynı bilgisayardan açıldığını kontrol et, sonra yeni komut oluştur. Anahtarın süresi dolar, kaldırılır veya başka makinede kullanılırsa okuyucu bunu Terminal'e yazar ve ortak orkestrada anonim olarak devam eder; kendi sesin için yeni komut oluştur. 429 hız sınırıdır. Bu sürüm yalnız macOS okuyucusunu destekler.</p>
+      <p>Sayfa localhost'ta açıksa yalnız aynı bilgisayardaki ajan bağlanabilir.</p>
+    </details>
+  </section>
+
+  <section data-view="moment" hidden aria-labelledby="moment-title">
+    <button class="back" data-open="home">‹ Salona dön</button>
+    <h2 id="moment-title" tabindex="-1">Çalışma anını indir</h2>
+    <p class="lead">Son adımlarından 12 saniyelik bir ses, paylaşım görseli ve desteklenen tarayıcıda video oluşur. Dosyalar bu tarayıcıda hazırlanır, sunucuya yüklenmez.</p>
+    <label for="moment-title-input">Başlık</label>
+    <input id="moment-title-input" maxlength="60" value="Bugünkü çalışmanın sesi">
+    <label for="capture-kind">Kaynak</label>
+    <select id="capture-kind"><option value="personal">Kendi adımlarım</option><option value="common">Salonun son 12 saniyesi</option></select>
+    <label class="check"><input id="show-count" type="checkbox" checked> Adım sayısını görselde göster</label>
+    <p class="note">Kendi adımların: son anından bu yana gelen adımlar, ajan bağlı olmalı. Salonun son 12 saniyesi: bu sayfada çalan anonim notalar.</p>
+    <button id="create-moment">Anımı oluştur</button>
+    <p id="moment-status" role="status">Kendi anın için önce ajanını bağla ve bir adım at.</p>
+    <div id="preview" hidden>
+      <canvas id="moment-canvas" width="1200" height="630" role="img" aria-label="Çalışma anının paylaşım görseli"></canvas>
+      <audio id="moment-audio" controls aria-label="Anın ses önizlemesi"></audio>
+      <p id="visible-info" class="note"></p>
+      <div class="row">
+        <a id="download-png" class="pill" download="calisma-anim.png">Görseli indir</a>
+        <a id="download-wav" class="pill" download="calisma-anim.wav">Sesi indir</a>
+        <button id="video" class="quiet">Video oluştur</button>
+        <button id="clear-moment" class="quiet">Anı sil</button>
+      </div>
+      <video id="moment-video" controls hidden aria-label="Anın video önizlemesi"></video>
+      <div class="row"><a id="download-video" class="pill" hidden download="calisma-anim.webm">Videoyu indir</a><button id="cancel-video" hidden class="quiet">Videoyu iptal et</button></div>
+      <p class="note">Silmek yalnız bu sayfadaki önizlemeyi kaldırır, indirdiğin dosyalar kalır.</p>
+    </div>
+  </section>
+
+  <section data-view="invite" hidden aria-labelledby="invite-title">
+    <button class="back" data-open="home">‹ Salona dön</button>
+    <h2 id="invite-title" tabindex="-1">Arkadaşını davet et</h2>
+    <p class="lead">Aynı anda çalışan herkesin adımı aynı müzikte çalar. Bağlantıyı kopyalayıp gönder.</p>
+    <button id="invite">Davet bağlantısını kopyala</button>
+    <p id="invite-status" role="status"></p>
+    <input id="invite-url" readonly hidden aria-label="Davet bağlantısı">
+    <p class="note">Bağlantıda eşleştirme anahtarın bulunmaz. Sayfa localhost'ta açıksa bağlantı yalnız senin bilgisayarında çalışır.</p>
+  </section>
+
+  <section data-view="league" hidden aria-labelledby="league-title">
+    <button class="back" data-open="home">‹ Salona dön</button>
+    <h2 id="league-title" tabindex="-1">Ülkelerin nota katkısı</h2>
+    <p class="lead">Son adımların ağırlığı zamanla azalır. Bu bir başarı ya da üretkenlik sıralaması değildir.</p>
+    <div class="league">
+      <div><h3>Toplam nota</h3><ol id="total"></ol></div>
+      <div><h3>Makine başına <small>en az 3 makine</small></h3><ol id="passion"></ol></div>
+    </div>
+    <p id="mine"></p>
+  </section>
+
+  <section data-view="about" hidden aria-labelledby="about-title">
+    <button class="back" data-open="home">‹ Salona dön</button>
+    <h2 id="about-title" tabindex="-1">Proje ve iletişim</h2>
+    <p class="lead">Agent Orchestra, DijitalPi'nin deneme projesi. Claude ve Codex'teki adımları anonim sayılara çevirir ve herkesin aynı anda duyduğu müziğe dönüştürür.</p>
+    <p>DijitalPi; etkinlik, hackathon ve ekipler için katılımcıların birlikte oluşturduğu canlı dijital deneyimler kurar.</p>
+    <a id="contact" class="pill" href="https://dijitalpi.com/iletisim/" target="_blank" rel="noopener noreferrer">DijitalPi ile iletişime geç ↗</a>
+    <p class="note">Geliştirme aşamasında. Kullanıcı araştırması ve genel yayın henüz yapılmadı.</p>
+    <details id="metrics">
+      <summary>Bu cihazdaki kullanım sayıları (isteğe bağlı)</summary>
+      <label class="check"><input id="metrics-consent" type="checkbox"> Dinleme, bağlantı ve an sayılarını yalnız bu cihazda tut</label>
+      <p class="note">Sunucuya gönderilmez, kimlik ya da adım içeriği içermez.</p>
+      <p id="metrics-values" role="status">Ölçüm kapalı.</p>
+      <button id="clear-metrics" class="quiet">Sayıları sil</button>
+    </details>
+  </section>
+
+  <nav class="tasks" data-view="home" aria-label="Yapabileceklerin">
+    <button class="task" data-open="join"><span>Ajanımı bağla</span><small>Kendi adımlarını ayrı duy, salondaki koltuğunu gör.</small></button>
+    <button class="task" data-open="moment"><span>Çalışma anımı indir</span><small>Son adımlarından 12 saniyelik ses, görsel ve video oluştur.</small></button>
+    <button class="task" data-open="invite"><span>Arkadaşımı davet et</span><small>Bu sayfanın bağlantısını kopyala.</small></button>
+    <p class="more"><button class="link" data-open="league">Ülkelerin nota katkısı</button><button class="link" data-open="about">Proje ve iletişim</button></p>
+  </nav>
+</div>
+
+<main class="stage" aria-label="Canlı orkestra salonu">
+  <canvas id="hall" aria-hidden="true"></canvas>
+  <div class="live">
+    <p id="connection" role="status">Salona bağlanıyor…</p>
+    <div class="stats">
+      <div><b id="claudes">0</b><span>ajan oturumu</span></div>
+      <div><b id="players">0</b><span>makine</span></div>
+      <div><b id="listeners">0</b><span>dinleyici</span></div>
+      <div><b id="countries">0</b><span>ülke</span></div>
+    </div>
+  </div>
+  <div class="now-block">
+    <p id="now">İlk adım bekleniyor.</p>
+    <p class="caption">Her ışık bağlı bir makinedir ve adım gelince yanar. Adım sayısı iş kalitesini ölçmez.</p>
+  </div>
+  <div class="stage-foot">
+    <section id="controls" tabindex="-1" class="dock" aria-label="Ses kontrolleri">
+      <button id="sound" class="quiet" disabled>Sesi durdur</button>
+      <label for="volume">Ses <input id="volume" type="range" min="0" max="100" value="65"></label>
+      <label for="mode"><span class="visually-hidden">Dinleme</span><select id="mode"><option value="common">Ortak orkestra</option><option value="personal">Yalnız benim sesim</option></select></label>
+      <button id="motion" class="quiet" aria-pressed="false">Hareketi durdur</button>
+      <span id="mode-status" role="status"></span>
     </section>
   </div>
-  <div class="stats">
-    <div class="stat"><b id="claudes">0</b><span>agents</span></div>
-    <div class="stat"><b id="players">0</b><span>machines</span></div>
-    <div class="stat"><b id="listeners">0</b><span>listening</span></div>
-    <div class="stat"><b id="countries">0</b><span>countries</span></div>
-  </div>
-</header>
-<div class="announce" id="announce" role="status" aria-live="polite"></div>
-<div class="now" id="now">Waiting for the first agent</div>
-<div class="enter" id="enter"><div>
-  <p class="pick">Pick your stand and enter</p>
-  <div class="teams">
-    <button data-team="claude">Claude Code</button>
-    <button data-team="codex">Codex</button>
-    <button data-team="other">Other agent</button>
-    <button data-team="listen" class="quiet">Just listening</button>
-  </div>
-  <p id="loading">Sound plays in your browser. Headphones recommended.</p>
-</div></div>
-<details class="join">
-  <summary>Put your agents on stage</summary>
-  <p>Runs locally next to Claude Code or Codex. Only step types are sent (edit, command, read, done). No code, prompts or project names. Your IP is used once to show your country flag and is never stored.</p>
-  <code>python3 agents.py --global https://orchestra.dijitalpi.com</code>
-</details>
-<script type="module" src="app.js?v=9"></script>
+</main>
+
+<div class="announce" id="announce" role="status"></div><div id="enter" hidden></div>
+<noscript><p class="lead">Dinlemek ve anını oluşturmak için JavaScript gerekir.</p></noscript>
+<script type="module" src="views.js"></script>
+<script type="module" src="app.js?v=12"></script>
 </body>
 </html>

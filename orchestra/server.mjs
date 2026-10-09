@@ -13,11 +13,14 @@ import { loadGeo, country } from "./geo.mjs";
 
 const PORT = Number(process.env.PORT || 4480);
 const WEB = join(fileURLToPath(new URL(".", import.meta.url)), "web");
+const publicURL = process.env.PUBLIC_URL ? new URL(process.env.PUBLIC_URL) : null;
+if (publicURL && (!["http:", "https:"].includes(publicURL.protocol) || publicURL.username || publicURL.password)) throw new Error("PUBLIC_URL must be an http/https origin without credentials");
+const PUBLIC_URL = publicURL?.origin || "";
 const SECTIONS = ["piano", "strings", "choir", "cello", "flute", "vibraphone", "horn", "harp", "accordion"];
 const TIMPANI = 8, TREMOLO = 9, DRUMS = 10, ACCORDION = 11;   // engine voices; section 8 plays voice 11
 const LEAD_MS = 900;            // notes are scheduled this far ahead so every listener can play them on time
 const PLAYER_TTL = 30_000;      // a machine that stops reporting leaves its seat
-const MAX_PLAYERS = 100_000;
+const MAX_PLAYERS = 2000;        // bounded local release candidate; 500 machines measured below this ceiling
 // Fair play: one office may run many machines, one script may not run thousands.
 const MAX_MACHINES_PER_IP = 20, NEW_MACHINES_PER_IP_HOUR = 10;
 const STEP_RATE = 12, STEP_BURST = 40;   // steps per second a machine can score, and its burst
@@ -53,6 +56,26 @@ function countryOf(req, ip) {
 
 // ---------- players ----------
 const players = new Map();      // id -> {section, seat, last, working, sessions, energy, pulse}
+// Secrets never enter the public stream. Pairing is opt-in and expires after an hour.
+const pairs = new Map();
+const PAIR_TTL = 3_600_000;
+const MAX_PAIRS_PER_IP = 5;     // one address cannot use up pairing for everyone
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, pair] of pairs) if (now - pair.created > PAIR_TTL) pairs.delete(token);
+}, 1000).unref();
+const ACTIVITY = ["edit", "bash", "read", "think", "done"];
+const bounded = (value, max) => Number.isFinite(Number(value)) ? Math.max(0, Math.min(max, Math.floor(Number(value)))) : 0;
+
+// A key that expired, was removed or belongs to another machine only ends the private view:
+// the machine keeps its seat in the shared orchestra and the reader is told to drop the key.
+function paired(body, now) {
+  if (!body.pair) return { pair: null, state: null };
+  const pair = pairs.get(body.pair);
+  if (!pair || now - pair.created > PAIR_TTL) return { pair: null, state: "expired" };
+  if (pair.id && pair.id !== body.id) return { pair: null, state: "used" };
+  return { pair, state: "ok" };
+}
 const seatsTaken = SECTIONS.map(() => []);   // section -> array of ids (holes = null)
 const changedSeats = new Set();   // "section:seat" to send as a delta (full list only on connect)
 const markSeat = (section, seat) => changedSeats.add(`${section}:${seat}`);
@@ -100,29 +123,42 @@ function admit(key, now) {
   return true;
 }
 
-function report(id, body, now, cc, key) {
+function report(id, body, now, cc, key, pair) {
   let p = players.get(id);
+  if (p && p.key !== key) return null;
   if (!p) {
     if (players.size >= MAX_PLAYERS || !admit(key, now)) return null;
-    p = { ...seatFor(id, cc), energy: 0, pulse: 0, cc: cc || "", key, allow: STEP_BURST, allowAt: now };
+    p = { ...seatFor(id, cc), simulation: body.simulation === true, energy: 0, pulse: 0, cc: cc || "", key, allow: STEP_BURST, allowAt: now };
     players.set(id, p);
   }
   // A machine scores at most STEP_RATE steps a second (burst STEP_BURST): a script cannot
   // flood the league, while a busy developer with many sessions never hits it.
   p.allow = Math.min(STEP_BURST, p.allow + ((now - p.allowAt) / 1000) * STEP_RATE);
   p.allowAt = now;
-  const steps = Math.min(Math.floor(p.allow), Math.max(0, Math.min(200, Number(body.steps) || 0)));
+  const steps = Math.min(Math.floor(p.allow), bounded(body.steps, 200));
   p.allow -= steps;
   p.last = now;
-  p.working = Boolean(body.working);
-  const sessions = Math.max(1, Math.min(64, Number(body.sessions) || 1));
+  p.working = body.working === true;
+  const sessions = bounded(body.sessions, 64);
   if (sessions !== p.sessions) { p.sessions = sessions; markSeat(p.section, p.seat); }
   const tools = body.tools && typeof body.tools === "object" ? body.tools : {};
-  p.tools = Object.fromEntries(TOOLS.map((t) => [t, Math.max(0, Math.min(64, Number(tools[t]) || 0))]));
-  const tool = TOOLS.reduce((a, b) => (p.tools[b] > p.tools[a] ? b : a), "claude");
+  p.tools = Object.fromEntries(TOOLS.map((t) => [t, bounded(tools[t], 64)]));
+  const tool = TOOLS.reduce((a, b) => (p.tools[b] > p.tools[a] ? b : a), "other");
   if (p.tool !== tool) { p.tool = tool; markSeat(p.section, p.seat); }
   p.energy = Math.min(6, p.energy + steps);
   if (steps) { p.pulse = now; conductor.steps += steps; score(p.cc, steps); }
+  if (pair) {
+    pair.id = id; pair.last = now; pair.steps += steps;
+    pair.section = p.section; pair.seat = p.seat;
+    pair.working = p.working; pair.sessions = sessions;
+    let remaining = steps;
+    for (const kind of ACTIVITY) {
+      const count = Math.min(remaining, bounded(body.activity?.[kind], 200));
+      pair.activity[kind] += count; remaining -= count;
+    }
+    pair.activity.think += remaining;
+    if (steps) pair.lastActivity = now;
+  }
   for (const signal of (Array.isArray(body.signals) ? body.signals.slice(0, 4) : [])) {
     if (["ship", "pass", "fail"].includes(signal)) conductor.signal(signal, p.section, now);
     if (signal === "ship") cheers.add(p.tool || "claude");
@@ -395,7 +431,7 @@ const conductor = {
 // ---------- listeners (SSE) = the audience ----------
 const listeners = new Map();     // res -> {cc, team}
 
-function sit(res, cc, team) { listeners.set(res, { cc, team }); }
+function sit(res, cc, team, simulation = false) { listeners.set(res, { cc, team, simulation }); }
 function leave(res) { listeners.delete(res); }
 
 function teamStats() {
@@ -409,7 +445,7 @@ function teamStats() {
 function seatsSnapshot() {
   return SECTIONS.map((_, s) => seatsTaken[s].map((id) => {
     const p = id && players.get(id);
-    return p ? [p.sessions || 1, p.cc || "", p.tool || "claude"] : 0;
+    return p ? [p.sessions || 0, p.cc || "", p.tool || "other"] : 0;
   }));
 }
 
@@ -425,7 +461,7 @@ function send(res, data) { res.write(`data: ${JSON.stringify(data)}\n\n`); }
 function seatEntry(section, seat) {
   const id = seatsTaken[section][seat];
   const p = id && players.get(id);
-  return p ? [p.sessions || 1, p.cc || "", p.tool || "claude"] : 0;
+  return p ? [p.sessions || 0, p.cc || "", p.tool || "other"] : 0;
 }
 
 // Every frame (4 a second): notes, who just played, one-off events. Once a second: counters,
@@ -436,10 +472,10 @@ const FRAME_MS = 250, META_MS = 1000, MAX_PULSES = 60;
 // Counters, league and teams: once a second in the stream, and at once for a new listener.
 function meta() {
   countryList = countries();
-  let claudes = 0;
-  for (const p of players.values()) claudes += p.sessions;
+  let claudes = 0, simulated = 0;
+  for (const p of players.values()) { claudes += p.sessions; if (p.simulation) simulated++; }
   return {
-    players: stats.total, working: stats.working, claudes, listeners: listeners.size,
+    players: players.size, simulated, simulatedListeners: [...listeners.values()].filter(l => l.simulation).length, working: stats.working, claudes, listeners: listeners.size,
     bpm: Math.round(conductor.bpm), intensity: Math.round(conductor.intensity * 100) / 100,
     climax: Boolean(conductor.shift), song: TITLES[conductor.song],
     house: !stats.working && listeners.size > 0, lastActive: conductor.lastActive, peak: conductor.peak,
@@ -480,12 +516,16 @@ setInterval(() => {
     Object.assign(frame, meta());
   }
   const line = `data: ${JSON.stringify(frame)}\n\n`;
-  for (const res of listeners.keys()) res.write(line);
+  for (const res of listeners.keys()) {
+    if (res.writableLength > 256 * 1024) res.destroy();
+    else res.write(line);
+  }
 }, FRAME_MS);
 
 // ---------- http ----------
-const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon" };
+const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2" };
 const hits = new Map();         // ip key -> [windowStart, count]
+const listenerIPs = new Map();
 
 function limited(key, now) {
   const h = hits.get(key) || [now, 0];
@@ -502,28 +542,72 @@ function json(res, code, data) {
 }
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, "http://x");
+  let url;
+  try { url = new URL(req.url, "http://x"); }
+  catch { return json(res, 400, { error: "url" }); }
   const now = Date.now();
   const ip = clientIp(req), key = ipKey(ip);
+  res.setHeader("x-content-type-options", "nosniff");
+  res.setHeader("referrer-policy", "no-referrer");
+  res.setHeader("permissions-policy", "microphone=(), camera=(), geolocation=()");
+  res.setHeader("x-frame-options", "DENY");
+  if (req.method === "POST" && ["/api/pair", "/api/me", "/api/unpair"].includes(url.pathname)) {
+    const origin = req.headers.origin;
+    if (origin && origin !== `${TRUST_PROXY ? "https" : "http"}://${req.headers.host}` && origin !== `http://${req.headers.host}`) return json(res, 403, { error: "origin" });
+    if (limited(key, now)) return json(res, 429, { error: "slow down" });
+    let raw = "";
+    try { for await (const chunk of req) { raw += chunk; if (Buffer.byteLength(raw) > 2048) return json(res, 413, { error: "too big" }); } }
+    catch { return json(res, 400, { error: "body" }); }
+    let body;
+    try { body = JSON.parse(raw || "{}"); } catch { return json(res, 400, { error: "json" }); }
+    if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "object" });
+    for (const [token, pair] of pairs) if (now - pair.created > PAIR_TTL) pairs.delete(token);
+    if (url.pathname === "/api/pair") {
+      if (pairs.size >= 5000) return json(res, 503, { error: "pair capacity" });
+      let mine = 0;
+      for (const pair of pairs.values()) if (pair.key === key) mine++;
+      if (mine >= MAX_PAIRS_PER_IP) return json(res, 429, { error: "too many pairs" });
+      const token = randomBytes(24).toString("hex");
+      pairs.set(token, { key, created: now, last: 0, lastActivity: 0, steps: 0, activity: Object.fromEntries(ACTIVITY.map(k => [k, 0])) });
+      return json(res, 201, { pair: token, expires: now + PAIR_TTL });
+    }
+    const pair = pairs.get(body.pair);
+    if (!pair) return json(res, 404, { error: "pair expired" });
+    if (url.pathname === "/api/unpair") { pairs.delete(body.pair); return json(res, 200, { ok: true }); }
+    const connected = pair.last > 0 && now - pair.last <= PLAYER_TTL;
+    return json(res, 200, { connected, waiting: !pair.last, steps: pair.steps, activity: pair.activity,
+      lastActivity: pair.lastActivity, working: connected && pair.working, sessions: connected ? pair.sessions : 0,
+      section: connected ? pair.section : null, seat: connected ? pair.seat : null, expires: pair.created + PAIR_TTL });
+  }
   if (req.method === "POST" && url.pathname === "/api/play") {
     if (limited(key, now)) return json(res, 429, { error: "slow down" });
     let raw = "";
-    for await (const chunk of req) { raw += chunk; if (raw.length > 2048) return json(res, 413, { error: "too big" }); }
+    try { for await (const chunk of req) { raw += chunk; if (Buffer.byteLength(raw) > 2048) return json(res, 413, { error: "too big" }); } }
+    catch { return json(res, 400, { error: "body" }); }
     let body;
     try { body = JSON.parse(raw); } catch { return json(res, 400, { error: "json" }); }
+    if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "object" });
     if (typeof body.id !== "string" || !/^[a-f0-9]{16,64}$/.test(body.id)) return json(res, 400, { error: "id" });
-    const p = report(body.id, body, now, players.has(body.id) ? null : countryOf(req, ip), key);
+    if (body.pair && (body.simulation || players.get(body.id)?.simulation)) return json(res, 403, { error: "simulation cannot pair" });
+    const { pair, state } = paired(body, now);
+    const p = report(body.id, body, now, players.has(body.id) ? null : countryOf(req, ip), key, pair);
     if (!p) return json(res, 429, { error: "too many machines from here" });
-    return json(res, 200, { section: SECTIONS[p.section], seat: p.seat, players: players.size });
+    return json(res, 200, { section: SECTIONS[p.section], seat: p.seat, players: players.size, ...(state && { pair: state }) });
   }
   if (req.method === "GET" && url.pathname === "/api/stream") {
+    if (listeners.size >= 1000 || (listenerIPs.get(key) || 0) >= 8) return json(res, 429, { error: "too many listeners" });
+    listenerIPs.set(key, (listenerIPs.get(key) || 0) + 1);
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive", "x-accel-buffering": "no" });
     res.write("retry: 2000\n\n");
     const cc = countryOf(req, ip);
     const team = TEAMS.includes(url.searchParams.get("team")) ? url.searchParams.get("team") : "listen";
-    sit(res, cc, team);
+    sit(res, cc, team, url.searchParams.get("simulation") === "1");
     send(res, { t: now, seats: seatsSnapshot(), you: { cc, team }, sections: SECTIONS, notes: [], pulses: [], ...meta() });
-    req.on("close", () => leave(res));
+    req.on("close", () => {
+      leave(res);
+      const count = (listenerIPs.get(key) || 1) - 1;
+      if (count) listenerIPs.set(key, count); else listenerIPs.delete(key);
+    });
     return;
   }
   if (req.method === "GET" && url.pathname === "/api/health") return json(res, 200, { ok: true, players: players.size, listeners: listeners.size });
@@ -534,10 +618,15 @@ const server = http.createServer(async (req, res) => {
     // Page and code revalidate every load, so a new version shows up right away.
     const fresh = [".html", ".js", ".css"].includes(extname(path));
     res.writeHead(200, { "content-type": TYPES[extname(path)] || "application/octet-stream", "cache-control": fresh ? "no-cache" : "public, max-age=3600" });
-    res.end(file);
+    const output = extname(path) === ".html" && PUBLIC_URL ? file.toString()
+      .replaceAll('content="/og.png"', `content="${PUBLIC_URL}/og.png"`)
+      .replace("</head>", `<meta property="og:url" content="${PUBLIC_URL}/"><link rel="canonical" href="${PUBLIC_URL}/"></head>`) : file;
+    res.end(output);
   } catch {
     res.writeHead(404); res.end("not found");
   }
 });
 
-server.listen(PORT, () => console.log(`Agent Orchestra · http://localhost:${PORT}`));
+server.requestTimeout = 10_000;
+server.headersTimeout = 10_000;
+server.listen(PORT, process.env.HOST || "127.0.0.1", () => console.log(`Agent Orchestra · http://localhost:${PORT}`));

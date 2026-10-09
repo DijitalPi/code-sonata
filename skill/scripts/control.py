@@ -9,7 +9,7 @@ import subprocess
 import sys
 import time
 
-APP = Path('/Users/selimcitil/Projects/code-sonata')
+APP = Path(os.environ.get('CODE_SONATA_APP', Path(__file__).resolve().parents[2])).expanduser().resolve()
 CACHE = Path.home() / 'Library/Caches/code-sonata'
 PLIST = CACHE / 'listener.plist'
 LOG = CACHE / 'listener.log'
@@ -76,7 +76,7 @@ def start(project, song, global_url=None):
         expected = [sys.executable, str(APP / target), '--song', song]
         if global_url:
             expected += ['--global', global_url]
-            label += f' + dünya orkestrası ({global_url})'
+            label += f' + dünya orkestrası ({global_url.split("#", 1)[0]})'
         workdir = APP
     else:
         project = project.expanduser().resolve()
@@ -140,7 +140,7 @@ def main():
                     params = settings().get('ProgramArguments', [])
                     where = 'bütün Claude / Codex oturumları' if len(params) > 1 and params[1].endswith('agents.py') else (params[2] if len(params) > 2 else 'bilinmiyor')
                     song = params[params.index('--song') + 1] if '--song' in params else 'original'
-                    world = f" + dünya orkestrası ({params[params.index('--global') + 1]})" if '--global' in params else ''
+                    world = f" + dünya orkestrası ({params[params.index('--global') + 1].split('#', 1)[0]})" if '--global' in params else ''
                     print(f'Dinleniyor: {where}{world} · {song}')
                 else:
                     print('Kod müziği kapalı.' if not loaded else f'Dinleyici durmuş. Günlük: {LOG}')

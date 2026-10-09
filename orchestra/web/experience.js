@@ -1,0 +1,295 @@
+import { KINDS, personalNotes, liveNotes, deltaActivity, wavBytes, publicInvite } from './moment.js';
+const $ = id => document.getElementById(id);
+const labels = { edit: 'düzenleme', bash: 'komut', read: 'okuma', think: 'düşünme', done: 'bitiş' };
+let token = null, me = null, baseline = {}, polling = false, recent = [], moment = null, revision = 0;
+let simulationUntil = 0;
+let synth = null, nodes = [], demoTimer = null, recorder = null, recordingCleanup = null;
+let personalEnabled = false, synthBus = null;
+const soundTabs = 'BroadcastChannel' in window ? new BroadcastChannel('agent-orchestra-audio') : null;
+const personalTab = `personal-${Math.random().toString(36).slice(2)}`;
+if (soundTabs) soundTabs.onmessage = event => {
+  if (event.data?.playing && event.data.id !== personalTab) {
+    stopPersonalAudio(); personalEnabled = false;
+    if (isPersonal()) { $('sound').textContent = 'Sesi başlat'; $('mode-status').textContent = 'Ses başka sekmede. Burada başlatabilirsin.'; }
+  }
+};
+export let ownSeat = null;
+export let ownPulseAt = 0;
+export let motionPaused = matchMedia('(prefers-reduced-motion: reduce)').matches;
+export function isPersonal() { return $('mode').value === 'personal'; }
+export function receiveFrame(frame) {
+  if (frame.simulated) simulationUntil = Date.now() + 12000;
+  const cutoff = Date.now() - 12000;
+  recent.push(...(frame.notes || []).map(n => [n[0] - frame.t + Date.now(), ...n.slice(1)]));
+  recent = recent.filter(n => n[0] >= cutoff).slice(-400);
+}
+function metric(name) {
+  // Opt-in local counters only, no network analytics or identifiers.
+  if (!$('metrics-consent')?.checked) return;
+  try { const counters = JSON.parse(localStorage.getItem('orchestra-metrics') || '{}'); counters[name] = (counters[name] || 0) + 1; localStorage.setItem('orchestra-metrics', JSON.stringify(counters)); showMetrics(); } catch {}
+}
+const metricLabels = { visit: 'ziyaret', return: 'tekrar ziyaret', listen: 'dinleme başlatma', connection: 'bağlantı', moment: 'an üretimi', video: 'video üretimi', invite: 'davet kopyalama', invited: 'davetle geliş', brand: 'DijitalPi’ye geçiş' };
+function showMetrics() {
+  try { const values = JSON.parse(localStorage.getItem('orchestra-metrics') || '{}'); $('metrics-values').textContent = Object.keys(values).length ? Object.entries(values).map(([k,v]) => `${metricLabels[k] || k}: ${v}`).join(' · ') : 'Henüz kayıtlı kullanım sayısı yok.'; }
+  catch { $('metrics-values').textContent = 'Bu tarayıcı yerel saklamaya izin vermiyor.'; }
+}
+let countedVisit = false;
+function countVisit() {
+  if (countedVisit || !$('metrics-consent').checked) return;
+  countedVisit = true;
+  try { if (JSON.parse(localStorage.getItem('orchestra-metrics') || '{}').visit) metric('return'); } catch {}
+  metric('visit'); if (new URLSearchParams(location.search).get('from') === 'invite') metric('invited');
+}
+try { $('metrics-consent').checked = localStorage.getItem('orchestra-metrics-consent') === 'yes'; } catch {}
+$('metrics-consent').onchange = () => {
+  try { localStorage.setItem('orchestra-metrics-consent', $('metrics-consent').checked ? 'yes' : 'no'); } catch {}
+  if ($('metrics-consent').checked) { countVisit(); showMetrics(); } else $('metrics-values').textContent = 'Ölçüm kapalı. Önceki sayıları aşağıdaki düğmeden silebilirsin.';
+};
+$('clear-metrics').onclick = () => { try { localStorage.removeItem('orchestra-metrics'); } catch {} showMetrics(); };
+countVisit();
+if ($('metrics-consent').checked) showMetrics();
+export { metric };
+async function api(path, body = {}) {
+  let response;
+  try { response = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(5000) }); }
+  catch { throw new Error('Sunucuya ulaşılamıyor. Yerel sunucuyu ve bağlantını kontrol et; otomatik yeniden denenecek.'); }
+  if (!response.ok) {
+    const reason = await response.json().then(data => data.error, () => '');
+    const error = new Error(response.status === 404 ? 'Eşleştirme süresi doldu. Yeni komut oluştur.' : reason === 'too many pairs' ? 'Bu bağlantıdan çok sayıda açık eşleştirme var. Eskilerini kaldır veya bir saat içinde yeniden dene.' : response.status === 429 ? 'Çok hızlı deneme. Birkaç saniye sonra yeniden dene.' : `Bağlantı hatası (${response.status}). Yerel sunucuyu kontrol et.`);
+    error.status = response.status;
+    throw error;
+  }
+  return response.json();
+}
+async function clipboard(text, fallback) {
+  try { await navigator.clipboard.writeText(text); return true; } catch { fallback.hidden = false; fallback.focus(); fallback.select(); return false; }
+}
+function clearAudioNodes() { for (const n of nodes) { try { n.stop(); } catch {} } nodes = []; }
+async function playSynth(notes) {
+  synth ||= new AudioContext(); await synth.resume(); clearAudioNodes();
+  const bus = synth.createGain(); synthBus = bus; bus.gain.value = Number($('volume').value) / 100; bus.connect(synth.destination);
+  for (const [at, pitch, velocity, duration] of notes.slice(0, 60)) {
+    const osc = synth.createOscillator(), gain = synth.createGain(), start = synth.currentTime + .03 + at / 1000;
+    osc.type = 'sine'; osc.frequency.value = 440 * 2 ** ((pitch - 69) / 12);
+    gain.gain.setValueAtTime(0, start); gain.gain.linearRampToValueAtTime(velocity / 127 * .12, start + .015); gain.gain.exponentialRampToValueAtTime(.0001, start + duration);
+    osc.connect(gain).connect(bus); osc.start(start); osc.stop(start + duration + .05); nodes.push(osc);
+  }
+  setTimeout(() => bus.disconnect(), 15000);
+}
+export function stopPersonalAudio() { personalEnabled = false; clearAudioNodes(); if (demoTimer) clearTimeout(demoTimer); demoTimer = null; $('demo').textContent = 'Örnek kişisel ses'; }
+export async function togglePersonalAudio() {
+  personalEnabled = !personalEnabled;
+  if (!personalEnabled) stopPersonalAudio();
+  else { synth ||= new AudioContext(); await synth.resume(); soundTabs?.postMessage({ playing: true, id: personalTab }); }
+  $('sound').textContent = personalEnabled ? 'Sesi durdur' : 'Sesi başlat';
+}
+$('volume').addEventListener('input', () => { if (synthBus && synth) synthBus.gain.setTargetAtTime(Number($('volume').value) / 100, synth.currentTime, .03); });
+$('demo').onclick = async () => {
+  if (demoTimer) { stopPersonalAudio(); $('mode-status').textContent = ''; return; }
+  document.dispatchEvent(new Event('orchestra-pause'));
+  try {
+    personalEnabled = false;
+    soundTabs?.postMessage({ playing: true, id: personalTab });
+    await playSynth(personalNotes({ edit: 7, bash: 3, read: 5, think: 2, done: 1 }));
+    $('demo').textContent = 'Örneği durdur'; $('mode-status').textContent = 'Yerel örnek · gerçek katılımcı veya çalışma anı değildir.';
+    demoTimer = setTimeout(() => { stopPersonalAudio(); $('mode-status').textContent = ''; }, 12000);
+  } catch { $('mode-status').textContent = 'Ses başlatılamadı. Tarayıcının ses iznini kontrol et.'; }
+};
+$('motion').ariaPressed = String(motionPaused); $('motion').textContent = motionPaused ? 'Hareketi başlat' : 'Hareketi durdur';
+$('motion').onclick = () => { motionPaused = !motionPaused; $('motion').ariaPressed = String(motionPaused); $('motion').textContent = motionPaused ? 'Hareketi başlat' : 'Hareketi durdur'; };
+$('mode').onchange = async () => {
+  stopPersonalAudio();
+  if (isPersonal()) {
+    document.dispatchEvent(new Event('orchestra-pause'));
+    personalEnabled = true;
+    $('sound').disabled = false; $('sound').textContent = 'Sesi durdur';
+    soundTabs?.postMessage({ playing: true, id: personalTab });
+    $('mode-status').textContent = me?.connected ? 'Yeni faaliyetler yalnız kendi motifinde duyulur.' : 'Önce ajanını bağla. Yeni faaliyet geldiğinde kendi sesin çalar.';
+    // Unlock on the gesture, so polling can play subsequent activity.
+    try { synth ||= new AudioContext(); await synth.resume(); } catch {}
+  } else { $('mode-status').textContent = 'Ortak ses için Orkestrayı dinle düğmesine bas.'; }
+};
+$('pair').onclick = async () => {
+  $('pair').disabled = true;
+  try {
+    if (token) { try { await api('/api/unpair', { pair: token }); } catch (error) { if (error.status !== 404) throw error; } }
+    const data = await api('/api/pair'); token = data.pair; me = null; baseline = {}; ownSeat = null;
+    $('command').value = `python3 agents.py --silent --global '${location.origin}/#pair=${token}'`;
+    $('setup').hidden = false; $('personal').hidden = true; $('pair').textContent = 'Yeni bağlantı oluştur';
+    $('personal-status').textContent = 'Komut hazır. Okuyucunun bağlanmasını bekliyor…';
+    poll();
+  } catch (error) { $('personal-status').textContent = error.message; }
+  finally { $('pair').disabled = false; }
+};
+$('copy-command').onclick = async () => { const ok = await clipboard($('command').value, $('command')); $('personal-status').textContent = ok ? 'Komut kopyalandı. Repo Terminal’inde çalıştır.' : 'Otomatik kopyalama olmadı. Seçili komutu elle kopyala.'; };
+$('unpair').onclick = async () => {
+  $('unpair').disabled = true;
+  try { await api('/api/unpair', { pair: token }); token = null; me = null; ownSeat = null; stopPersonalAudio(); $('setup').hidden = true; $('personal').hidden = true; $('command').value = ''; $('personal-status').textContent = 'Eşleştirme kaldırıldı. Ortak katılımı da durdurmak için Terminal’de Ctrl+C.'; }
+  catch (error) { $('personal-status').textContent = error.message; }
+  finally { $('unpair').disabled = false; }
+};
+async function poll() {
+  if (polling || !token) return; polling = true; const requested = token;
+  try {
+    const data = await api('/api/me', { pair: requested });
+    if (requested !== token) return;
+    const difference = deltaActivity(data.activity, me?.activity);
+    if (data.connected && !me?.connected) metric('connection');
+    me = data; ownSeat = data.connected ? [data.section, data.seat] : null; ownPulseAt = data.lastActivity;
+    $('personal').hidden = !data.connected;
+    $('personal-status').textContent = data.waiting ? 'Okuyucunun bağlanması bekleniyor. Komutu Terminal’de çalıştır.' : !data.connected ? 'Bağlantı kesildi. Okuyucu ve sunucuyu kontrol et; yeniden bağlanınca güncellenir.' : data.steps ? 'Bağlı · kendi faaliyetlerin alınıyor.' : 'Bağlı · ilk yeni faaliyetini bekliyor. Claude/Codex ile çalışmaya başla.';
+    $('my-steps').textContent = data.steps.toLocaleString('tr');
+    $('seat-label').textContent = data.connected ? `Senin koltuğun: ${['piyano', 'yaylılar', 'koro', 'çello', 'flüt', 'vibrafon', 'korno', 'arp', 'akordeon'][data.section]} · ${data.seat + 1}. koltuk · ${data.sessions} oturum` : '';
+    $('activity-label').textContent = KINDS.map(k => `${data.activity[k]} ${labels[k]}`).join(' · ');
+    if (isPersonal() && personalEnabled && data.connected && Object.values(difference).some(Boolean)) await playSynth(liveNotes(difference));
+  } catch (error) { if (requested === token) { ownSeat = null; if (me) me.connected = false; $('personal').hidden = true; $('personal-status').textContent = error.message; } }
+  finally { polling = false; }
+}
+setInterval(poll, 2000);
+function drawMoment(title, counts, personal, showCount) {
+  const canvas = $('moment-canvas'), c = canvas.getContext('2d');
+  c.fillStyle = '#0d0b09'; c.fillRect(0, 0, 1200, 630);
+  c.strokeStyle = '#40382e'; c.lineWidth = 1;
+  for (let i = 0; i < 5; i++) { c.beginPath(); c.moveTo(64, 365 + i * 28); c.lineTo(1136, 365 + i * 28); c.stroke(); }
+  c.fillStyle = '#e8b65a'; c.font = '20px sans-serif'; c.fillText(personal ? 'KENDİ ÇALIŞMA ANIM / AGENT ORCHESTRA' : 'ORTAK ORKESTRA ANI / AGENT ORCHESTRA', 64, 78);
+  c.fillStyle = '#f4ead8'; c.font = '58px Georgia';
+  const words = title.split(' '); let line = '', row = 0;
+  for (const word of words) { const candidate = `${line}${line ? ' ' : ''}${word}`; if (c.measureText(candidate).width > 1060 && line) { c.fillText(line, 64, 190 + row++ * 70); line = word; } else line = candidate; }
+  c.fillText(line, 64, 190 + row * 70, 1060);
+  const values = KINDS.map(k => counts[k] || 0);
+  c.fillStyle = '#e8b65a';
+  values.forEach((v, i) => { for (let n = 0; n < Math.min(6, Math.max(1, v)); n++) { const x = 120 + i * 210 + n * 16, y = 395 + Math.sin(i + n * .8) * 37; c.beginPath(); c.ellipse(x, y, 10, 7, -.4, 0, Math.PI * 2); c.fill(); c.fillRect(x + 8, y - 55, 2, 55); } });
+  c.fillStyle = '#b5a794'; c.font = '20px sans-serif';
+  c.fillText(personal ? (showCount ? `${Object.values(counts).reduce((a, b) => a + b, 0)} gerçek faaliyet · sayılardan üretilen müzikal yorum` : 'Gerçek faaliyetlerden üretilen müzikal yorum') : 'Anonim ortak müziğin 12 saniyelik yeniden yorumu', 64, 535);
+  c.font = '18px sans-serif'; c.fillText('DijitalPi tarafından geliştirildi', 64, 586); c.textAlign = 'right'; c.fillText('Çalışma sesini keşfet →', 1136, 586); c.textAlign = 'left';
+}
+function revokeMoment() {
+  revision++; if (recordingCleanup) recordingCleanup(true);
+  if (moment) for (const u of moment.urls) URL.revokeObjectURL(u);
+  moment = null; $('moment-audio').pause(); $('moment-video').pause(); $('moment-audio').removeAttribute('src'); $('moment-audio').load(); $('moment-video').removeAttribute('src'); $('moment-video').load(); $('preview').hidden = true; $('moment-video').hidden = true; $('download-video').hidden = true;
+}
+$('create-moment').onclick = async () => {
+  const personal = $('capture-kind').value === 'personal';
+  const counts = deltaActivity(me?.activity || {}, baseline);
+  if (personal && (!me?.connected || !Object.values(counts).some(Boolean))) { $('moment-status').textContent = 'Yeni gerçek faaliyet yok. Ajanını bağla ve son anından sonra yeni bir adım bekle.'; return; }
+  const time = Date.now(), captured = recent.filter(n => n[0] >= time - 12000 && n[0] <= time);
+  if (!personal && !captured.length) { $('moment-status').textContent = 'Ortak nota henüz alınmadı. Salona bağlan ve birkaç saniye bekle.'; return; }
+  $('create-moment').disabled = true;
+  try {
+    revokeMoment(); const current = revision;
+    const notes = personal ? personalNotes(counts) : captured.map(n => [n[0] - time + 12000, ...n.slice(1)]);
+    const simulated = !personal && Date.now() < simulationUntil;
+    const bytes = wavBytes(notes), wav = new Blob([bytes], { type: 'audio/wav' }), title = (simulated ? 'TEST · ' : '') + ($('moment-title-input').value.trim() || 'Bugünkü çalışmanın sesi');
+    drawMoment(title, counts, personal, $('show-count').checked);
+    const png = await new Promise(resolve => $('moment-canvas').toBlob(resolve, 'image/png'));
+    if (!png) throw new Error('Görsel oluşturulamadı. Yeniden dene.');
+    if (current !== revision) return;
+    const wavUrl = URL.createObjectURL(wav), pngUrl = URL.createObjectURL(png);
+    moment = { bytes, counts, personal, simulated, urls: [wavUrl, pngUrl] };
+    $('moment-audio').src = wavUrl; $('download-wav').href = wavUrl; $('download-png').href = pngUrl;
+    $('visible-info').textContent = `Görünür bilgi: “${title}”, ${personal ? 'kişisel faaliyet yorumu' : simulated ? 'simülasyon içeren ortak test anı' : 'anonim ortak an'}, ${personal && $('show-count').checked ? 'faaliyet sayısı, ' : ''}DijitalPi imzası. Makine kimliği, anahtar, kod veya prompt yok.`;
+    $('preview').hidden = false;
+    $('moment-status').textContent = 'Anın hazır. Ses önizlemesi sade bir sentez yorumudur; canlı salonun örneklenmiş tınısı değildir.';
+    if (personal) baseline = { ...me.activity };
+    metric('moment');
+  } catch (error) { $('moment-status').textContent = error.message || 'An oluşturulamadı. Yeniden dene.'; }
+  finally { $('create-moment').disabled = false; }
+};
+$('clear-moment').onclick = () => { revokeMoment(); $('moment-status').textContent = 'Tarayıcıdaki an silindi. Yeni bir an oluşturabilirsin.'; };
+let previewRevision = 0;
+async function refreshVisibleInfo() {
+  if (!moment || recorder) return;
+  const active = moment, current = ++previewRevision;
+  const title = (active.simulated ? 'TEST · ' : '') + ($('moment-title-input').value.trim() || 'Bugünkü çalışmanın sesi');
+  drawMoment(title, active.counts, active.personal, $('show-count').checked);
+  const png = await new Promise(resolve => $('moment-canvas').toBlob(resolve, 'image/png'));
+  if (!png || current !== previewRevision || moment !== active) return;
+  URL.revokeObjectURL(active.urls[1]); active.urls[1] = URL.createObjectURL(png); $('download-png').href = active.urls[1];
+  $('visible-info').textContent = `Görünür bilgi: “${title}”, ${active.personal ? 'kişisel faaliyet yorumu' : active.simulated ? 'simülasyon içeren ortak test anı' : 'anonim ortak an'}, ${active.personal && $('show-count').checked ? 'faaliyet sayısı, ' : ''}DijitalPi imzası. Özel kimlik, anahtar, kod veya prompt yok.`;
+  $('moment-video').pause(); $('moment-video').removeAttribute('src'); $('moment-video').hidden = true; $('download-video').hidden = true;
+  for (const u of active.urls.splice(2)) URL.revokeObjectURL(u);
+  $('moment-status').textContent = 'Görsel ve görünür bilgiler güncellendi. Ses aynı faaliyet anını koruyor; yeni video oluşturabilirsin.';
+}
+$('moment-title-input').addEventListener('change', refreshVisibleInfo);
+$('show-count').addEventListener('change', refreshVisibleInfo);
+$('video').onclick = async () => {
+  if (!moment || recordingCleanup) return;
+  if (window.VideoEncoder && window.AudioEncoder) {
+    const active = moment, current = revision, controller = new AbortController();
+    const cancel = () => { controller.abort(); $('moment-status').textContent = 'Video oluşturma iptal edildi. PNG ve WAV hazır.'; };
+    recordingCleanup = cancel;
+    for (const id of ['video', 'create-moment', 'moment-title-input', 'show-count', 'capture-kind']) $(id).disabled = true;
+    $('cancel-video').hidden = false;
+    try {
+      const { encodeVideo } = await import('./video.js');
+      const blob = await encodeVideo($('moment-canvas'), active.bytes, controller.signal, percent => { if (!controller.signal.aborted && moment === active) $('moment-status').textContent = `Sesli video oluşturuluyor · %${percent}`; });
+      if (controller.signal.aborted || current !== revision || moment !== active) return;
+      const url = URL.createObjectURL(blob); active.urls.push(url); $('moment-video').src = url; $('moment-video').hidden = false;
+      $('download-video').href = url; $('download-video').download = 'calisma-anim.webm'; $('download-video').hidden = false;
+      $('moment-status').textContent = 'Sesli video hazır. Önizleyip dosyayı indirebilirsin.'; metric('video');
+    } catch (error) { if (!controller.signal.aborted) $('moment-status').textContent = error.message || 'Video oluşturulamadı. WAV ve PNG dosyaları hazır.'; }
+    finally {
+      if (recordingCleanup === cancel) recordingCleanup = null;
+      for (const id of ['video', 'create-moment', 'moment-title-input', 'show-count', 'capture-kind']) $(id).disabled = false;
+      $('cancel-video').hidden = true;
+    }
+    return;
+  }
+  if (!window.MediaRecorder || !$('moment-canvas').captureStream) { $('moment-status').textContent = 'Bu cihaz video oluşturmayı desteklemiyor. WAV ve PNG dosyalarını indir.'; return; }
+  $('video').disabled = true; $('create-moment').disabled = true; $('cancel-video').hidden = false;
+  for (const id of ['moment-title-input', 'show-count', 'capture-kind']) $(id).disabled = true;
+  const current = revision, active = moment;
+  let ctx, source, stream, timer, frames, localRecorder, cancelled = false, released = false;
+  const release = () => {
+    if (released) return; released = true;
+    clearTimeout(timer); clearInterval(frames);
+    try { source?.stop(); } catch {}
+    stream?.getTracks().forEach(t => t.stop()); ctx?.close();
+    if (recorder === localRecorder) recorder = null;
+    if (recordingCleanup === cancel) {
+      recordingCleanup = null; $('video').disabled = false; $('create-moment').disabled = false; $('cancel-video').hidden = true;
+      for (const id of ['moment-title-input', 'show-count', 'capture-kind']) $(id).disabled = false;
+    }
+  };
+  const cancel = () => {
+    cancelled = true;
+    if (localRecorder?.state === 'recording') localRecorder.stop();
+    release();
+    $('moment-status').textContent = 'Video oluşturma iptal edildi. PNG ve WAV hazır.';
+  };
+  recordingCleanup = cancel;
+  try {
+    document.dispatchEvent(new Event('orchestra-pause')); stopPersonalAudio(); $('moment-audio').pause();
+    ctx = new AudioContext(); await ctx.resume();
+    const buffer = await ctx.decodeAudioData(active.bytes.slice(0));
+    if (cancelled || current !== revision || moment !== active) { release(); return; }
+    const destination = ctx.createMediaStreamDestination(); source = ctx.createBufferSource(); source.buffer = buffer; source.connect(destination);
+    stream = $('moment-canvas').captureStream(0);
+    const track = stream.getVideoTracks()[0];
+    if (!track?.requestFrame) throw new Error('Bu cihaz video karelerini kaydedemiyor. WAV ve PNG kullan.');
+    destination.stream.getAudioTracks().forEach(t => stream.addTrack(t));
+    const mime = ['video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'].find(t => MediaRecorder.isTypeSupported(t));
+    if (!mime) throw new Error('Bu cihazın video biçimi desteklenmiyor. WAV ve PNG kullan.');
+    const chunks = [];
+    localRecorder = new MediaRecorder(stream, { mimeType: mime }); recorder = localRecorder;
+    localRecorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
+    localRecorder.onerror = () => { cancelled = true; release(); $('moment-status').textContent = 'Video kaydı başarısız. WAV ve PNG hazır.'; };
+    localRecorder.onstop = () => {
+      release();
+      if (cancelled || current !== revision || moment !== active) return;
+      const blob = new Blob(chunks, { type: mime });
+      if (blob.size < 2000) { $('moment-status').textContent = 'Video kareleri kaydedilemedi. WAV ve PNG dosyalarını kullan veya yeniden dene.'; return; }
+      const url = URL.createObjectURL(blob); active.urls.push(url);
+      $('moment-video').src = url; $('moment-video').hidden = false; $('download-video').href = url; $('download-video').download = mime.includes('mp4') ? 'calisma-anim.mp4' : 'calisma-anim.webm'; $('download-video').hidden = false;
+      $('moment-status').textContent = 'Sesli video hazır. Önizleyip dosyayı indirebilirsin.'; metric('video');
+    };
+    localRecorder.start(250); track.requestFrame();
+    frames = setInterval(() => track.requestFrame(), 100);
+    source.start(); $('moment-status').textContent = '12 saniyelik sesli video oluşturuluyor…';
+    timer = setTimeout(() => { if (localRecorder.state === 'recording') localRecorder.stop(); }, 12200);
+  } catch (error) { cancelled = true; release(); $('moment-status').textContent = error.message || 'Video oluşturulamadı. WAV ve PNG dosyaları hazır.'; }
+};
+$('cancel-video').onclick = () => recordingCleanup?.(true);
+$('invite').onclick = async () => { const url = publicInvite(location.href); $('invite-url').value = url; const copied = await clipboard(url, $('invite-url')); $('invite-status').textContent = copied ? 'Davet bağlantısı kopyalandı.' : 'Bağlantıyı aşağıdan elle kopyalayabilirsin.'; metric('invite'); };
+$('contact').addEventListener('click', () => metric('brand'));
+addEventListener('pagehide', () => { stopPersonalAudio(); revokeMoment(); soundTabs?.close(); synth?.close(); });

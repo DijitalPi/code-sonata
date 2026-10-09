@@ -259,5 +259,69 @@ class MusicTests(unittest.TestCase):
             self.assertEqual((music.composer.song, music.composer.position), ("greensleeves", 5))
 
 
+class ReporterTests(unittest.TestCase):
+    def test_pair_fragment_is_only_in_body_and_bad_urls_are_rejected(self):
+        from agents import GlobalReporter
+        secret = 'a' * 48
+        self.assertEqual(GlobalReporter.connection('http://localhost:4480/#pair=' + secret),
+                         ('http://localhost:4480/api/play', secret))
+        self.assertEqual(GlobalReporter.connection('https://example.test/base?ignored=x'),
+                         ('https://example.test/base/api/play', None))
+        for url in ('file:///private', 'https://user:password@example.test', 'http://', 'http://localhost/#pair=bad'):
+            with self.assertRaises(ValueError):
+                GlobalReporter.connection(url)
+
+    def test_report_payload_contains_counts_without_paths_or_content(self):
+        from agents import GlobalReporter
+        from unittest.mock import patch, MagicMock
+        import agents
+        import threading
+        with tempfile.TemporaryDirectory() as directory, patch.object(agents, 'CACHE', Path(directory)), \
+                patch.object(threading.Thread, 'start'):
+            music = MagicMock()
+            music.is_working.return_value = True
+            music.sessions = {Path('/private/secret/.codex/session.jsonl'): 1}
+            reporter = GlobalReporter('http://localhost:4480/#pair=' + 'a' * 48, music)
+            reporter.add([(Path('/private/project/secret'), k) for k in ('edit', 'read', 'tool', 'text', 'done', 'ship')])
+            self.assertEqual(reporter.steps, 5)
+            self.assertEqual(reporter.activity, {'edit': 1, 'bash': 0, 'read': 1, 'think': 2, 'done': 1})
+            reporter.stop = MagicMock()
+            reporter.stop.wait.side_effect = [False, True]
+            response = MagicMock()
+            response.__enter__.return_value.read.return_value = b'{"section":"piano","seat":0,"players":1}'
+            with patch.object(reporter.request, 'urlopen', return_value=response) as request:
+                reporter.loop()
+            payload = json.loads(request.call_args.args[0].data)
+            self.assertEqual(set(payload), {'id', 'steps', 'signals', 'working', 'sessions', 'tools', 'activity', 'pair'})
+            self.assertNotIn('/private', json.dumps(payload))
+            self.assertEqual(payload['tools'], {'codex': 1})
+            self.assertEqual(payload['signals'], ['ship'])
+
+    def test_expired_pair_is_dropped_and_machine_keeps_playing(self):
+        from agents import GlobalReporter
+        from unittest.mock import patch, MagicMock
+        import agents
+        import threading
+        with tempfile.TemporaryDirectory() as directory, patch.object(agents, 'CACHE', Path(directory)), \
+                patch.object(threading.Thread, 'start'):
+            music = MagicMock()
+            music.is_working.return_value = True
+            music.sessions = {}
+            reporter = GlobalReporter('http://localhost:4480/#pair=' + 'a' * 48, music)
+            reporter.stop = MagicMock()
+            reporter.stop.wait.side_effect = [False, False, True]
+            response = MagicMock()
+            response.__enter__.return_value.read.return_value = b'{"section":"piano","seat":0,"players":1,"pair":"expired"}'
+            with patch.object(reporter.request, 'urlopen', return_value=response) as request, \
+                    patch('builtins.print') as printed:
+                reporter.loop()
+            first, second = (json.loads(call.args[0].data) for call in request.call_args_list)
+            self.assertEqual(first['pair'], 'a' * 48)
+            self.assertIsNone(second['pair'])
+            self.assertIsNone(reporter.pair)
+            self.assertIsNotNone(reporter.seat)
+            self.assertTrue(any('anonim' in str(call.args[0]) for call in printed.call_args_list))
+
+
 if __name__ == "__main__":
     unittest.main()
