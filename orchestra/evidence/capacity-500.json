@@ -1,0 +1,15 @@
+{
+  "simulation": true,
+  "requestedMachines": 500,
+  "requestedListeners": 200,
+  "seconds": 60.2,
+  "peakMachines": 500,
+  "simulatedMachines": 500,
+  "peakListeners": 201,
+  "frames": 240,
+  "bytesPerSecPerListener": 2703,
+  "maxFrameBytes": 2699,
+  "maxFrameGapMs": 256,
+  "healthP95Ms": 1.6,
+  "serverPeakRSSMiB": 158
+}

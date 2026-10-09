@@ -1,0 +1,20 @@
+✔ pair waiting, private activity, exclusive machine and unpair lifecycle (38.461583ms)
+✔ malformed input cannot crash conductor or expose unsupported values (6.553375ms)
+✔ simulation is labelled and cannot create a personal contribution (2.411625ms)
+✔ static preview metadata, headers, path isolation and SSE admission (6.561875ms)
+✔ fair play bounds activity total and request rate (7.208ms)
+✔ personal output requires activity and has bounded harmonious notes (1.635ms)
+✔ WAV is valid mono PCM, audible and never clips under dense mix (686.644125ms)
+✔ invite removes secrets and unrelated query data (0.100417ms)
+✔ every song plan covers notes and ends on complete bars (0.135167ms)
+✔ live motifs fit inside a polling interval and represent every active kind (0.106667ms)
+✔ WebM includes EBML header, VP8/Opus tracks, dimensions and duration (1.516042ms)
+✔ empty streams and unbounded media times are rejected (0.565375ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 760.887292

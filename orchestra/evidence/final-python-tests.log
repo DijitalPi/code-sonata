@@ -1,0 +1,44 @@
+test_claude_steps (test_agents.ClassifyTests.test_claude_steps) ... ok
+test_codex_steps (test_agents.ClassifyTests.test_codex_steps) ... ok
+test_noise_is_ignored (test_agents.ClassifyTests.test_noise_is_ignored) ... ok
+test_signals_from_results_and_commands (test_agents.ClassifyTests.test_signals_from_results_and_commands) ... ok
+test_accents_fit_the_chord (test_agents.MusicTests.test_accents_fit_the_chord) ... ok
+test_burst_accents_are_bounded (test_agents.MusicTests.test_burst_accents_are_bounded) ... ok
+test_calm_work_has_no_drums (test_agents.MusicTests.test_calm_work_has_no_drums) ... ok
+test_choir_slots_piano_first_and_reuse (test_agents.MusicTests.test_choir_slots_piano_first_and_reuse) ... ok
+test_each_voice_plays_its_own_instrument (test_agents.MusicTests.test_each_voice_plays_its_own_instrument) ... ok
+test_fast_work_builds_drums_and_key_change_then_calms (test_agents.MusicTests.test_fast_work_builds_drums_and_key_change_then_calms) ... ok
+test_joining_session_continues_theme (test_agents.MusicTests.test_joining_session_continues_theme) ... ok
+test_long_think_keeps_flowing_until_done (test_agents.MusicTests.test_long_think_keeps_flowing_until_done) ... ok
+test_more_sessions_thicker (test_agents.MusicTests.test_more_sessions_thicker) ... ok
+test_no_song_change_while_excited (test_agents.MusicTests.test_no_song_change_while_excited) ... ok
+test_playlist_repeats_then_moves_on_calmly (test_agents.MusicTests.test_playlist_repeats_then_moves_on_calmly) ... ok
+test_position_survives_restart (test_agents.MusicTests.test_position_survives_restart) ... ok
+test_signal_motifs (test_agents.MusicTests.test_signal_motifs) ... ok
+test_silent_until_steps_then_fades (test_agents.MusicTests.test_silent_until_steps_then_fades) ... ok
+test_pair_fragment_is_only_in_body_and_bad_urls_are_rejected (test_agents.ReporterTests.test_pair_fragment_is_only_in_body_and_bad_urls_are_rejected) ... ok
+test_report_payload_contains_counts_without_paths_or_content (test_agents.ReporterTests.test_report_payload_contains_counts_without_paths_or_content) ... Dünya orkestrası: piano bölümü, 1. koltuk · 1 makine
+ok
+test_history_is_silent_new_lines_play (test_agents.WatcherTests.test_history_is_silent_new_lines_play) ... ok
+test_missing_root_and_truncation (test_agents.WatcherTests.test_missing_root_and_truncation) ... ok
+test_new_session_and_separate_sessions (test_agents.WatcherTests.test_new_session_and_separate_sessions) ... ok
+test_old_session_waking_up_does_not_replay_history (test_agents.WatcherTests.test_old_session_waking_up_does_not_replay_history) ... ok
+test_partial_line_waits_for_newline (test_agents.WatcherTests.test_partial_line_waits_for_newline) ... ok
+test_idle_is_silent_and_resume_continues_theme (test_melodies.MelodyTests.test_idle_is_silent_and_resume_continues_theme) ... ok
+test_theme_order_is_preserved_across_code_changes (test_melodies.MelodyTests.test_theme_order_is_preserved_across_code_changes) ... ok
+test_cadence_is_single_event (test_sonata.SonataTests.test_cadence_is_single_event) ... ok
+test_edit_undo_and_atomic_save (test_sonata.SonataTests.test_edit_undo_and_atomic_save) ... ok
+test_motif_repeat_and_note_range (test_sonata.SonataTests.test_motif_repeat_and_note_range) ... ok
+test_silence_and_tempo_ramp (test_sonata.SonataTests.test_silence_and_tempo_ramp) ... ok
+test_baseline_and_touch_are_silent (test_watch.WatchTests.test_baseline_and_touch_are_silent) ... ok
+test_burst_coalesces_and_watcher_does_not_write (test_watch.WatchTests.test_burst_coalesces_and_watcher_does_not_write) ... ok
+test_change_new_delete_and_atomic_replace (test_watch.WatchTests.test_change_new_delete_and_atomic_replace) ... ok
+test_cross_language_patterns (test_watch.WatchTests.test_cross_language_patterns) ... ok
+test_excludes_dependencies_hidden_binary_and_links (test_watch.WatchTests.test_excludes_dependencies_hidden_binary_and_links) ... ok
+test_large_patch_has_bounded_music_and_returns_to_silence (test_watch.WatchTests.test_large_patch_has_bounded_music_and_returns_to_silence) ... ok
+test_limit_is_explicit (test_watch.WatchTests.test_limit_is_explicit) ... ok
+
+----------------------------------------------------------------------
+Ran 38 tests in 0.127s
+
+OK

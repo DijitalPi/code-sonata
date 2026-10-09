@@ -1,0 +1,43 @@
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 798B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/node:25-alpine@sha256:bdf2cca6fe3dabd014ea60163eca3f0f7015fbd5c7ee1b0e9ccb4ced6eb02ef4
+#2 DONE 0.0s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [1/5] FROM docker.io/library/node:25-alpine@sha256:bdf2cca6fe3dabd014ea60163eca3f0f7015fbd5c7ee1b0e9ccb4ced6eb02ef4
+#4 resolve docker.io/library/node:25-alpine@sha256:bdf2cca6fe3dabd014ea60163eca3f0f7015fbd5c7ee1b0e9ccb4ced6eb02ef4 done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 34.30kB done
+#5 DONE 0.0s
+
+#6 [2/5] WORKDIR /app
+#6 CACHED
+
+#7 [3/5] COPY --chown=node:node orchestra/server.mjs orchestra/music.mjs orchestra/geo.mjs ./orchestra/
+#7 DONE 0.0s
+
+#8 [4/5] COPY --chown=node:node orchestra/geo/ ./orchestra/geo/
+#8 DONE 0.0s
+
+#9 [5/5] COPY --chown=node:node orchestra/web/ ./orchestra/web/
+#9 DONE 0.0s
+
+#10 exporting to image
+#10 exporting layers
+#10 exporting layers 0.1s done
+#10 exporting manifest sha256:9cdc27e5d51bff6e16f360215dcc170c8c3c9a7b69606ef9a1d2376dc66930c2 done
+#10 exporting config sha256:2cbb9a8bb14a3d232e75673f31d4e7bb71c288dd291bc658de950d5ce81bd1f4 done
+#10 exporting attestation manifest sha256:050d24d9d5b474343e171db17e12930598faa38b741814bbc61ceae6e2783f03 done
+#10 exporting manifest list sha256:2eea07537abf62d7ace0fe6af9a4e8b22f67a3643c7da06fcd900e4de68cf449 done
+#10 naming to docker.io/library/agent-orchestra:local done
+#10 unpacking to docker.io/library/agent-orchestra:local 0.0s done
+#10 DONE 0.1s

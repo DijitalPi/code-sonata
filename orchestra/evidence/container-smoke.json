@@ -1,0 +1,14 @@
+{
+  "health": {
+    "ok": true,
+    "players": 0,
+    "listeners": 0
+  },
+  "pairStatus": 201,
+  "privateWaiting": true,
+  "unpairStatus": 200,
+  "runtimeUser": "uid=1000(node) gid=1000(node) groups=1000(node)",
+  "imageID": "sha256:2eea07537abf62d7ace0fe6af9a4e8b22f67a3643c7da06fcd900e4de68cf449",
+  "exposure": "127.0.0.1:4495 only; no public deploy",
+  "dockerHealth": "healthy, exit0"
+}

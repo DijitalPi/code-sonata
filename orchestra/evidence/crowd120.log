@@ -1,0 +1,5 @@
+t=10s machines=81 busy=0.72
+t=20s machines=120 busy=1.00
+t=30s machines=120 busy=0.67
+t=40s machines=120 busy=0.05
+crowd done

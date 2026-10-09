@@ -1,0 +1,31 @@
+{
+  "contrast": {
+    "body": 16.47,
+    "secondary": 8.34,
+    "gold": 10.54,
+    "input": 14.66
+  },
+  "personalVideo": {
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+      {
+        "codec_name": "vp8",
+        "codec_type": "video",
+        "width": 1200,
+        "height": 630
+      },
+      {
+        "codec_name": "opus",
+        "codec_type": "audio",
+        "sample_rate": "48000"
+      }
+    ],
+    "format": {
+      "duration": "12.000000",
+      "size": "453124"
+    }
+  },
+  "fullDecode": "ffmpeg -loglevel error: exit0, no stderr",
+  "physicalListening": false
+}
