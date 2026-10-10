@@ -17,6 +17,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cellipse cx='12' cy='23' rx='7' ry='5' fill='%23e8b65a'/%3E%3Crect x='17' y='4' width='3' height='19' fill='%23e8b65a'/%3E%3C/svg%3E">
 <link rel="preload" href="fonts/fraunces-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/fraunces-latin-ext.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/instrument-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -135,6 +136,11 @@
     </details>
   </section>
 
+  <div class="now-block" data-view="home">
+    <p class="label">Şu an salonda</p>
+    <p id="now">İlk adım bekleniyor.</p>
+    <p class="caption">Her ışık bağlı bir makinedir ve adım gelince yanar. Adım sayısı iş kalitesini ölçmez.</p>
+  </div>
   <nav class="tasks" data-view="home" aria-label="Yapabileceklerin">
     <button class="task" data-open="join"><span>Ajanımı bağla</span><small>Kendi adımlarını ayrı duy, salondaki koltuğunu gör.</small></button>
     <button class="task" data-open="moment"><span>Çalışma anımı indir</span><small>Son adımlarından 12 saniyelik ses, görsel ve video oluştur.</small></button>
@@ -154,11 +160,8 @@
       <div><b id="countries">0</b><span>ülke</span></div>
     </div>
   </div>
-  <div class="now-block">
-    <p id="now">İlk adım bekleniyor.</p>
-    <p class="caption">Her ışık bağlı bir makinedir ve adım gelince yanar. Adım sayısı iş kalitesini ölçmez.</p>
-  </div>
   <div class="stage-foot">
+    <div class="score"><canvas id="score" aria-hidden="true"></canvas><span class="label">Canlı nota</span></div>
     <section id="controls" tabindex="-1" class="dock" aria-label="Ses kontrolleri">
       <button id="sound" class="quiet" disabled>Sesi durdur</button>
       <label for="volume">Ses <input id="volume" type="range" min="0" max="100" value="65"></label>
@@ -172,6 +175,6 @@
 <div class="announce" id="announce" role="status"></div><div id="enter" hidden></div>
 <noscript><p class="lead">Dinlemek ve anını oluşturmak için JavaScript gerekir.</p></noscript>
 <script type="module" src="views.js"></script>
-<script type="module" src="app.js?v=12"></script>
+<script type="module" src="app.js?v=13"></script>
 </body>
 </html>

@@ -3,7 +3,8 @@ import { receiveFrame, ownSeat, ownPulseAt, motionPaused, isPersonal, stopPerson
 const SECTIONS = ["piano", "strings", "choir", "cello", "flute", "vibraphone", "horn", "harp", "accordion"];
 // Stereo position from the real seating plan (violins left, cellos right).
 const PAN = { strings: -.7, harp: -.6, piano: -.1, accordion: .15, flute: 0, horn: .1, choir: 0, vibraphone: .6, cello: .7 };
-const COLORS = { piano: "#f4ead8", strings: "#e8b65a", choir: "#c9a4ff", cello: "#d97a4a", flute: "#7fd1c7", vibraphone: "#8fb8ff", horn: "#f2d06b", harp: "#ff9fb2", accordion: "#ff7a7a" };
+// One warm family under stage light: distinguishable sections, no rainbow.
+const COLORS = { piano: "#f3e9d6", strings: "#e6b45a", choir: "#c9a7d8", cello: "#d9785a", flute: "#8cc9b5", vibraphone: "#93b4d6", horn: "#f0cc7a", harp: "#e8a1a6", accordion: "#d96a5e" };
 // Engine voices by index (10 = drums, synthesized; 11 = accordion, section 8).
 const SOUNDFONT = ["acoustic_grand_piano", "string_ensemble_1", "choir_aahs", "cello", "flute", "vibraphone", "french_horn", "orchestral_harp", "timpani", "tremolo_strings", null, "accordion"];
 const VOICE_SECTION = { 11: "accordion" };
@@ -152,6 +153,8 @@ function onFrame(event) {
     $("listeners").textContent = frame.listeners.toLocaleString();
     showNow(frame);
   }
+  if (frame.notes?.length) { scoreNotes.push(...frame.notes); if (scoreNotes.length > 900) scoreNotes.splice(0, scoreNotes.length - 900); }
+  if (frame.players !== undefined) { document.body.classList.toggle("is-climax", Boolean(frame.climax)); }
   if (audio && !isPersonal()) for (const note of frame.notes || []) schedule(note);
 }
 connect();
@@ -339,7 +342,7 @@ const REGIONS = {
 };
 // Teams in the strip under the stage, left to right.
 const BLOCKS = ["claude", "listen", "codex", "other"];
-const BLOCK_COLORS = { claude: "#e0784f", codex: "#3fbf8a", other: "#9b7bff", listen: "#e8b65a" };
+const BLOCK_COLORS = { claude: "#d9785a", codex: "#6fb8a0", other: "#a99bd6", listen: "#e6b45a" };
 const rad = (d) => (d * Math.PI) / 180;
 
 // Fill a wedge row by row from the front; null if it does not fit at this spacing.
@@ -357,6 +360,16 @@ function fillWedge(n, r0, r1, a0, a1, spacing, point) {
   return out;
 }
 
+// Every chair of a wedge at a fixed spacing: the empty orchestra still shows its seating plan.
+function wedgePoints(r0, r1, a0, a1, spacing, point) {
+  const out = [];
+  for (let r = r0 + spacing / 2; r <= r1; r += spacing) {
+    const perRow = Math.max(1, Math.floor((r * rad(a1 - a0)) / spacing));
+    for (let k = 0; k < perRow; k++) out.push(point(r, a0 + ((a1 - a0) * (k + .5)) / perRow));
+  }
+  return out;
+}
+
 function fit(build, start = 26) {
   for (let spacing = start; spacing > 2.4; spacing *= .92) {
     const result = build(spacing);
@@ -367,7 +380,7 @@ function fit(build, start = 26) {
 
 function geometry() {
   if (cached && cached.version === version) return cached;
-  const cx = width / 2, cy = height - Math.max(100, height * .2);   // the team strip needs ~100 px below the stage
+  const cx = width / 2, cy = height - Math.max(104, height * .14);   // the audience needs ~104 px below the stage
   const R = Math.min(width * .42, height * .6);
   const stagePoint = (r, a) => ({ x: cx + Math.sin(rad(a)) * r, y: cy - Math.cos(rad(a)) * r });
   // Each section fills its own region (a lone harpist gets a big chair, violins pack tight).
@@ -395,49 +408,10 @@ function geometry() {
     });
     order[name] = []; idx.forEach((seat, pos) => { order[name][seat] = pos; });
   }
-  cached = { version, cx, cy, R, stage, order };
+  const chairs = {}, chairSpacing = Math.max(11, R * .055);
+  for (const [name, reg] of Object.entries(REGIONS)) chairs[name] = wedgePoints(reg.band[0] * R, reg.band[1] * R, reg.arc[0], reg.arc[1], chairSpacing, stagePoint);
+  cached = { version, cx, cy, R, stage, order, chairs };
   return cached;
-}
-
-// Original mascots (drawn here, not brand logos).
-function mascot(team, x, y, r) {
-  const color = BLOCK_COLORS[team];
-  g.save(); g.translate(x, y);
-  g.fillStyle = color;
-  if (team === "codex") {                 // robot drummer
-    g.beginPath(); g.roundRect(-r, -r, r * 2, r * 1.8, r * .35); g.fill();
-    g.strokeStyle = color; g.lineWidth = 2;
-    g.beginPath(); g.moveTo(0, -r); g.lineTo(0, -r * 1.45); g.stroke();
-    g.beginPath(); g.arc(0, -r * 1.5, r * .16, 0, Math.PI * 2); g.fill();
-    g.fillStyle = "#10201a"; g.beginPath(); g.roundRect(-r * .7, -r * .65, r * 1.4, r * .8, r * .2); g.fill();
-    g.fillStyle = "#7dffc8"; g.fillRect(-r * .42, -r * .38, r * .22, r * .22); g.fillRect(r * .2, -r * .38, r * .22, r * .22);
-    g.strokeStyle = "#f4ead8"; g.lineWidth = 1.5;
-    g.beginPath(); g.moveTo(r * .9, r * .2); g.lineTo(r * 1.5, -r * .4); g.moveTo(-r * .9, r * .2); g.lineTo(-r * 1.5, -r * .4); g.stroke();
-  } else {
-    g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2); g.fill();
-    if (team === "other") {               // cat with a violin
-      g.beginPath(); g.moveTo(-r * .85, -r * .45); g.lineTo(-r * .55, -r * 1.25); g.lineTo(-r * .15, -r * .85); g.fill();
-      g.beginPath(); g.moveTo(r * .85, -r * .45); g.lineTo(r * .55, -r * 1.25); g.lineTo(r * .15, -r * .85); g.fill();
-      g.fillStyle = "#8a4b2a"; g.beginPath(); g.ellipse(r * .95, r * .45, r * .32, r * .2, -.5, 0, Math.PI * 2); g.fill();
-    }
-    if (team === "listen") {              // headphones
-      g.strokeStyle = "#f4ead8"; g.lineWidth = 2.2;
-      g.beginPath(); g.arc(0, -r * .1, r * 1.12, Math.PI * 1.1, Math.PI * 1.9); g.stroke();
-      g.fillStyle = "#f4ead8"; g.fillRect(-r * 1.2, -r * .35, r * .3, r * .6); g.fillRect(r * .9, -r * .35, r * .3, r * .6);
-    }
-    g.fillStyle = "#1a120c";               // eyes and smile
-    g.beginPath(); g.arc(-r * .35, -r * .15, r * .13, 0, Math.PI * 2); g.arc(r * .35, -r * .15, r * .13, 0, Math.PI * 2); g.fill();
-    g.strokeStyle = "#1a120c"; g.lineWidth = 1.6;
-    g.beginPath(); g.arc(0, r * .12, r * .32, .15 * Math.PI, .85 * Math.PI); g.stroke();
-    if (team === "claude") {              // maestro: bow tie and baton
-      g.fillStyle = "#1a120c";
-      g.beginPath(); g.moveTo(0, r * .78); g.lineTo(-r * .38, r * .58); g.lineTo(-r * .38, r * .98); g.closePath();
-      g.moveTo(0, r * .78); g.lineTo(r * .38, r * .58); g.lineTo(r * .38, r * .98); g.closePath(); g.fill();
-      g.strokeStyle = "#f4ead8"; g.lineWidth = 1.5;
-      g.beginPath(); g.moveTo(r * .9, r * .1); g.lineTo(r * 1.65, -r * .7); g.stroke();
-    }
-  }
-  g.restore();
 }
 
 let last = performance.now();
@@ -452,6 +426,27 @@ function frame(now) {
   g.beginPath(); g.moveTo(cx, cy); g.arc(cx, cy, R * 1.05, rad(-182), rad(2)); g.closePath(); g.fill();
   g.strokeStyle = info.climax ? "rgba(232, 182, 90, .45)" : "rgba(244, 234, 216, .12)"; g.lineWidth = 1;
   g.beginPath(); g.arc(cx, cy, R * 1.05, rad(-182), rad(2)); g.stroke();
+  // Risers between the rows, like the steps of a real stage.
+  g.strokeStyle = "rgba(244, 234, 216, .05)"; g.lineWidth = 1;
+  for (const f of [.55, .71, .875]) { g.beginPath(); g.arc(cx, cy, f * R, rad(-180), rad(0)); g.stroke(); }
+  // Empty chairs: a section nobody plays in yet still shows where its players will sit.
+  g.fillStyle = "rgba(232, 182, 90, .16)";
+  for (const [name, pts] of Object.entries(G.chairs)) {
+    if ((seats[SECTIONS.indexOf(name)] || []).some(Boolean) || (name === "piano" && info.house)) continue;
+    for (const { x, y } of pts) { g.beginPath(); g.arc(x, y, 1.5, 0, Math.PI * 2); g.fill(); }
+  }
+  // Section names, quietly, at the front edge of each region.
+  // Drawn under the musicians, and quieter once a section has players, so flags never sit on text.
+  g.font = "italic 300 14px Fraunces, Georgia, serif"; g.textAlign = "center";
+  for (const [name, reg] of Object.entries(REGIONS)) {
+    if (name === "accordion") continue;        // piano and accordion share one label
+    // On a small stage the three names around the podium cannot fit apart: name only the outer rows.
+    if (R < 260 && reg.band[0] < .5) continue;
+    const a = rad(name === "piano" ? 0 : (reg.arc[0] + reg.arc[1]) / 2), r = reg.band[0] * R - 7;
+    g.fillStyle = (seats[SECTIONS.indexOf(name)] || []).some(Boolean) ? "rgba(230, 180, 90, .3)" : "rgba(230, 180, 90, .62)";
+    if (name === "piano") { g.fillText("solistler", cx, cy - reg.band[1] * R - 9); continue; }
+    g.fillText(reg.label, cx + Math.sin(a) * r, cy - Math.cos(a) * r);
+  }
   // Musicians.
   const soloGlow = motionPaused ? 0 : Math.max(0, 1 - (Date.now() + offset - soloAt) / 500);
   for (const [name, pts] of Object.entries(G.stage.sections)) {
@@ -492,22 +487,18 @@ function frame(now) {
       }
     });
   }
-  // Section names, quietly, at the front edge of each region.
-  g.font = "500 10px Inter, sans-serif"; g.textAlign = "center"; g.fillStyle = "rgba(163, 150, 132, .8)";
-  for (const [name, reg] of Object.entries(REGIONS)) {
-    if (name === "accordion") continue;        // piano and accordion share one label
-    // On a small stage the three names around the podium cannot fit apart: name only the outer rows.
-    if (R < 260 && reg.band[0] < .5) continue;
-    const a = rad(name === "piano" ? 0 : (reg.arc[0] + reg.arc[1]) / 2), r = reg.band[0] * R - 7;
-    if (name === "piano") { g.fillText("SOLİSTLER", cx, cy - reg.band[1] * R - 9); continue; }
-    g.fillText(reg.label.toUpperCase(), cx + Math.sin(a) * r, cy - Math.cos(a) * r);
-  }
-  if (info.house) {                       // the house pianist, at the piano, glowing on each note
+  if (info.house) {                       // the house pianist: a grand piano seen from above, glowing on each note
     const reg = REGIONS.piano, a = rad((reg.arc[0] + reg.arc[1]) / 2), r = ((reg.band[0] + reg.band[1]) / 2) * R;
-    const x = cx + Math.sin(a) * r, y = cy - Math.cos(a) * r;
-    g.globalAlpha = .25 + soloGlow * .5; g.fillStyle = "#f4ead8";
-    g.beginPath(); g.arc(x, y, 7 + soloGlow * 4, 0, Math.PI * 2); g.fill();
-    g.globalAlpha = 1;
+    const s = Math.max(10, R * .04);
+    g.save(); g.translate(cx + Math.sin(a) * r, cy - Math.cos(a) * r); g.rotate(a);
+    if (soloGlow > .02) { g.globalAlpha = soloGlow * .35; g.strokeStyle = "#e8b65a"; g.lineWidth = 1; g.beginPath(); g.arc(0, -s * .3, s * 1.6, 0, Math.PI * 2); g.stroke(); }
+    g.globalAlpha = .45 + soloGlow * .45; g.fillStyle = "#e8b65a";
+    // Straight spine on the left, the curved bentside on the right, keyboard at the front.
+    g.beginPath(); g.moveTo(-s * .6, s * .55); g.lineTo(s * .6, s * .55); g.lineTo(s * .6, s * .15);
+    g.bezierCurveTo(s * .6, -s * .25, s * .05, -s * .3, -s * .05, -s * .9);
+    g.quadraticCurveTo(-s * .18, -s * 1.4, -s * .45, -s * 1.35); g.quadraticCurveTo(-s * .6, -s * 1.3, -s * .6, -s * 1.05); g.closePath(); g.fill();
+    g.fillStyle = "#0d0b09"; g.fillRect(-s * .52, s * .28, s * 1.04, s * .16);   // keyboard
+    g.restore(); g.globalAlpha = 1;
   }
   // Conductor on the podium, baton keeping time.
   const beat = (Date.now() + offset) / (60000 / (info.bpm || 64));
@@ -517,33 +508,85 @@ function frame(now) {
   g.beginPath(); g.moveTo(cx, cy - 2); g.lineTo(cx + Math.sin(swing) * 24, cy - 2 - Math.cos(swing) * 24); g.stroke();
   g.fillStyle = "#f4ead8"; g.beginPath(); g.arc(cx, cy + 4, 6, 0, Math.PI * 2); g.fill();
   drawTeams(G, now);
+  if (!motionPaused) drawScore();
+  document.body.classList.toggle("is-playing", audio?.ctx.state === "running");
   requestAnimationFrame(frame);
 }
 
-// Team strip in front of the stage: one mascot per team with its numbers; it jumps when
-// that team's agents ship something.
+// The audience in front of the stage: four blocks of seats, one per team. A filled seat is an
+// agent session (listeners: a listener); a block rises in a small wave when its agents ship.
+const AUDIENCE_ROWS = 3, AUDIENCE_COLS = 8;
 function drawTeams(G, now) {
-  const gap = Math.min(220, (width - 32) / BLOCKS.length);
+  const gap = Math.min(230, (width - 24) / BLOCKS.length), step = Math.max(7, Math.min(11, gap / 12));
+  const top = G.cy + 30;
   g.textAlign = "center"; g.textBaseline = "middle";
   BLOCKS.forEach((team, b) => {
-    const mx = G.cx + (b - (BLOCKS.length - 1) / 2) * gap, my = G.cy + 46;
+    const mx = G.cx + (b - (BLOCKS.length - 1) / 2) * gap;
+    const count = team === "listen" ? teams.fans?.[team] || 0 : teams.agents?.[team] || 0;
     const age = (now - (waves[team] || -1e9)) / 1000;
-    const jump = !motionPaused && age < 1 ? Math.sin(age * Math.PI) * 12 : 0;
-    const bob = !motionPaused && info.working ? Math.abs(Math.sin(((Date.now() + offset) / (60000 / (info.bpm || 64))) * Math.PI)) * 3 : 0;
-    mascot(team, mx, my - jump - bob, 15);
-    const agents = team === "listen" ? null : teams.agents?.[team] || 0;
-    const fans = teams.fans?.[team] || 0;
-    const sub = agents === null ? `${fans.toLocaleString()} dinleyen` : `${agents.toLocaleString()} ajan`;
-    g.font = "500 11px Inter, sans-serif";
-    g.fillStyle = "rgba(244, 234, 216, .92)"; g.fillText(TEAM_NAMES[team], mx, my + 30);
-    g.fillStyle = "rgba(163, 150, 132, .95)"; g.fillText(sub, mx, my + 44);
+    for (let i = 0; i < AUDIENCE_ROWS * AUDIENCE_COLS; i++) {
+      const col = i % AUDIENCE_COLS, row = Math.floor(i / AUDIENCE_COLS);
+      const wave = !motionPaused && age < 1.4 ? Math.max(0, Math.sin((age * 1.6 - col / AUDIENCE_COLS * .7) * Math.PI)) * 4 : 0;
+      const x = mx + (col - (AUDIENCE_COLS - 1) / 2) * step, y = top + row * step - wave;
+      g.beginPath(); g.arc(x, y, step * .3, 0, Math.PI * 2);
+      if (i < count) { g.fillStyle = BLOCK_COLORS[team]; g.fill(); }
+      else { g.strokeStyle = "rgba(243, 233, 214, .15)"; g.lineWidth = 1; g.stroke(); }
+    }
+    const labelY = top + AUDIENCE_ROWS * step + 9;
+    g.font = "600 10px 'Instrument Sans', system-ui, sans-serif"; g.fillStyle = "rgba(243, 233, 214, .9)";
+    g.fillText(TEAM_NAMES[team].toLocaleUpperCase("tr"), mx, labelY);
+    g.font = "italic 300 13px Fraunces, Georgia, serif"; g.fillStyle = "rgba(179, 165, 143, .95)";
+    g.fillText(`${count.toLocaleString("tr")} ${team === "listen" ? "dinleyen" : "ajan"}`, mx, labelY + 15);
     if (you && you.team === team) {
-      g.fillStyle = "#e8b65a"; g.font = "600 11px Inter, sans-serif";
-      g.fillText("dinleyici", mx, my - 34 - jump);
+      g.fillStyle = "#e6b45a"; g.font = "italic 400 12px Fraunces, Georgia, serif";
+      g.fillText("sen buradasın", mx, top - 13);
     }
   });
   g.textBaseline = "alphabetic";
 }
+
+// ---------- live score ----------
+// Every note the conductor sends crosses one staff under the hall: everyone's work as sheet
+// music. Notes enter on the right before they sound, pass the playhead as they play, then fade.
+const scoreCanvas = $("score"), sg = scoreCanvas.getContext("2d");
+const scoreNotes = [];                    // [serverTime, pitch, velocity, duration, voice]
+const VOICE_COLORS = [...SECTIONS.slice(0, 8).map((s) => COLORS[s]), COLORS.horn, COLORS.strings, null, COLORS.accordion];
+let scoreW = 0, scoreH = 0;
+function resizeScore() {
+  scoreW = scoreCanvas.clientWidth; scoreH = scoreCanvas.clientHeight;
+  scoreCanvas.width = scoreW * dpr; scoreCanvas.height = scoreH * dpr;
+  sg.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawScore();
+}
+new ResizeObserver(resizeScore).observe(scoreCanvas);
+
+function drawScore() {
+  if (!scoreW) return;
+  const t = Date.now() + offset, play = scoreW * .76, speed = .085;   // px per ms
+  const mid = scoreH / 2 + 7, gapY = Math.max(5, Math.min(8, scoreH / 11));
+  sg.clearRect(0, 0, scoreW, scoreH);
+  sg.strokeStyle = "rgba(230, 180, 90, .22)"; sg.lineWidth = 1;
+  for (let l = -2; l <= 2; l++) { const y = Math.round(mid + l * gapY) + .5; sg.beginPath(); sg.moveTo(0, y); sg.lineTo(scoreW, y); sg.stroke(); }
+  sg.strokeStyle = "rgba(243, 208, 140, .55)";
+  sg.beginPath(); sg.moveTo(play + .5, mid - gapY * 3.4); sg.lineTo(play + .5, mid + gapY * 3.4); sg.stroke();
+  while (scoreNotes.length && t - scoreNotes[0][0] > play / speed + 4000) scoreNotes.shift();
+  for (const [at, pitch, velocity, duration, voice] of scoreNotes) {
+    if (voice === 10) continue;           // drums keep time; they have no pitch on a staff
+    const x = play - (t - at) * speed;
+    if (x < -12 || x > scoreW + 12) continue;
+    const y = Math.max(16, Math.min(scoreH - 6, mid - ((pitch - 66) / 24) * gapY * 3));
+    const sounding = t >= at && t <= at + duration * 1000;
+    const fade = x > play ? .45 : .2 + .75 * Math.max(0, x / play);
+    sg.fillStyle = VOICE_COLORS[voice] || "#e6b45a";
+    sg.globalAlpha = (sounding ? .7 : .3) * fade;
+    sg.fillRect(x, y - 1, Math.min(duration * 1000 * speed, 140), 2);
+    sg.globalAlpha = sounding ? 1 : fade;
+    sg.beginPath(); sg.ellipse(x, y, sounding ? 5.4 : 4.4, sounding ? 3.9 : 3.2, -.35, 0, Math.PI * 2); sg.fill();
+    if (sounding) { sg.globalAlpha = .25; sg.beginPath(); sg.arc(x, y, 9, 0, Math.PI * 2); sg.fill(); }
+  }
+  sg.globalAlpha = 1;
+}
+
 requestAnimationFrame(frame);
 
 function pauseCommon() {

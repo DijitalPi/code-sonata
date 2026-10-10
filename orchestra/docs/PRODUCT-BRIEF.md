@@ -49,3 +49,19 @@ Kullanıcı müziği keyifli bulur ve kendi anını paylaşmak ister: henüz kan
 Handoff'un 01–60 sorularını altı aşamada yürüt. Her kayıt başlangıç kanıtı, uygulama/değerlendirme, doğrulama ve karar içerir. Her onlu aşama kontrol noktasıdır. 61–80 yalnız ortaya çıkan somut kusur için. Yaklaşık altı saat yoğun çalışma bütçesi; bekleyerek doldurma yok.
 
 Hedef: mevcut kullanıcı değişikliklerini koruyarak üç deneyimi yerelde çalıştır, güvenlik/erişilebilirlik/kapasite kanıtlarını ve marka/lansman/araştırma/operasyon teslimlerini repoya kaydet. Gerçek kullanıcı, işitsel kalite ve genel yayın bağımlılıklarını açık tut. İlk demo sonunda durma; uygulanabilir iş ve kritik düzeltmeler tamamlanınca teslim et. Formal goal oluşturma.
+
+## Tasarım briefi · 2026-10-10 (Selim: "daha iyisini, daha tarzını yap", /gg tam)
+
+Görsel tez: gece konser salonu + basılı konser programı. Sahne ışıkla, sütun matbaa düzeniyle konuşur. Akılda kalacak tek şey: salonun altında akan **canlı nota şeridi**; herkesin ajan adımı gerçek zamanlı nota kâğıdına düşer (sunucudan gelen gerçek notalar, süs değil).
+
+| Alan | Karar | Kabul |
+|---|---|---|
+| Tipografi | Fraunces (başlık, eğik vurgu) + Instrument Sans (arayüz), ikisi de siteye gömülü, OFL | Dış font isteği yok, Türkçe karakterler doğru |
+| Sahne | Işık durumları: sakin / çalıyor / doruk; boş sandalyeler ve basamaklar | Boş salon ilk bakışta "salon" okunur |
+| Seyirci | Çizgi film maskotları yerine parter: dinleyiciler takım bloklarında koltuk noktaları | Kendi yerin işaretli, sayılar okunur |
+| Nota şeridi | 5 çizgili porte, notalar sağdan sola akar, bölüm rengiyle | Ses kapalıyken de akar; azaltılmış harekette durur |
+| Program | İşler konser programı gibi numaralı (I, II, III), başlık = yapılan iş | Net dil; slogan yok, uzun tire yok |
+
+Sınırlar: işlev ve öğe kimlikleri değişmez; içerik hareketi ≤0,35 sn; transform/opacity; :active + :focus-visible. Gerçek kullanıcı beğenisi ölçülmedi, Selim'in gözü kabul ölçütüdür.
+
+Döngü planı (ek bütçe 64–71): 64 tipografi · 65 nota şeridi · 66 seyirci parteri · 67 sahne ışık durumları · 68 program sütunu · 69 mobil/erişilebilirlik/azaltılmış hareket · 70 bütünsel tarayıcı kontrolü ve düzeltme · 71 teslim.
