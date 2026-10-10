@@ -9,7 +9,7 @@ Test/demo sıfır token: `demo.py` (araç), `orchestra/crowd.mjs` (site). Test i
 
 - Kod `02cad6e`, belgeler/kanıtlar `bc24dcc` (main). Codex 60 döngü yaptı; Claude inceledi ve iki ek döngü ekledi (61-62). Kayıt: `orchestra/docs/WORK-LOG.md`, kabul: `VALIDATION.md`.
 - Düzeltildi: eşleştirme anahtarı dolunca/kaldırılınca/sunucu yeniden başlayınca makine ortak orkestradan düşüyordu (403 + okuyucu anahtarı bırakmıyordu). Şimdi sunucu `pair:"expired"|"used"` döner, okuyucu anonim devam eder. IP başına 5 açık eşleştirme.
-- Tasarım (Selim: "berbat"): Codex salonu kutuya koyup landing şablonu yapmıştı. Şimdi solda işlem sütunu + sağda kenara kadar salon, görünümler `web/views.js` ile aynı sütunda. Font `web/fonts/` (Fraunces, OFL).
+- Tasarım (Selim: "berbat", sonra "daha tarzını yap" → /gg tam, döngü 64-71, `1247eeb`): gece konser salonu + basılı program. Solda numaralı program sütunu (`web/views.js`), sağda kenara kadar salon; altında **canlı nota şeridi** (`#score`, gerçek SSE notaları); maskotlar yerine seyirci koltukları; spot ışığı `body.is-playing/.is-climax`. Fontlar `web/fonts/` (Fraunces + Instrument Sans, OFL). Brief: `orchestra/docs/PRODUCT-BRIEF.md` sonu.
 - Hâlâ canlı DEĞİL (DNS yok). `orchestra/Dockerfile` var ama yayın ayrı onay. Yerel: `PORT=4482 node orchestra/server.mjs`.
 - Açık: gerçek dinleme + 5 kişilik deneme + telefon/Safari yapılmadı · `?simulation=1` herkese "Test salonu" yazdırabiliyor · paylaşım görseli 0 olan türe nota çiziyor · 4480'de eski sunucu tüm ağa açık.
 - Tuzak: kişisel eşleştirme (`/api/pair|me|unpair`) yalnız tarayıcı görünümüdür; ortak katılımı asla 403 ile kesme.
