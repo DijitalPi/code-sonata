@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { personalNotes, liveNotes, deltaActivity, wavBytes, publicInvite, eventKey } from './web/moment.js';
-import { SONGS, PLANS, METERS } from './music.mjs';
+import { personalNotes, liveNotes, deltaActivity, wavBytes, publicInvite, eventKey, momentLayout } from './web/moment.js';
+import { SONGS, PLANS, METERS } from './web/music.mjs';
 test('personal output requires activity and has bounded harmonious notes', () => {
   assert.deepEqual(personalNotes({}), []);
   const notes = personalNotes({ edit: 300, bash: 300, read: 300, think: 300, done: 300 });
@@ -46,4 +46,15 @@ test('every instrument the hall plays has a pinned, checksummed sample file', as
   const manifest = JSON.parse(await readFile(new URL('./sounds.json', import.meta.url), 'utf8'));
   for (const name of names) assert.ok(manifest.files.some(f => f.path === `sounds/FluidR3_GM/${name}-mp3.js` && /^[a-f0-9]{64}$/.test(f.sha256)), name);
   assert.equal(app.includes('cdn.jsdelivr'), false);
+});
+test('the share image draws exactly the notes the sound plays, inside the staff', () => {
+  const notes = personalNotes({ edit: 2, read: 0, bash: 1, think: 0, done: 0 });
+  const box = { left: 64, right: 1136, top: 360, bottom: 470 };
+  const marks = momentLayout(notes, box);
+  assert.equal(marks.length, notes.length);
+  for (const m of marks) assert.ok(m.x >= box.left && m.x <= box.right && m.y >= box.top && m.y <= box.bottom && m.length >= 0);
+  for (let i = 1; i < marks.length; i++) assert.ok(marks[i].x >= marks[i - 1].x);
+  assert.deepEqual(momentLayout([], box), []);
+  // A kind with no activity adds no notes: no "read" pitches (81, 84, 88) appear.
+  assert.equal(notes.some((n) => [81, 84, 88].includes(n[1])), false);
 });

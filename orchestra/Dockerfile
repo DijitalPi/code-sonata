@@ -9,7 +9,7 @@ RUN node orchestra/fetch-sounds.mjs
 FROM node:25-alpine@sha256:bdf2cca6fe3dabd014ea60163eca3f0f7015fbd5c7ee1b0e9ccb4ced6eb02ef4
 ENV NODE_ENV=production PORT=4480 HOST=0.0.0.0 TRUST_PROXY=0
 WORKDIR /app
-COPY --chown=node:node orchestra/server.mjs orchestra/music.mjs orchestra/geo.mjs ./orchestra/
+COPY --chown=node:node orchestra/server.mjs orchestra/geo.mjs ./orchestra/
 COPY --chown=node:node orchestra/geo/ ./orchestra/geo/
 COPY --chown=node:node orchestra/web/ ./orchestra/web/
 COPY --from=sounds --chown=node:node /app/orchestra/web/sounds/ ./orchestra/web/sounds/

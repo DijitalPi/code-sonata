@@ -27,6 +27,19 @@ Kendi çalışma sesini keşfet → özel komutla ortak orkestraya katıl → ge
 | Marka/lansman | DijitalPi imza/hikâye, resmi iletişim linki; poster, X/LinkedIn taslağı,45sn demo ve buluşma önerisi | Gönderi/davet yapılmadı, crawler/genel URL yok, ticari talep yok |
 | İşletme/yayın adayı | Node Dockerfile digest sabit; non-root uid1000, health200/healthy, private pair lifecycle; maliyet/rollback planı | Genel hedef VPS/TLS/proxy/gerçek maliyet/rights-CDN incelemesi açık |
 
+## Yayın hazırlığı kabulü (2026-10-11, döngü 72–80)
+
+| Kabul | Sonuç ve kanıt | Açık sınır |
+|---|---|---|
+| Etkinlik salonu | Aynı IP'den 12 dinleyici, 15 makine, 8 eşleştirme geçer; yanlış anahtar normal sınır (test-api) | Gerçek salon ağında denenmedi |
+| Ülke ve test etiketi güveni | Sahte `CF-IPCountry` ülkeyi değiştirmez; üretimde simüle makine 403, `?simulation=1` etkisiz (test-api) | |
+| Çerezsiz sayaçlar | Sayım, tekil yaklaşık, beyaz liste, anahtarsız 404, dosyada kalıcılık (test-api + elle) | Tekil sayı NAT arkasında ve yeniden başlatmada yaklaşık |
+| Yerel ses + CSP | Gerçek tıklamada 11 örnek + motor yalnız aynı kaynaktan, CSP ihlali yok, dış istek 0 (`evidence/release-playing-spotlight.jpeg`) | Docker çok aşamalı build denenmedi |
+| Görünmezken çizim yok | Ekran dışında 2 sn'de 0 çizim, görününce 60 (390 genişlik ölçümü) | iPhone sessiz anahtarı yalnız kodla; gerçek iPhone denenmedi |
+| Demo konseri | Sunucu dinleyicisi 2→1→2 (demo sırasında SSE kapalı), 24 makine/12 ülke, etiket her an görünür, masaüstü + mobil (`evidence/release-demo-*.jpg`, test-conductor) | Müzikal değerlendirme dinlenerek yapılmadı |
+| Paylaşım görseli | Sesin kendi notaları porte üstünde, olmayan türe nota yok (test-moment, `evidence/release-share-image.jpg`) | |
+| Metin ve atıf | Linux desteği, gizlilik görünümü, CC BY 3.0 atfı, görev numaraları ekran okuyucuda "." okumuyor (AX ağacı) | Gizlilik metni hukuki onay bekliyor |
+
 ## Test sonuçları
 
 - `python3 -m unittest -v`: **39/39** geçti; JSONL/yerel motor regresyonu ve ağ payload mahremiyet testleri. `evidence/final-python-tests.log` (38/38 anı; 39. test döngü 61'de eklendi).

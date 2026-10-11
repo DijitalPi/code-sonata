@@ -51,3 +51,14 @@ export function eventKey(search) {
   const key = new URLSearchParams(search).get('event') || '';
   return /^[A-Za-z0-9_-]{16,64}$/.test(key) ? key : '';
 }
+// Where each note of a moment sits on the share image's staff: time runs left to right over the
+// moment, pitch from low to high, so the picture is the sound and nothing else.
+export function momentLayout(notes, { left, right, top, bottom }, seconds = 12) {
+  if (!notes.length) return [];
+  const pitches = notes.map((n) => n[1]), lo = Math.min(...pitches), hi = Math.max(...pitches);
+  const span = Math.max(12, hi - lo), centre = (lo + hi) / 2, mid = (top + bottom) / 2, half = (bottom - top) / 2 - 8;
+  return notes.map(([at, pitch, velocity, duration]) => {
+    const x = left + Math.min(1, Math.max(0, at / (seconds * 1000))) * (right - left);
+    return { x, y: Math.round(mid - ((pitch - centre) / span) * 2 * half), length: Math.max(0, Math.min(right - x, (duration / seconds) * (right - left))), strength: Math.min(1, Math.max(0, velocity / 127)) };
+  }).sort((a, b) => a.x - b.x);
+}

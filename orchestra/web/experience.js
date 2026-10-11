@@ -1,9 +1,9 @@
-import { KINDS, personalNotes, liveNotes, deltaActivity, wavBytes, publicInvite, eventKey } from './moment.js';
+import { KINDS, personalNotes, liveNotes, deltaActivity, wavBytes, publicInvite, eventKey, momentLayout } from './moment.js';
 const EVENT = eventKey(location.search);
 const $ = id => document.getElementById(id);
 const labels = { edit: 'düzenleme', bash: 'komut', read: 'okuma', think: 'düşünme', done: 'bitiş' };
 let token = null, me = null, baseline = {}, polling = false, recent = [], moment = null, revision = 0;
-let simulationUntil = 0;
+let simulationUntil = 0, simulationLabel = 'TEST';
 let synth = null, nodes = [], demoTimer = null, recorder = null, recordingCleanup = null;
 let personalEnabled = false, synthBus = null;
 const soundTabs = 'BroadcastChannel' in window ? new BroadcastChannel('agent-orchestra-audio') : null;
@@ -24,7 +24,7 @@ export let ownPulseAt = 0;
 export let motionPaused = matchMedia('(prefers-reduced-motion: reduce)').matches;
 export function isPersonal() { return $('mode').value === 'personal'; }
 export function receiveFrame(frame) {
-  if (frame.simulated) simulationUntil = Date.now() + 12000;
+  if (frame.simulated || frame.demo) { simulationUntil = Date.now() + 12000; simulationLabel = frame.demo ? 'DEMO' : 'TEST'; }
   const cutoff = Date.now() - 12000;
   recent.push(...(frame.notes || []).map(n => [n[0] - frame.t + Date.now(), ...n.slice(1)]));
   recent = recent.filter(n => n[0] >= cutoff).slice(-400);
@@ -160,22 +160,34 @@ async function poll() {
   finally { polling = false; }
 }
 setInterval(poll, 2000);
-function drawMoment(title, counts, personal, showCount) {
-  const canvas = $('moment-canvas'), c = canvas.getContext('2d');
-  c.fillStyle = '#0d0b09'; c.fillRect(0, 0, 1200, 630);
-  c.strokeStyle = '#40382e'; c.lineWidth = 1;
-  for (let i = 0; i < 5; i++) { c.beginPath(); c.moveTo(64, 365 + i * 28); c.lineTo(1136, 365 + i * 28); c.stroke(); }
-  c.fillStyle = '#e8b65a'; c.font = '20px sans-serif'; c.fillText(personal ? 'KENDİ ÇALIŞMA ANIM / AGENT ORCHESTRA' : 'ORTAK ORKESTRA ANI / AGENT ORCHESTRA', 64, 78);
-  c.fillStyle = '#f4ead8'; c.font = '58px Georgia';
-  const words = title.split(' '); let line = '', row = 0;
-  for (const word of words) { const candidate = `${line}${line ? ' ' : ''}${word}`; if (c.measureText(candidate).width > 1060 && line) { c.fillText(line, 64, 190 + row++ * 70); line = word; } else line = candidate; }
-  c.fillText(line, 64, 190 + row * 70, 1060);
-  const values = KINDS.map(k => counts[k] || 0);
-  c.fillStyle = '#e8b65a';
-  values.forEach((v, i) => { for (let n = 0; n < Math.min(6, Math.max(1, v)); n++) { const x = 120 + i * 210 + n * 16, y = 395 + Math.sin(i + n * .8) * 37; c.beginPath(); c.ellipse(x, y, 10, 7, -.4, 0, Math.PI * 2); c.fill(); c.fillRect(x + 8, y - 55, 2, 55); } });
-  c.fillStyle = '#b5a794'; c.font = '20px sans-serif';
-  c.fillText(personal ? (showCount ? `${Object.values(counts).reduce((a, b) => a + b, 0)} gerçek faaliyet · sayılardan üretilen müzikal yorum` : 'Gerçek faaliyetlerden üretilen müzikal yorum') : 'Anonim ortak müziğin 12 saniyelik yeniden yorumu', 64, 535);
-  c.font = '18px sans-serif'; c.fillText('DijitalPi tarafından geliştirildi', 64, 586); c.textAlign = 'right'; c.fillText('Çalışma sesini keşfet →', 1136, 586); c.textAlign = 'left';
+// The share image: the title and the moment's own notes on a staff, so the picture is the sound.
+async function drawMoment(title, notes, { personal, showCount, total, label }) {
+  try { await Promise.all([document.fonts.load('300 66px Fraunces', title), document.fonts.load('500 18px "Instrument Sans"', 'ĞÜŞİÖÇ')]); } catch {}
+  const c = $('moment-canvas').getContext('2d'), W = 1200, H = 630;
+  const light = c.createRadialGradient(W * .72, H * .78, 20, W * .72, H * .78, 640);
+  light.addColorStop(0, '#2b1f10'); light.addColorStop(1, '#0b0907');
+  c.fillStyle = light; c.fillRect(0, 0, W, H);
+  c.fillStyle = '#e6b45a'; c.font = '600 16px "Instrument Sans", system-ui, sans-serif'; c.letterSpacing = '3px';
+  c.fillText(`${personal ? 'KENDİ ÇALIŞMA ANIM' : label === 'DEMO' ? 'DEMO KONSERİNDEN BİR AN' : 'ORTAK ORKESTRADAN BİR AN'}  ·  AGENT ORCHESTRA`, 64, 84);
+  c.letterSpacing = '0px';
+  c.fillStyle = '#f3e9d6'; c.font = '300 66px Fraunces, Georgia, serif';
+  const lines = []; let line = '';
+  for (const word of title.split(' ')) { const next = line ? `${line} ${word}` : word; if (c.measureText(next).width > 1072 && line) { lines.push(line); line = word; } else line = next; }
+  lines.push(line);
+  lines.slice(0, 2).forEach((text, i) => c.fillText(text, 64, 182 + i * 74, 1072));
+  const box = { left: 64, right: 1136, top: 352, bottom: 472 };
+  c.strokeStyle = 'rgba(230, 180, 90, .28)'; c.lineWidth = 1;
+  for (let i = 0; i < 5; i++) { const y = Math.round(box.top + 12 + i * ((box.bottom - box.top - 24) / 4)) + .5; c.beginPath(); c.moveTo(box.left, y); c.lineTo(box.right, y); c.stroke(); }
+  c.fillStyle = '#e6b45a';
+  for (const mark of momentLayout(notes, box)) {
+    c.globalAlpha = .3 + .5 * mark.strength; c.fillRect(mark.x, mark.y - 1, mark.length, 2);
+    c.globalAlpha = .55 + .45 * mark.strength; c.beginPath(); c.ellipse(mark.x, mark.y, 7, 5, -.35, 0, Math.PI * 2); c.fill();
+  }
+  c.globalAlpha = 1;
+  c.fillStyle = '#b3a58f'; c.font = '400 20px "Instrument Sans", system-ui, sans-serif';
+  c.fillText(personal ? (showCount ? `${total} gerçek adım · adım sayılarından üretilen müzik` : 'Gerçek adımlardan üretilen müzik') : label === 'DEMO' ? 'Demo konserinden 12 saniye · makineler simüle edilmiştir' : label === 'TEST' ? 'Test salonundan 12 saniye · simülasyon içerir' : 'Ortak orkestranın 12 saniyesi · anonim', 64, 534);
+  c.fillStyle = '#f3e9d6'; c.font = 'italic 300 24px Fraunces, Georgia, serif'; c.fillText('Agent Orchestra', 64, 588);
+  c.textAlign = 'right'; c.fillStyle = '#b3a58f'; c.font = '400 17px "Instrument Sans", system-ui, sans-serif'; c.fillText('DijitalPi tarafından geliştirildi', 1136, 588); c.textAlign = 'left';
 }
 function revokeMoment() {
   revision++; if (recordingCleanup) recordingCleanup(true);
@@ -193,15 +205,16 @@ $('create-moment').onclick = async () => {
     revokeMoment(); const current = revision;
     const notes = personal ? personalNotes(counts) : captured.map(n => [n[0] - time + 12000, ...n.slice(1)]);
     const simulated = !personal && Date.now() < simulationUntil;
-    const bytes = wavBytes(notes), wav = new Blob([bytes], { type: 'audio/wav' }), title = (simulated ? 'TEST · ' : '') + ($('moment-title-input').value.trim() || 'Bugünkü çalışmanın sesi');
-    drawMoment(title, counts, personal, $('show-count').checked);
+    const bytes = wavBytes(notes), wav = new Blob([bytes], { type: 'audio/wav' }), title = (simulated ? `${simulationLabel} · ` : '') + ($('moment-title-input').value.trim() || 'Bugünkü çalışmanın sesi');
+    const total = Object.values(counts).reduce((a, b) => a + b, 0);
+    await drawMoment(title, notes, { personal, showCount: $('show-count').checked, total, label: simulated ? simulationLabel : '' });
     const png = await new Promise(resolve => $('moment-canvas').toBlob(resolve, 'image/png'));
     if (!png) throw new Error('Görsel oluşturulamadı. Yeniden dene.');
     if (current !== revision) return;
     const wavUrl = URL.createObjectURL(wav), pngUrl = URL.createObjectURL(png);
-    moment = { bytes, counts, personal, simulated, urls: [wavUrl, pngUrl] };
+    moment = { bytes, notes, total, personal, simulated, label: simulationLabel, urls: [wavUrl, pngUrl] };
     $('moment-audio').src = wavUrl; $('download-wav').href = wavUrl; $('download-png').href = pngUrl;
-    $('visible-info').textContent = `Görünür bilgi: “${title}”, ${personal ? 'kişisel faaliyet yorumu' : simulated ? 'simülasyon içeren ortak test anı' : 'anonim ortak an'}, ${personal && $('show-count').checked ? 'faaliyet sayısı, ' : ''}DijitalPi imzası. Makine kimliği, anahtar, kod veya prompt yok.`;
+    $('visible-info').textContent = `Görünür bilgi: “${title}”, ${personal ? 'kişisel faaliyet yorumu' : simulated ? (simulationLabel === 'DEMO' ? 'demo konserinden simüle an' : 'simülasyon içeren ortak test anı') : 'anonim ortak an'}, ${personal && $('show-count').checked ? 'faaliyet sayısı, ' : ''}DijitalPi imzası. Makine kimliği, anahtar, kod veya prompt yok.`;
     $('preview').hidden = false;
     $('moment-status').textContent = 'Anın hazır. Ses önizlemesi sade bir sentez yorumudur; canlı salonun örneklenmiş tınısı değildir.';
     if (personal) baseline = { ...me.activity };
@@ -214,12 +227,12 @@ let previewRevision = 0;
 async function refreshVisibleInfo() {
   if (!moment || recorder) return;
   const active = moment, current = ++previewRevision;
-  const title = (active.simulated ? 'TEST · ' : '') + ($('moment-title-input').value.trim() || 'Bugünkü çalışmanın sesi');
-  drawMoment(title, active.counts, active.personal, $('show-count').checked);
+  const title = (active.simulated ? `${active.label} · ` : '') + ($('moment-title-input').value.trim() || 'Bugünkü çalışmanın sesi');
+  await drawMoment(title, active.notes, { personal: active.personal, showCount: $('show-count').checked, total: active.total, label: active.simulated ? active.label : '' });
   const png = await new Promise(resolve => $('moment-canvas').toBlob(resolve, 'image/png'));
   if (!png || current !== previewRevision || moment !== active) return;
   URL.revokeObjectURL(active.urls[1]); active.urls[1] = URL.createObjectURL(png); $('download-png').href = active.urls[1];
-  $('visible-info').textContent = `Görünür bilgi: “${title}”, ${active.personal ? 'kişisel faaliyet yorumu' : active.simulated ? 'simülasyon içeren ortak test anı' : 'anonim ortak an'}, ${active.personal && $('show-count').checked ? 'faaliyet sayısı, ' : ''}DijitalPi imzası. Özel kimlik, anahtar, kod veya prompt yok.`;
+  $('visible-info').textContent = `Görünür bilgi: “${title}”, ${active.personal ? 'kişisel faaliyet yorumu' : active.simulated ? (active.label === 'DEMO' ? 'demo konserinden simüle an' : 'simülasyon içeren ortak test anı') : 'anonim ortak an'}, ${active.personal && $('show-count').checked ? 'faaliyet sayısı, ' : ''}DijitalPi imzası. Özel kimlik, anahtar, kod veya prompt yok.`;
   $('moment-video').pause(); $('moment-video').removeAttribute('src'); $('moment-video').hidden = true; $('download-video').hidden = true;
   for (const u of active.urls.splice(2)) URL.revokeObjectURL(u);
   $('moment-status').textContent = 'Görsel ve görünür bilgiler güncellendi. Ses aynı faaliyet anını koruyor; yeni video oluşturabilirsin.';

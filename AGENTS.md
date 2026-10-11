@@ -6,6 +6,7 @@ Kurallar ve son durum tek kaynakta: **`CLAUDE.md`** (kök) + `README.md` + `orch
 - Selim'in güncel ürün/geliştirme siparişi: `ORCHESTRA-HANDOFF.md`. Orkestra geliştirmesinde bu briefi de oku; 60 ana + gerekçeli 20 ek döngü, ürün kabul koşulları ve yetki sınırları burada tanımlı.
 
 - Site yerel: `PORT=4480 TRUST_PROXY=1 node orchestra/server.mjs` → http://localhost:4480
-- Kalabalık demosu (sıfır token): `node orchestra/crowd.mjs <makine> <saniye>`
+- Kalabalık demosu (sıfır token): sunucu `ALLOW_SIMULATION=1` ile, sonra `node orchestra/crowd.mjs <makine> <saniye>`
+- Zengin ses yerelde: önce `node orchestra/fetch-sounds.mjs`. Tarayıcıdaki demo konseri sunucuya yük bindirmez.
 - Testler: `python3 -m unittest -v`, site ölçümü `orchestra/measure.mjs`.
 - `orchestra.dijitalpi.com` henüz yayında değil; deploy manuel ve onaylıdır.

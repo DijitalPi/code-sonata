@@ -51,7 +51,7 @@ h1:focus, h2:focus { outline: none; }
 /* What you can do, numbered like the movements of a programme. */
 .tasks { counter-reset: act; display: flex; flex-direction: column; padding-top: 22px; }
 .task { all: unset; box-sizing: border-box; display: grid; grid-template-columns: 38px 1fr; width: 100%; padding: 11px 0; border-top: 1px solid var(--line); cursor: pointer; }
-.task::before { counter-increment: act; content: counter(act, upper-roman) "."; grid-row: span 2; font: italic 300 16px/1.55 var(--serif); color: var(--gold); }
+.task::before { counter-increment: act; content: counter(act, upper-roman) "."; content: counter(act, upper-roman) "." / ""; grid-row: span 2; font: italic 300 16px/1.55 var(--serif); color: var(--gold); }
 .task span { grid-column: 2; font: 400 19px/1.3 var(--serif); color: var(--ink); transition: transform .15s ease, color .15s ease; }
 .task small { grid-column: 2; font-size: 12.5px; color: var(--dim); }
 .task:hover span { color: var(--gold-hi); transform: translateX(3px); }
@@ -62,6 +62,8 @@ h1:focus, h2:focus { outline: none; }
 .link:active { opacity: .7; }
 .more .link { color: var(--dim); text-decoration-color: rgba(179, 165, 143, .35); font-size: 13px; }
 .more .link:hover { color: var(--ink); }
+.minor { display: flex; flex-wrap: wrap; gap: 2px 22px; margin: 0; }
+#demo-offer { margin-top: 10px; font-size: 13px; }
 .back { all: unset; cursor: pointer; color: var(--dim); font-size: 13px; padding: 6px 0; }
 .back:hover { color: var(--ink); }
 
@@ -109,6 +111,10 @@ audio, video { width: 100%; display: block; margin: 8px 0; }
 .league li b { font-weight: 500; font-variant-numeric: tabular-nums; color: var(--ink); }
 #mine { margin-top: 16px; }
 #contact { margin: 4px 0 18px; }
+.facts { list-style: none; margin: 0 0 18px; padding: 0; align-self: stretch; }
+.facts li { padding: 10px 0; border-top: 1px solid var(--line); font-size: 14px; color: var(--dim); }
+.facts b { color: var(--ink); font-weight: 600; }
+h3.label { margin: 22px 0 6px; }
 
 /* ---------- the hall ---------- */
 .stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; display: grid; grid-template-rows: minmax(0, 1fr) auto; background: var(--bg); }
@@ -123,6 +129,12 @@ body.is-climax .stage::before { opacity: 1; background: radial-gradient(ellipse 
 .stats { display: flex; gap: 22px; justify-content: flex-end; }
 .stats b { display: block; font: 300 26px/1.1 var(--serif); font-variant-numeric: tabular-nums; }
 .stats span { font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
+
+/* Demo concert: always says what it is while it plays. */
+.demo-banner { position: absolute; z-index: 3; top: var(--pad); left: var(--pad); display: flex; align-items: center; gap: 14px; max-width: calc(100% - 2 * var(--pad)); padding: 6px 6px 6px 16px; border-radius: 999px; background: rgba(11, 9, 7, .86); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); box-shadow: inset 0 0 0 1px rgba(230, 180, 90, .5); font-size: 13px; }
+.demo-banner b { color: var(--gold); font-weight: 600; }
+.demo-banner button { min-height: 34px; padding: 0 14px; font-size: 13px; }
+body.is-demo #connection { color: var(--gold); }
 
 /* The live score: every note the conductor sends crosses this staff. */
 .stage-foot { position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 0 var(--pad) 18px; }
@@ -158,6 +170,7 @@ body.is-climax .stage::before { opacity: 1; background: radial-gradient(ellipse 
   .now-block { order: 4; margin: 0; padding: 22px 16px 0; max-width: none; }
   .tasks { order: 5; margin: 0; padding: 20px 16px 40px; }
   .live { position: static; order: -1; text-align: left; padding: 16px 16px 0; }
+  .demo-banner { position: static; order: -2; margin: 12px 16px 0; border-radius: 16px; flex-wrap: wrap; }
   .stats { justify-content: space-between; gap: 12px; }
   #hall { height: calc(124px + 46vw); max-height: 70svh; }
   .stage-foot { padding: 0 16px 8px; }
@@ -176,4 +189,4 @@ body.is-climax .stage::before { opacity: 1; background: radial-gradient(ellipse 
   section[data-view] > :nth-child(n+4), .now-block, .tasks { animation-delay: .09s; }
 }
 @media (prefers-reduced-motion: reduce) { button, .pill, .announce, .task span, .stage::before { transition: none; } }
-@media (prefers-reduced-transparency: reduce) { .dock { background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; } }
+@media (prefers-reduced-transparency: reduce) { .demo-banner, .dock { background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; } }

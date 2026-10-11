@@ -1,7 +1,5 @@
 # Geliştirme kaydı
 
-Duraklatıldı: Claude · 2026-10-11 10:10, disk doldu (ENOSPC). Yayın hazırlığı turu 72–75 bitti, 76 ölçümü ve 77–80 kaldı; devam için `/gg devam`.
-
 Başlangıç: 2026-10-09. Durum: yerel teslim tamamlandı; dış kabul bağımlılıkları VALIDATION.md içinde. Kaynak brief: PRODUCT-BRIEF.md ve kök ORCHESTRA-HANDOFF.md.
 
 ## 01 — Mevcut durum ve mimari
@@ -411,4 +409,14 @@ Brief ve plan: PRODUCT-BRIEF.md "Tasarım briefi · 2026-10-10". Tez: gece konse
 - **74 Sayaçlar** (10:02–10:04). `POST /api/metric` (beyaz liste), sunucu yeni makineyi kendisi sayar; `GET /api/metrics` yalnız `Authorization: Bearer METRICS_KEY`; `METRICS_FILE` ile kalıcı (kapanışta yazma, açılışta okuma elle doğrulandı). Adres yalnız günlük tuzlu özet, bellekte.
 - **75 Dış bağımlılık + CSP** (10:04–10:08). smplr 1.1.0 npm dosyası `web/vendor` (SHA-256 tarball ile aynı, MIT notu); 11 örnek `fetch-sounds.mjs` + `sounds.json` sağlama toplamı (bozuk dosya yakalandı ve onarıldı), git dışı, Docker'da build aşamasında. CSP + `vendor/sounds` için 1 yıl önbellek. Gerçek tıklamayla: 11 örnek ve motor yalnız 127.0.0.1'den, CSP ihlali yok, spot ışığı yandı (`evidence/release-playing-spotlight.jpeg`). **Düzeltme:** örnekler CC BY 3.0, atıf zorunlu (denetimde "serbest" denmişti).
 - **76 iPhone + pil** (10:08–). `newAudioContext()` sessiz anahtarı aşar; salon/şerit ekran dışındayken çizilmez. Kod ve sözdizimi tamam; ölçüm **disk dolduğu için yapılamadı** (ENOSPC, 118 MB boş). Gerçek iPhone denemesi açık.
-Durum: 77 demo konseri, 78 paylaşım görseli, 79 metinler (Linux, gizlilik, CC BY atfı, görev numaralarının ekran okuyucuda "." okunması, "internetten indirir" metni), 80 doğrulama + Docker build + denetim notu kaldı. Testler: test-api 13/13, test-moment 8/8, Python 40/40.
+Durum: 77 demo konseri, 78 paylaşım görseli, 79 metinler (Linux, gizlilik, CC BY atfı, görev numaralarının ekran okuyucuda "." okunması, "internetten indirir" metni), 80 doğrulama + Docker build + denetim notu kaldı. Testler: test-api 13/13, test-moment 7/7 (ilk kayıtta yanlışlıkla 8/8 yazılmıştı), Python 40/40.
+
+## 76–80 — Yayın hazırlığı turu, ikinci yarı (/gg devam, 2026-10-11)
+Disk boşaldıktan sonra (6,8 GB) kayıttan devam. MCP tarayıcısı disk dolunca takıldığı için ölçümler headless Chrome + DevTools protokolüyle (geçici betik, profil her koşuda silinir).
+- **76 ölçüm** (10:42–10:46). 390 genişlikte salon ve şerit ekran dışındayken 2 sn'de 0 çizim, görününce 60. İlk ölçüm yöntem hatasıydı (sayfa salonu ekrandan çıkaracak kadar uzun değildi), 420 yükseklikle tekrarlandı. `audioSession` Chrome'da yok; kod güvenle atlıyor.
+- **77 Demo konseri** (10:45–10:48). Şef `web/conductor.mjs`'e taşındı (`population()` arayüzü), `music.mjs` → `web/music.mjs`; sunucu aynı modülü kullanır. `web/demo.js`: 12 ülkeden 24 simüle makine, dalgalı iş temposu, ağ çağrısı yok. Sayfa: "Demo konseri" bağlantısı + salon sakinken öneri; demo sırasında SSE kapalı, şerit "Demo konseri · 24 simüle makine, gerçek katılımcı değil" + "Canlı salona dön". Ölçüm: sunucu dinleyicisi 2→1→2, 24 makine/12 ülke, zengin ses, konsol temiz, dış istek 0. Kanıt: test-conductor (4 test), `evidence/release-demo-desktop.jpg`, `release-demo-mobile.jpg`. Demo açılış parçası Ode to Joy (canlı salonun Bella Ciao kararı Selim'de, dokunulmadı).
+- **78 Paylaşım görseli** (10:48–10:52). Görsel, sesin kendi notalarını portede çizer (`momentLayout`), Fraunces + Instrument Sans; olmayan türe nota yok; DEMO/TEST etiketi anın kendi etiketinden (önizleme yenilemesinde genel değişkenden okuma hatası düzeltildi). Kanıt: test-moment, `evidence/release-share-image.jpg`.
+- **79 Metinler** (10:50–10:53). Okuyucu macOS + Linux (Windows yok), ses indirme metni (bu siteden, ~27 MB), gizlilik görünümü (taslak, hukuki onay Selim'de), Kaynaklar: FluidR3 GM CC BY 3.0, smplr MIT, fontlar OFL. Görev numaraları ekran okuyucuda "." okumuyor (AX ağacıyla doğrulandı). Kanıt: `evidence/release-privacy.jpg`.
+- **80 Bütünsel doğrulama** (10:53–10:56). 25/25 Node, 40/40 Python, sözdizimi, `git diff --check`, örnek sağlama toplamları. README, AGENTS, OPERATIONS (yayın ayarları tablosu + Traefik erişim kaydı ve compress koşulu), VALIDATION (yayın hazırlığı kabulü) güncellendi. Bağımsız denetim notu: `docs/CODEX-REVIEW.md`, **denetim bekliyor**. Docker çalışmadığı için çok aşamalı build denenmedi.
+Saat düzeltmesi: sohbette 77 için "10:47–10:58" denmişti; doğrusu dosya zamanlarına göre 10:45–10:48.
+Ek bütçe: 61–80 kullanıldı. Açık: Codex denetimi, gerçek iPhone/Safari, Docker build, okuyucunun dışarıya dağıtımı, gizlilik metni hukuki onayı, VPS/DNS yayını.

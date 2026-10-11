@@ -36,18 +36,18 @@
       <button data-team="listen">Orkestrayı dinle</button>
       <button id="simple-sound" class="quiet">Sade tınıyla dinle</button>
     </div>
-    <button id="demo" class="link">Örnek kişisel ses</button>
-    <p id="loading" role="status">Ses sen başlatınca çalar. Orkestra ses örneklerini internetten indirir; sade tını indirme yapmaz.</p>
+    <p class="minor"><button id="demo-concert" class="link">Demo konseri: dolu salonu dinle</button><button id="demo" class="link">Örnek kişisel ses</button></p>
+    <p id="loading" role="status">Ses sen başlatınca çalar. Orkestra ses örneklerini bu siteden bir kez indirir (yaklaşık 27 MB); sade tını hiçbir şey indirmez.</p>
   </section>
 
   <section data-view="join" hidden aria-labelledby="join-title">
     <button class="back" data-open="home">‹ Salona dön</button>
     <h2 id="join-title" tabindex="-1">Ajanını bağla</h2>
-    <p class="lead">macOS'taki yerel okuyucu yeni Claude ve Codex adımlarını sayıya çevirip salona gönderir. Prompt, kod ve dosya yolu gönderilmez.</p>
+    <p class="lead">Bilgisayarındaki yerel okuyucu (macOS ve Linux) yeni Claude ve Codex adımlarını sayıya çevirip salona gönderir. Prompt, kod ve dosya yolu gönderilmez.</p>
     <button id="pair">Bağlantı komutumu oluştur</button>
     <div id="setup" hidden>
       <ol class="steps">
-        <li>Bu repoyu macOS bilgisayarında aç. Python 3 ve Xcode Command Line Tools gerekir.</li>
+        <li>Bu repoyu macOS ya da Linux bilgisayarında aç. Python 3 gerekir (macOS'ta Xcode Command Line Tools ile gelir).</li>
         <li>Repo klasöründe Terminal'i aç ve aşağıdaki komutu çalıştır.</li>
         <li>Claude ya da Codex ile bir adım at. Bağlantın ve ilk adımın aşağıda görünür.</li>
       </ol>
@@ -63,10 +63,11 @@
       <p id="activity-label"></p>
       <p class="note">Düzenleme melodiyi, komut bası, okuma ince notaları, düşünme akoru, bitiş kapanışı çalar. Kendi sesini duymak için alttaki Dinleme seçiminden "Yalnız benim sesim"i seç.</p>
     </div>
+    <button class="link" data-open="privacy">Neler gönderiliyor, neler saklanıyor</button>
     <details>
-      <summary>Neler gönderiliyor, bağlanmazsa ne yapmalı</summary>
+      <summary>Bağlanmazsa ne yapmalı</summary>
       <p>Sunucuya anonim makine kimliği, adım türü sayıları, çalışıyor bilgisi, oturum ve araç sayıları gider. Prompt, kaynak kod, proje adı ve dosya yolu gitmez. IP yalnız ülkeyi bulmak için kullanılır; hız sınırı için her açılışta değişen tuzlu özeti tutulur. Eşleştirme ve adım toplamları sunucu belleğinde en fazla bir saat kalır.</p>
-      <p>Bağlanmıyorsa yerel sunucunun çalıştığını ve adresin aynı bilgisayardan açıldığını kontrol et, sonra yeni komut oluştur. Anahtarın süresi dolar, kaldırılır veya başka makinede kullanılırsa okuyucu bunu Terminal'e yazar ve ortak orkestrada anonim olarak devam eder; kendi sesin için yeni komut oluştur. 429 hız sınırıdır. Bu sürüm yalnız macOS okuyucusunu destekler.</p>
+      <p>Bağlanmıyorsa yerel sunucunun çalıştığını ve adresin aynı bilgisayardan açıldığını kontrol et, sonra yeni komut oluştur. Anahtarın süresi dolar, kaldırılır veya başka makinede kullanılırsa okuyucu bunu Terminal'e yazar ve ortak orkestrada anonim olarak devam eder; kendi sesin için yeni komut oluştur. 429 hız sınırıdır. Okuyucu macOS ve Linux'ta çalışır; Windows henüz desteklenmiyor.</p>
       <p>Sayfa localhost'ta açıksa yalnız aynı bilgisayardaki ajan bağlanabilir.</p>
     </details>
   </section>
@@ -127,6 +128,8 @@
     <p>DijitalPi; etkinlik, hackathon ve ekipler için katılımcıların birlikte oluşturduğu canlı dijital deneyimler kurar.</p>
     <a id="contact" class="pill" href="https://dijitalpi.com/iletisim/" target="_blank" rel="noopener noreferrer">DijitalPi ile iletişime geç ↗</a>
     <p class="note">Geliştirme aşamasında. Kullanıcı araştırması ve genel yayın henüz yapılmadı.</p>
+    <h3 class="label">Kaynaklar</h3>
+    <p class="note">Ses örnekleri: FluidR3 GM (Frank Wen), <a href="https://github.com/gleitz/midi-js-soundfonts" target="_blank" rel="noopener noreferrer">MIDI.js Soundfonts</a> üzerinden, <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener noreferrer">CC BY 3.0</a>. Ses motoru: <a href="https://github.com/danigb/smplr" target="_blank" rel="noopener noreferrer">smplr</a> (MIT). Yazı tipleri: Fraunces ve Instrument Sans (SIL Open Font License). Eserler kamu malıdır.</p>
     <details id="metrics">
       <summary>Bu cihazdaki kullanım sayıları (isteğe bağlı)</summary>
       <label class="check"><input id="metrics-consent" type="checkbox"> Dinleme, bağlantı ve an sayılarını yalnız bu cihazda tut</label>
@@ -140,17 +143,34 @@
     <p class="label">Şu an salonda</p>
     <p id="now">İlk adım bekleniyor.</p>
     <p class="caption">Her ışık bağlı bir makinedir ve adım gelince yanar. Adım sayısı iş kalitesini ölçmez.</p>
+    <button id="demo-offer" class="link" hidden>Dolu bir salonu duymak için demo konserini aç</button>
   </div>
+  <section data-view="privacy" hidden aria-labelledby="privacy-title">
+    <button class="back" data-open="home">‹ Salona dön</button>
+    <h2 id="privacy-title" tabindex="-1">Gizlilik ve veriler</h2>
+    <p class="lead">Hesap, çerez ve kişisel profil yok. Hangi durumda neyin kullanıldığı:</p>
+    <ul class="facts">
+      <li><b>Dinlerken.</b> Tarayıcın canlı salona bağlanır. IP adresin yalnız ülkeyi bulmak ve kötüye kullanımı sınırlamak için o an kullanılır, kaydedilmez. Hız sınırı için her açılışta değişen tuzlu bir özet bellekte tutulur.</li>
+      <li><b>Ajanını bağlarsan.</b> Okuyucu anonim bir makine kimliği, adım türü sayıları, çalışıyor bilgisi ve oturum sayısı gönderir. Prompt, kod, proje adı ve dosya yolu gönderilmez. Eşleştirme ve adım toplamları sunucu belleğinde en fazla bir saat kalır.</li>
+      <li><b>Ölçüm.</b> Sunucu yalnız günlük toplam sayılar tutar, örneğin bugün kaç kez dinleme başlatıldığı. Kimlik ya da kişiye bağlanan kayıt yoktur.</li>
+      <li><b>Çalışma anın.</b> Ses, görsel ve video bu tarayıcıda üretilir, sunucuya yüklenmez.</li>
+      <li><b>Dış kaynaklar.</b> Sayfa, ses motoru, ses örnekleri ve yazı tipleri bu siteden gelir; başka bir siteye istek gitmez. "DijitalPi ile iletişime geç" bağlantısı dijitalpi.com'u açar.</li>
+      <li><b>Demo konseri.</b> Tamamen tarayıcında çalar; bu sırada canlı salonla bağlantı kapalıdır.</li>
+    </ul>
+    <p class="note">Soru ve silme talepleri için <a href="https://dijitalpi.com/iletisim/" target="_blank" rel="noopener noreferrer">dijitalpi.com/iletisim</a>.</p>
+  </section>
+
   <nav class="tasks" data-view="home" aria-label="Yapabileceklerin">
     <button class="task" data-open="join"><span>Ajanımı bağla</span><small>Kendi adımlarını ayrı duy, salondaki koltuğunu gör.</small></button>
     <button class="task" data-open="moment"><span>Çalışma anımı indir</span><small>Son adımlarından 12 saniyelik ses, görsel ve video oluştur.</small></button>
     <button class="task" data-open="invite"><span>Arkadaşımı davet et</span><small>Bu sayfanın bağlantısını kopyala.</small></button>
-    <p class="more"><button class="link" data-open="league">Ülkelerin nota katkısı</button><button class="link" data-open="about">Proje ve iletişim</button></p>
+    <p class="more"><button class="link" data-open="league">Ülkelerin nota katkısı</button><button class="link" data-open="about">Proje ve iletişim</button><button class="link" data-open="privacy">Gizlilik</button></p>
   </nav>
 </div>
 
 <main class="stage" aria-label="Canlı orkestra salonu">
   <canvas id="hall" aria-hidden="true"></canvas>
+  <div class="demo-banner" id="demo-banner" role="status" hidden><span><b>Demo konseri</b> · 24 simüle makine, gerçek katılımcı değil</span><button id="demo-exit" class="quiet">Canlı salona dön</button></div>
   <div class="live">
     <p id="connection" role="status">Salona bağlanıyor…</p>
     <div class="stats">

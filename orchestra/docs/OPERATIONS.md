@@ -55,3 +55,16 @@ Sunucu durdurulunca tarayıcı SSE otomatik2sn retry; özel me timeout/yeniden d
 Yerel değişiklik geri alma: kullanıcı AGENTS.md/CLAUDE.md/handoff değişikliklerini koru. Değişen uygulama dosyalarını diff ile seçerek geri al; `git reset --hard` veya `git clean` kullanma. Yayında önceki image digest/config kaydı tutulup geri dönülür; kullanıcı pair'leri yeniden kurar. Medya çıktıları sunucuda olmadığından restart onları uzaktan değiştirmez.
 
 Yayın konfigürasyonunda `PUBLIC_URL=https://orchestra.dijitalpi.com` OG/Twitter görselini ve canonical adresi mutlak üretir. Yerelde bu değişkeni boş bırak. URL ayarı DNS veya deploy yapmaz.
+
+## Yayın ayarları ve koşulları (2026-10-11)
+
+| Değişken | Ne zaman | Etki |
+|---|---|---|
+| `TRUST_PROXY=1` | Traefik arkasında, şart | Son X-Forwarded-For istemci sayılır |
+| `TRUST_CF=1` | Yalnız alan adı Cloudflare'de proxy'liyse | `CF-IPCountry` okunur; yoksa sahte ülke yazılabilir |
+| `EVENT_KEYS` | Etkinlik, hackathon | `?event=<anahtar>` ile IP başına sınır 300 (dinleyici, makine, eşleştirme, hız) |
+| `METRICS_KEY`, `METRICS_FILE` | Ölçüm istenirse | Günlük toplam sayaç; okuma `Authorization: Bearer`; dosya için kalıcı volume |
+| `ALLOW_SIMULATION=1` | ASLA üretimde | Yalnız crowd/benchmark testleri |
+| `PUBLIC_URL` | Yayında | Mutlak OG ve canonical adres |
+
+Yayın koşulları: (1) Traefik erişim kaydı kapalı ya da IP'siz olmalı; gizlilik metni "IP kaydedilmez" diyor. (2) `/sounds/` 27 MB; Traefik `compress` ara katmanı açık olsun (base64 metin). (3) Docker build sesleri `sounds.json` sağlama toplamıyla indirir; build makinesinin GitHub Pages'e erişimi olmalı. Bu oturumda Docker çalışmadığı için yeni çok aşamalı build denenmedi.

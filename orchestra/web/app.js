@@ -1,5 +1,6 @@
 import { receiveFrame, ownSeat, ownPulseAt, motionPaused, isPersonal, stopPersonalAudio, togglePersonalAudio, metric, newAudioContext } from './experience.js';
 import { eventKey } from './moment.js';
+import { startDemo } from './demo.js';
 // Agent Orchestra listener: draws the hall and plays the conductor's notes in sync.
 const SECTIONS = ["piano", "strings", "choir", "cello", "flute", "vibraphone", "horn", "harp", "accordion"];
 // Stereo position from the real seating plan (violins left, cellos right).
@@ -91,7 +92,7 @@ function showNow(frame) {
   }
   const song = document.createElement("strong");
   song.textContent = frame.song;
-  now.append("Şimdi ", song, ` · ${frame.bpm} BPM`);
+  now.append(frame.demo ? "Demo konseri · " : "Şimdi ", song, ` · ${frame.bpm} BPM`);
   if (frame.climax) {
     const climax = document.createElement("strong");
     climax.textContent = "doruk";
@@ -128,8 +129,8 @@ function connect() {
   };
 }
 
-function onFrame(event) {
-  const frame = JSON.parse(event.data);
+function onFrame(event) { applyFrame(JSON.parse(event.data)); }
+function applyFrame(frame) {
   receiveFrame(frame);
   offsets.push(frame.t - Date.now());
   if (offsets.length > 40) offsets.shift();
@@ -150,7 +151,8 @@ function onFrame(event) {
   for (const [s, i] of frame.pulses || []) glow.set(`${s}:${i}`, 1);
   if (frame.players !== undefined) {
     info = frame;
-    $("connection").textContent = frame.simulated || frame.simulatedListeners ? `Test salonu · ${frame.simulated} simülasyon makinesi / ${frame.simulatedListeners || 0} test dinleyicisi / ${frame.players - frame.simulated} gerçek makine` : HALL;
+    $("demo-offer").hidden = Boolean(frame.demo) || !frame.house;
+    $("connection").textContent = frame.demo ? "Demo konseri · simüle edilmiş makineler" : frame.simulated || frame.simulatedListeners ? `Test salonu · ${frame.simulated} simülasyon makinesi / ${frame.simulatedListeners || 0} test dinleyicisi / ${frame.players - frame.simulated} gerçek makine` : HALL;
     $("claudes").textContent = frame.claudes.toLocaleString();
     $("players").textContent = frame.players.toLocaleString();
     $("listeners").textContent = frame.listeners.toLocaleString();
@@ -275,6 +277,7 @@ function drumKit(ctx, out) {
 
 for (const button of document.querySelectorAll("[data-team]")) {
   button.addEventListener("click", async () => {
+    leaveDemo();
     stopPersonalAudio(); $("mode").value = "common"; $("mode-status").textContent = "";
     team = button.dataset.team;
     try { localStorage.setItem("team", team); } catch {}
@@ -608,6 +611,7 @@ function pauseCommon() {
   $("loading").textContent = "Ortak ses durduruldu. Kontrollerden yeniden başlatabilirsin.";
 }
 $("simple-sound").onclick = async () => {
+  leaveDemo();
   stopPersonalAudio(); $("mode").value = "common";
   document.querySelectorAll("[data-team]").forEach(b => { b.disabled = true; }); $("simple-sound").disabled = true;
   try {
@@ -632,3 +636,37 @@ $("sound").onclick = async () => {
 };
 $("volume").addEventListener("input", () => { if (audio) audio.out.gain.setTargetAtTime(2.4 * Number($("volume").value) / 100, audio.ctx.currentTime, .03); });
 addEventListener("pagehide", () => { stream?.close(); audio?.ctx.close(); tabs?.close(); });
+
+// ---------- demo concert ----------
+// A full hall played by this browser alone (demo.js): the live connection closes while it plays, so
+// the server carries none of it, and the stage says plainly that the machines are simulated.
+let stopDemo = null;
+function resetHall() {
+  seats = SECTIONS.map(() => []); teams = { agents: {}, fans: {} }; glow.clear();
+  offsets.length = 0; lastNow = ""; lastLeague = ""; version++;
+}
+async function enterDemo() {
+  if (stopDemo) return;
+  stopPersonalAudio(); $("mode").value = "common"; $("mode-status").textContent = "";
+  stream?.close(); stream = null;
+  resetHall();
+  document.body.classList.add("is-demo"); $("demo-banner").hidden = false;
+  stopDemo = startDemo({ onFrame: applyFrame });
+  metric("demo");
+  if (audio?.ctx.state === "running") return;
+  $("loading").textContent = "Ses yükleniyor…";
+  try { await startAudio(); }
+  catch { try { await startSimpleAudio(); } catch { $("loading").textContent = "Ses başlatılamadı. Tarayıcının ses iznini kontrol et."; return; } }
+  $("sound").disabled = false; $("sound").textContent = "Sesi durdur";
+  $("loading").textContent = "Demo konseri çalıyor. Makineler simüle edilmiştir.";
+}
+function leaveDemo() {
+  if (!stopDemo) return;
+  stopDemo(); stopDemo = null;
+  document.body.classList.remove("is-demo"); $("demo-banner").hidden = true;
+  resetHall(); connect();
+  $("loading").textContent = "Canlı salona dönüldü.";
+}
+$("demo-concert").onclick = enterDemo;
+$("demo-offer").onclick = enterDemo;
+$("demo-exit").onclick = leaveDemo;
