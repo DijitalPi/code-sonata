@@ -1,4 +1,5 @@
-import { receiveFrame, ownSeat, ownPulseAt, motionPaused, isPersonal, stopPersonalAudio, togglePersonalAudio, metric } from './experience.js';
+import { receiveFrame, ownSeat, ownPulseAt, motionPaused, isPersonal, stopPersonalAudio, togglePersonalAudio, metric, newAudioContext } from './experience.js';
+import { eventKey } from './moment.js';
 // Agent Orchestra listener: draws the hall and plays the conductor's notes in sync.
 const SECTIONS = ["piano", "strings", "choir", "cello", "flute", "vibraphone", "horn", "harp", "accordion"];
 // Stereo position from the real seating plan (violins left, cellos right).
@@ -110,12 +111,14 @@ try { team = localStorage.getItem("team") || "listen"; } catch {}
 let teams = { agents: {}, fans: {} };
 const waves = {};                        // team -> wave start (ms)
 let stream = null;
+const EVENT = eventKey(location.search);
+const HALL = EVENT ? "Etkinlik salonuna bağlı" : "Canlı salona bağlı";
 
 function connect() {
   if (stream) stream.close();
-  stream = new EventSource(`/api/stream?team=${encodeURIComponent(team)}`);
+  stream = new EventSource(`/api/stream?team=${encodeURIComponent(team)}${EVENT ? `&event=${EVENT}` : ""}`);
   stream.onmessage = onFrame;
-  stream.onopen = () => { $("connection").textContent = "Canlı salona bağlı"; };
+  stream.onopen = () => { $("connection").textContent = HALL; };
   stream.onerror = () => {
     $("connection").textContent = "Bağlantı kesildi · yeniden bağlanıyor…";
     for (const id of ["claudes", "players", "listeners", "countries"]) $(id).textContent = "—";
@@ -147,7 +150,7 @@ function onFrame(event) {
   for (const [s, i] of frame.pulses || []) glow.set(`${s}:${i}`, 1);
   if (frame.players !== undefined) {
     info = frame;
-    $("connection").textContent = frame.simulated || frame.simulatedListeners ? `Test salonu · ${frame.simulated} simülasyon makinesi / ${frame.simulatedListeners || 0} test dinleyicisi / ${frame.players - frame.simulated} gerçek makine` : "Canlı salona bağlı";
+    $("connection").textContent = frame.simulated || frame.simulatedListeners ? `Test salonu · ${frame.simulated} simülasyon makinesi / ${frame.simulatedListeners || 0} test dinleyicisi / ${frame.players - frame.simulated} gerçek makine` : HALL;
     $("claudes").textContent = frame.claudes.toLocaleString();
     $("players").textContent = frame.players.toLocaleString();
     $("listeners").textContent = frame.listeners.toLocaleString();
@@ -186,7 +189,7 @@ async function startAudio() {
     tabs?.postMessage({ playing: true, id: tabId });
     return;
   }
-  const ctx = new AudioContext();
+  const ctx = newAudioContext();
   const master = ctx.createDynamicsCompressor();
   master.threshold.value = -20; master.knee.value = 12; master.ratio.value = 2.5;
   master.attack.value = .01; master.release.value = .25;
@@ -200,14 +203,15 @@ async function startAudio() {
   tabs?.postMessage({ playing: true, id: tabId });
   audio = { ctx, master, out, ready: false, voices: [], drums: drumKit(ctx, master) };
   let Soundfont;
-  try { ({ Soundfont } = await Promise.race([import("https://cdn.jsdelivr.net/npm/smplr@1.1.0/+esm"), new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 15000))])); }
+  try { ({ Soundfont } = await import("./vendor/smplr-1.1.0.mjs")); }   // pinned copy of smplr (MIT), served from this site
   catch (error) { await ctx.close(); audio = null; throw error; }
   // Piano first so the hall is audible quickly; the rest load behind it.
   for (const [i, name] of SOUNDFONT.entries()) {
     if (!name) continue;
     const section = VOICE_SECTION[i] || (i < 8 ? SECTIONS[i] : null);
     const pan = PAN[section] ?? 0;
-    const voice = Soundfont(ctx, { instrument: name, kit: "FluidR3_GM", destination: master, pan, volume: VOLUME[i] });
+    // Samples from this site (orchestra/fetch-sounds.mjs, checksummed); FluidR3 GM, CC BY 3.0.
+    const voice = Soundfont(ctx, { instrumentUrl: `sounds/FluidR3_GM/${name}-mp3.js`, destination: master, pan, volume: VOLUME[i] });
     audio.voices[i] = null;
     voice.ready.then(() => { audio.voices[i] = voice; }).catch(() => {});
     if (i === 0) { $("loading").textContent = "Piyano hazırlanıyor…"; await Promise.race([voice.ready, new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 15000))]); }
@@ -217,7 +221,7 @@ async function startAudio() {
 
 async function startSimpleAudio() {
   if (audio) await audio.ctx.close();
-  const ctx = new AudioContext(), master = ctx.createGain(), out = ctx.createGain();
+  const ctx = newAudioContext(), master = ctx.createGain(), out = ctx.createGain();
   master.gain.value = .45; out.gain.value = 2.4 * Number($("volume").value) / 100;
   const limiter = ctx.createDynamicsCompressor(); limiter.threshold.value = -6; limiter.ratio.value = 12;
   master.connect(out).connect(limiter).connect(ctx.destination);
@@ -308,6 +312,9 @@ function resize() {
 }
 addEventListener("resize", resize);
 new ResizeObserver(resize).observe(canvas);
+// Nothing is drawn while a canvas is off screen (a phone scrolled down to the programme).
+let hallOnScreen = true;
+new IntersectionObserver(([entry]) => { hallOnScreen = entry.isIntersecting; }).observe(canvas);
 resize();
 
 // Flag emoji rendered once per size into a small bitmap; drawing hundreds per frame stays cheap.
@@ -418,6 +425,13 @@ let last = performance.now();
 function frame(now) {
   if (now - last < 32) { requestAnimationFrame(frame); return; }   // ~30 fps is plenty for this
   const dt = motionPaused ? 0 : Math.min(.1, (now - last) / 1000); last = now;
+  if (hallOnScreen) drawHall(now, dt);
+  if (scoreOnScreen && !motionPaused) drawScore();
+  document.body.classList.toggle("is-playing", audio?.ctx.state === "running");
+  requestAnimationFrame(frame);
+}
+
+function drawHall(now, dt) {
   const G = geometry();
   const { cx, cy, R } = G;
   g.clearRect(0, 0, width, height);
@@ -508,9 +522,6 @@ function frame(now) {
   g.beginPath(); g.moveTo(cx, cy - 2); g.lineTo(cx + Math.sin(swing) * 24, cy - 2 - Math.cos(swing) * 24); g.stroke();
   g.fillStyle = "#f4ead8"; g.beginPath(); g.arc(cx, cy + 4, 6, 0, Math.PI * 2); g.fill();
   drawTeams(G, now);
-  if (!motionPaused) drawScore();
-  document.body.classList.toggle("is-playing", audio?.ctx.state === "running");
-  requestAnimationFrame(frame);
 }
 
 // The audience in front of the stage: four blocks of seats, one per team. A filled seat is an
@@ -559,6 +570,8 @@ function resizeScore() {
   drawScore();
 }
 new ResizeObserver(resizeScore).observe(scoreCanvas);
+let scoreOnScreen = true;
+new IntersectionObserver(([entry]) => { scoreOnScreen = entry.isIntersecting; }).observe(scoreCanvas);
 
 function drawScore() {
   if (!scoreW) return;

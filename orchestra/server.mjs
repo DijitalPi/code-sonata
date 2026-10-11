@@ -4,7 +4,8 @@
 //
 //   PORT=4480 node orchestra/server.mjs
 import http from "node:http";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,6 +24,12 @@ const PLAYER_TTL = 30_000;      // a machine that stops reporting leaves its sea
 const MAX_PLAYERS = 2000;        // bounded local release candidate; 500 machines measured below this ceiling
 // Fair play: one office may run many machines, one script may not run thousands.
 const MAX_MACHINES_PER_IP = 20, NEW_MACHINES_PER_IP_HOUR = 10;
+// An event link is for a room on one shared network: at a hackathon the whole venue is one address,
+// so per-address limits rise for requests that carry a key from EVENT_KEYS (comma separated,
+// 16-64 of [A-Za-z0-9_-]). Global ceilings stay. Without the variable there are no event links.
+const EVENT_KEYS = new Set(String(process.env.EVENT_KEYS || "").split(",").map((k) => k.trim()).filter((k) => /^[A-Za-z0-9_-]{16,64}$/.test(k)));
+const isEvent = (k) => typeof k === "string" && EVENT_KEYS.has(k);
+const EVENT_PER_IP = 300;
 const STEP_RATE = 12, STEP_BURST = 40;   // steps per second a machine can score, and its burst
 const MIN_SONG_MS = Number(process.env.MIN_SONG_MS || 120_000);   // shorter only for tests
 const TEAMS = ["claude", "codex", "other", "listen"];   // stadium stands
@@ -47,10 +54,15 @@ function clientIp(req) {
 const SALT = randomBytes(16);
 const ipKey = (ip) => createHash("sha256").update(SALT).update(ip).digest("base64url").slice(0, 16);
 
-// Country from the request, then the IP is dropped. Cloudflare's header only behind our proxy.
+// Country from the request, then the IP is dropped. Cloudflare's country header is believed only
+// when the site really sits behind Cloudflare (TRUST_CF=1); otherwise any client could write it.
+const TRUST_CF = TRUST_PROXY && process.env.TRUST_CF === "1";
+// Test tools label their machines and listeners as simulated; production ignores the label so
+// nobody can put "test hall" on every visitor's screen.
+const ALLOW_SIMULATION = process.env.ALLOW_SIMULATION === "1";
 function countryOf(req, ip) {
   const header = String(req.headers["cf-ipcountry"] || "").toUpperCase();
-  if (TRUST_PROXY && /^[A-Z]{2}$/.test(header) && header !== "XX" && header !== "T1") return header;
+  if (TRUST_CF && /^[A-Z]{2}$/.test(header) && header !== "XX" && header !== "T1") return header;
   return country(ip);
 }
 
@@ -113,23 +125,25 @@ function seatFor(id, cc) {
 const ipMachines = new Map();     // ip key -> machines seated from it
 const ipNew = new Map();          // ip key -> [window start, new machines in the last hour]
 
-function admit(key, now) {
+function admit(key, now, event) {
   const w = ipNew.get(key);
   if (!w || now - w[0] > 3_600_000) ipNew.set(key, [now, 0]);
-  if ((ipMachines.get(key) || 0) >= MAX_MACHINES_PER_IP || ipNew.get(key)[1] >= NEW_MACHINES_PER_IP_HOUR) return false;
+  const most = event ? EVENT_PER_IP : MAX_MACHINES_PER_IP, newest = event ? EVENT_PER_IP : NEW_MACHINES_PER_IP_HOUR;
+  if ((ipMachines.get(key) || 0) >= most || ipNew.get(key)[1] >= newest) return false;
   ipNew.get(key)[1]++;
   ipMachines.set(key, (ipMachines.get(key) || 0) + 1);
   if (ipNew.size > 200_000) ipNew.clear();
   return true;
 }
 
-function report(id, body, now, cc, key, pair) {
+function report(id, body, now, cc, key, pair, event) {
   let p = players.get(id);
   if (p && p.key !== key) return null;
   if (!p) {
-    if (players.size >= MAX_PLAYERS || !admit(key, now)) return null;
+    if (players.size >= MAX_PLAYERS || !admit(key, now, event)) return null;
     p = { ...seatFor(id, cc), simulation: body.simulation === true, energy: 0, pulse: 0, cc: cc || "", key, allow: STEP_BURST, allowAt: now };
     players.set(id, p);
+    if (!p.simulation) count("machine", key, now);
   }
   // A machine scores at most STEP_RATE steps a second (burst STEP_BURST): a script cannot
   // flood the league, while a busy developer with many sessions never hits it.
@@ -522,18 +536,63 @@ setInterval(() => {
   }
 }, FRAME_MS);
 
+// ---------- usage counts ----------
+// Daily totals only: how many visits, listens, demos, moments, new machines, and roughly how many
+// different addresses did each (the salted address key lives in memory for the day and is never
+// written; a restart starts that day's "unique" again). No cookies, no identities. Read with
+// METRICS_KEY; kept across restarts in METRICS_FILE when set. Sixty days are kept.
+const METRIC_NAMES = new Set(["visit", "invited", "listen", "demo", "connection", "moment", "video", "invite", "brand"]);
+const METRICS_KEY = process.env.METRICS_KEY || "", METRICS_FILE = process.env.METRICS_FILE || "";
+let usage = {}, usageDay = "", usageDirty = false;
+const seenToday = new Map();        // name -> Set(salted address key), today only
+try { if (METRICS_FILE) usage = JSON.parse(readFileSync(METRICS_FILE, "utf8")).days || {}; } catch { /* first run */ }
+function count(name, key, now) {
+  const day = new Date(now).toISOString().slice(0, 10);
+  if (day !== usageDay) {
+    usageDay = day; seenToday.clear();
+    for (const old of Object.keys(usage).sort().slice(0, -59)) delete usage[old];
+  }
+  const row = ((usage[day] ||= {})[name] ||= { count: 0, unique: 0 });
+  row.count++;
+  const seen = seenToday.get(name) || new Set();
+  if (!seen.has(key) && seen.size < 200_000) { seen.add(key); row.unique++; seenToday.set(name, seen); }
+  usageDirty = true;
+}
+function saveUsage() {
+  if (!METRICS_FILE || !usageDirty) return;
+  usageDirty = false;
+  try { writeFileSync(`${METRICS_FILE}.tmp`, JSON.stringify({ days: usage })); renameSync(`${METRICS_FILE}.tmp`, METRICS_FILE); }
+  catch (error) { console.log(`metrics: not saved (${error.message})`); }
+}
+if (METRICS_FILE) {
+  setInterval(saveUsage, 60_000).unref();
+  for (const signal of ["SIGTERM", "SIGINT"]) process.on(signal, () => { saveUsage(); process.exit(0); });
+}
+const sameSecret = (given, secret) => { const a = Buffer.from(given), b = Buffer.from(secret); return a.length === b.length && timingSafeEqual(a, b); };
+
 // ---------- http ----------
-const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2" };
+const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".txt": "text/plain; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2" };
 const hits = new Map();         // ip key -> [windowStart, count]
 const listenerIPs = new Map();
 
-function limited(key, now) {
+function limited(key, now, event) {
   const h = hits.get(key) || [now, 0];
   if (now - h[0] > 1000) { h[0] = now; h[1] = 0; }
   h[1]++;
   hits.set(key, h);
   if (hits.size > 50_000) hits.clear();
-  return h[1] > 8;
+  return h[1] > (event ? EVENT_PER_IP : 8);
+}
+
+// Small JSON objects only: over 2 KiB, unreadable or not an object is answered here and gives null.
+async function readJson(req, res, empty) {
+  let raw = "";
+  try { for await (const chunk of req) { raw += chunk; if (Buffer.byteLength(raw) > 2048) { json(res, 413, { error: "too big" }); return null; } } }
+  catch { json(res, 400, { error: "body" }); return null; }
+  let body;
+  try { body = JSON.parse(raw || empty); } catch { json(res, 400, { error: "json" }); return null; }
+  if (!body || typeof body !== "object" || Array.isArray(body)) { json(res, 400, { error: "object" }); return null; }
+  return body;
 }
 
 function json(res, code, data) {
@@ -551,22 +610,21 @@ const server = http.createServer(async (req, res) => {
   res.setHeader("referrer-policy", "no-referrer");
   res.setHeader("permissions-policy", "microphone=(), camera=(), geolocation=()");
   res.setHeader("x-frame-options", "DENY");
+  // Code, fonts and sound come only from this site; blob: is for moments made in the browser.
+  res.setHeader("content-security-policy", "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
   if (req.method === "POST" && ["/api/pair", "/api/me", "/api/unpair"].includes(url.pathname)) {
     const origin = req.headers.origin;
     if (origin && origin !== `${TRUST_PROXY ? "https" : "http"}://${req.headers.host}` && origin !== `http://${req.headers.host}`) return json(res, 403, { error: "origin" });
-    if (limited(key, now)) return json(res, 429, { error: "slow down" });
-    let raw = "";
-    try { for await (const chunk of req) { raw += chunk; if (Buffer.byteLength(raw) > 2048) return json(res, 413, { error: "too big" }); } }
-    catch { return json(res, 400, { error: "body" }); }
-    let body;
-    try { body = JSON.parse(raw || "{}"); } catch { return json(res, 400, { error: "json" }); }
-    if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "object" });
+    const body = await readJson(req, res, "{}");
+    if (!body) return;
+    const event = isEvent(body.event);
+    if (limited(key, now, event)) return json(res, 429, { error: "slow down" });
     for (const [token, pair] of pairs) if (now - pair.created > PAIR_TTL) pairs.delete(token);
     if (url.pathname === "/api/pair") {
       if (pairs.size >= 5000) return json(res, 503, { error: "pair capacity" });
       let mine = 0;
       for (const pair of pairs.values()) if (pair.key === key) mine++;
-      if (mine >= MAX_PAIRS_PER_IP) return json(res, 429, { error: "too many pairs" });
+      if (mine >= (event ? EVENT_PER_IP : MAX_PAIRS_PER_IP)) return json(res, 429, { error: "too many pairs" });
       const token = randomBytes(24).toString("hex");
       pairs.set(token, { key, created: now, last: 0, lastActivity: 0, steps: 0, activity: Object.fromEntries(ACTIVITY.map(k => [k, 0])) });
       return json(res, 201, { pair: token, expires: now + PAIR_TTL });
@@ -580,28 +638,27 @@ const server = http.createServer(async (req, res) => {
       section: connected ? pair.section : null, seat: connected ? pair.seat : null, expires: pair.created + PAIR_TTL });
   }
   if (req.method === "POST" && url.pathname === "/api/play") {
-    if (limited(key, now)) return json(res, 429, { error: "slow down" });
-    let raw = "";
-    try { for await (const chunk of req) { raw += chunk; if (Buffer.byteLength(raw) > 2048) return json(res, 413, { error: "too big" }); } }
-    catch { return json(res, 400, { error: "body" }); }
-    let body;
-    try { body = JSON.parse(raw); } catch { return json(res, 400, { error: "json" }); }
-    if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "object" });
+    const body = await readJson(req, res, "");
+    if (!body) return;
+    const event = isEvent(body.event);
+    if (limited(key, now, event)) return json(res, 429, { error: "slow down" });
     if (typeof body.id !== "string" || !/^[a-f0-9]{16,64}$/.test(body.id)) return json(res, 400, { error: "id" });
+    if (body.simulation === true && !ALLOW_SIMULATION) return json(res, 403, { error: "simulation disabled" });
     if (body.pair && (body.simulation || players.get(body.id)?.simulation)) return json(res, 403, { error: "simulation cannot pair" });
     const { pair, state } = paired(body, now);
-    const p = report(body.id, body, now, players.has(body.id) ? null : countryOf(req, ip), key, pair);
+    const p = report(body.id, body, now, players.has(body.id) ? null : countryOf(req, ip), key, pair, event);
     if (!p) return json(res, 429, { error: "too many machines from here" });
     return json(res, 200, { section: SECTIONS[p.section], seat: p.seat, players: players.size, ...(state && { pair: state }) });
   }
   if (req.method === "GET" && url.pathname === "/api/stream") {
-    if (listeners.size >= 1000 || (listenerIPs.get(key) || 0) >= 8) return json(res, 429, { error: "too many listeners" });
+    const event = isEvent(url.searchParams.get("event"));
+    if (listeners.size >= 1000 || (listenerIPs.get(key) || 0) >= (event ? EVENT_PER_IP : 8)) return json(res, 429, { error: "too many listeners" });
     listenerIPs.set(key, (listenerIPs.get(key) || 0) + 1);
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive", "x-accel-buffering": "no" });
     res.write("retry: 2000\n\n");
     const cc = countryOf(req, ip);
     const team = TEAMS.includes(url.searchParams.get("team")) ? url.searchParams.get("team") : "listen";
-    sit(res, cc, team, url.searchParams.get("simulation") === "1");
+    sit(res, cc, team, ALLOW_SIMULATION && url.searchParams.get("simulation") === "1");
     send(res, { t: now, seats: seatsSnapshot(), you: { cc, team }, sections: SECTIONS, notes: [], pulses: [], ...meta() });
     req.on("close", () => {
       leave(res);
@@ -610,14 +667,29 @@ const server = http.createServer(async (req, res) => {
     });
     return;
   }
+  if (req.method === "POST" && url.pathname === "/api/metric") {
+    const body = await readJson(req, res, "");
+    if (!body) return;
+    if (limited(key, now)) return json(res, 429, { error: "slow down" });
+    if (!METRIC_NAMES.has(body.name)) return json(res, 400, { error: "name" });
+    count(body.name, key, now);
+    res.writeHead(204, { "cache-control": "no-store" });
+    return res.end();
+  }
+  if (req.method === "GET" && url.pathname === "/api/metrics") {
+    if (!METRICS_KEY || !sameSecret(String(req.headers.authorization || ""), `Bearer ${METRICS_KEY}`)) { res.writeHead(404); return res.end("not found"); }
+    return json(res, 200, { days: usage });
+  }
   if (req.method === "GET" && url.pathname === "/api/health") return json(res, 200, { ok: true, players: players.size, listeners: listeners.size });
   if (req.method !== "GET") return json(res, 405, { error: "method" });
   const path = normalize(url.pathname === "/" ? "/index.html" : url.pathname).replace(/^(\.\.[/\\])+/, "");
   try {
     const file = await readFile(join(WEB, path));
-    // Page and code revalidate every load, so a new version shows up right away.
+    // Page and code revalidate every load, so a new version shows up right away. The sound engine
+    // and samples are pinned by version and checksum, so browsers keep them for a year.
+    const pinned = /^[/\\](vendor|sounds)[/\\]/.test(path);
     const fresh = [".html", ".js", ".css"].includes(extname(path));
-    res.writeHead(200, { "content-type": TYPES[extname(path)] || "application/octet-stream", "cache-control": fresh ? "no-cache" : "public, max-age=3600" });
+    res.writeHead(200, { "content-type": TYPES[extname(path)] || "application/octet-stream", "cache-control": pinned ? "public, max-age=31536000, immutable" : fresh ? "no-cache" : "public, max-age=3600" });
     const output = extname(path) === ".html" && PUBLIC_URL ? file.toString()
       .replaceAll('content="/og.png"', `content="${PUBLIC_URL}/og.png"`)
       .replace("</head>", `<meta property="og:url" content="${PUBLIC_URL}/"><link rel="canonical" href="${PUBLIC_URL}/"></head>`) : file;

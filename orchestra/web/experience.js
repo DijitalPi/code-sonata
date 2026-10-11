@@ -1,4 +1,5 @@
-import { KINDS, personalNotes, liveNotes, deltaActivity, wavBytes, publicInvite } from './moment.js';
+import { KINDS, personalNotes, liveNotes, deltaActivity, wavBytes, publicInvite, eventKey } from './moment.js';
+const EVENT = eventKey(location.search);
 const $ = id => document.getElementById(id);
 const labels = { edit: 'düzenleme', bash: 'komut', read: 'okuma', think: 'düşünme', done: 'bitiş' };
 let token = null, me = null, baseline = {}, polling = false, recent = [], moment = null, revision = 0;
@@ -13,6 +14,11 @@ if (soundTabs) soundTabs.onmessage = event => {
     if (isPersonal()) { $('sound').textContent = 'Sesi başlat'; $('mode-status').textContent = 'Ses başka sekmede. Burada başlatabilirsin.'; }
   }
 };
+// iPhone: web audio otherwise follows the ring/silent switch, and a phone on silent plays nothing.
+export function newAudioContext() {
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
+  return new AudioContext();
+}
 export let ownSeat = null;
 export let ownPulseAt = 0;
 export let motionPaused = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -23,8 +29,15 @@ export function receiveFrame(frame) {
   recent.push(...(frame.notes || []).map(n => [n[0] - frame.t + Date.now(), ...n.slice(1)]));
   recent = recent.filter(n => n[0] >= cutoff).slice(-400);
 }
+// The server keeps anonymous daily totals (no cookie, no identity); this device's own counters
+// below stay opt-in and never leave the browser.
+const SERVER_METRICS = new Set(['visit', 'invited', 'listen', 'demo', 'connection', 'moment', 'video', 'invite', 'brand']);
+function serverMetric(name) { try { navigator.sendBeacon('/api/metric', JSON.stringify({ name })); } catch {} }
 function metric(name) {
-  // Opt-in local counters only, no network analytics or identifiers.
+  if (SERVER_METRICS.has(name)) serverMetric(name);
+  localMetric(name);
+}
+function localMetric(name) {
   if (!$('metrics-consent')?.checked) return;
   try { const counters = JSON.parse(localStorage.getItem('orchestra-metrics') || '{}'); counters[name] = (counters[name] || 0) + 1; localStorage.setItem('orchestra-metrics', JSON.stringify(counters)); showMetrics(); } catch {}
 }
@@ -37,9 +50,10 @@ let countedVisit = false;
 function countVisit() {
   if (countedVisit || !$('metrics-consent').checked) return;
   countedVisit = true;
-  try { if (JSON.parse(localStorage.getItem('orchestra-metrics') || '{}').visit) metric('return'); } catch {}
-  metric('visit'); if (new URLSearchParams(location.search).get('from') === 'invite') metric('invited');
+  try { if (JSON.parse(localStorage.getItem('orchestra-metrics') || '{}').visit) localMetric('return'); } catch {}
+  localMetric('visit'); if (new URLSearchParams(location.search).get('from') === 'invite') localMetric('invited');
 }
+serverMetric('visit'); if (new URLSearchParams(location.search).get('from') === 'invite') serverMetric('invited');
 try { $('metrics-consent').checked = localStorage.getItem('orchestra-metrics-consent') === 'yes'; } catch {}
 $('metrics-consent').onchange = () => {
   try { localStorage.setItem('orchestra-metrics-consent', $('metrics-consent').checked ? 'yes' : 'no'); } catch {}
@@ -51,7 +65,7 @@ if ($('metrics-consent').checked) showMetrics();
 export { metric };
 async function api(path, body = {}) {
   let response;
-  try { response = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(5000) }); }
+  try { response = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(EVENT ? { ...body, event: EVENT } : body), signal: AbortSignal.timeout(5000) }); }
   catch { throw new Error('Sunucuya ulaşılamıyor. Yerel sunucuyu ve bağlantını kontrol et; otomatik yeniden denenecek.'); }
   if (!response.ok) {
     const reason = await response.json().then(data => data.error, () => '');
@@ -66,7 +80,7 @@ async function clipboard(text, fallback) {
 }
 function clearAudioNodes() { for (const n of nodes) { try { n.stop(); } catch {} } nodes = []; }
 async function playSynth(notes) {
-  synth ||= new AudioContext(); await synth.resume(); clearAudioNodes();
+  synth ||= newAudioContext(); await synth.resume(); clearAudioNodes();
   const bus = synth.createGain(); synthBus = bus; bus.gain.value = Number($('volume').value) / 100; bus.connect(synth.destination);
   for (const [at, pitch, velocity, duration] of notes.slice(0, 60)) {
     const osc = synth.createOscillator(), gain = synth.createGain(), start = synth.currentTime + .03 + at / 1000;
@@ -80,7 +94,7 @@ export function stopPersonalAudio() { personalEnabled = false; clearAudioNodes()
 export async function togglePersonalAudio() {
   personalEnabled = !personalEnabled;
   if (!personalEnabled) stopPersonalAudio();
-  else { synth ||= new AudioContext(); await synth.resume(); soundTabs?.postMessage({ playing: true, id: personalTab }); }
+  else { synth ||= newAudioContext(); await synth.resume(); soundTabs?.postMessage({ playing: true, id: personalTab }); }
   $('sound').textContent = personalEnabled ? 'Sesi durdur' : 'Sesi başlat';
 }
 $('volume').addEventListener('input', () => { if (synthBus && synth) synthBus.gain.setTargetAtTime(Number($('volume').value) / 100, synth.currentTime, .03); });
@@ -106,7 +120,7 @@ $('mode').onchange = async () => {
     soundTabs?.postMessage({ playing: true, id: personalTab });
     $('mode-status').textContent = me?.connected ? 'Yeni faaliyetler yalnız kendi motifinde duyulur.' : 'Önce ajanını bağla. Yeni faaliyet geldiğinde kendi sesin çalar.';
     // Unlock on the gesture, so polling can play subsequent activity.
-    try { synth ||= new AudioContext(); await synth.resume(); } catch {}
+    try { synth ||= newAudioContext(); await synth.resume(); } catch {}
   } else { $('mode-status').textContent = 'Ortak ses için Orkestrayı dinle düğmesine bas.'; }
 };
 $('pair').onclick = async () => {
@@ -114,7 +128,7 @@ $('pair').onclick = async () => {
   try {
     if (token) { try { await api('/api/unpair', { pair: token }); } catch (error) { if (error.status !== 404) throw error; } }
     const data = await api('/api/pair'); token = data.pair; me = null; baseline = {}; ownSeat = null;
-    $('command').value = `python3 agents.py --silent --global '${location.origin}/#pair=${token}'`;
+    $('command').value = `python3 agents.py --silent --global '${location.origin}/#pair=${token}${EVENT ? `&event=${EVENT}` : ''}'`;
     $('setup').hidden = false; $('personal').hidden = true; $('pair').textContent = 'Yeni bağlantı oluştur';
     $('personal-status').textContent = 'Komut hazır. Okuyucunun bağlanmasını bekliyor…';
     poll();
@@ -260,7 +274,7 @@ $('video').onclick = async () => {
   recordingCleanup = cancel;
   try {
     document.dispatchEvent(new Event('orchestra-pause')); stopPersonalAudio(); $('moment-audio').pause();
-    ctx = new AudioContext(); await ctx.resume();
+    ctx = newAudioContext(); await ctx.resume();
     const buffer = await ctx.decodeAudioData(active.bytes.slice(0));
     if (cancelled || current !== revision || moment !== active) { release(); return; }
     const destination = ctx.createMediaStreamDestination(); source = ctx.createBufferSource(); source.buffer = buffer; source.connect(destination);

@@ -4,7 +4,7 @@ import { once } from 'node:events';
 import { writeFile } from 'node:fs/promises';
 const machines = Number(process.argv[2] || 120), seconds = Number(process.argv[3] || 45), listeners = Number(process.argv[4] || 120);
 const port = 4494, url = `http://127.0.0.1:${port}`;
-const server = spawn(process.execPath, ['orchestra/server.mjs'], { env: { ...process.env, PORT: String(port), TRUST_PROXY: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
+const server = spawn(process.execPath, ['orchestra/server.mjs'], { env: { ...process.env, PORT: String(port), TRUST_PROXY: '1', ALLOW_SIMULATION: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
 await new Promise((resolve, reject) => { server.stdout.on('data', b => { if (String(b).includes('Agent Orchestra')) resolve(); }); server.once('error',reject); server.once('exit', c => reject(new Error(`server ${c}`))); });
 const abort = new AbortController(), start = performance.now();
 let bytes = 0, frames = 0, largest = 0, maximumGap = 0, previous = 0, peakMachines = 0, peakListeners = 0, simulated = 0;

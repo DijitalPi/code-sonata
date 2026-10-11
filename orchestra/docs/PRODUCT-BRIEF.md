@@ -65,3 +65,22 @@ Görsel tez: gece konser salonu + basılı konser programı. Sahne ışıkla, s�
 Sınırlar: işlev ve öğe kimlikleri değişmez; içerik hareketi ≤0,35 sn; transform/opacity; :active + :focus-visible. Gerçek kullanıcı beğenisi ölçülmedi, Selim'in gözü kabul ölçütüdür.
 
 Döngü planı (ek bütçe 64–71): 64 tipografi · 65 nota şeridi · 66 seyirci parteri · 67 sahne ışık durumları · 68 program sütunu · 69 mobil/erişilebilirlik/azaltılmış hareket · 70 bütünsel tarayıcı kontrolü ve düzeltme · 71 teslim.
+
+## Yayın hazırlığı briefi · 2026-10-11 (Selim onayı, /gg tam)
+
+Kaynak: Claude yayın denetimi (WORK-LOG 72 öncesi). Kapsam dışı ve Selim kararında: okuyucunun dışarıya dağıtımı (repo private), VPS/DNS yayını, açılış parçası. Push ve yayın yok.
+
+| # | Sorun | Teslim | Kabul |
+|---|---|---|---|
+| 1 | Etkinlikte aynı ağdan 8 dinleyici / 10 makine sınırı | `EVENT_KEYS` ile etkinlik bağlantısı (`?event=`): IP başına sınırlar genişler, makine başına hız bütçesi | Testte aynı IP'den 12 dinleyici ve 15 makine geçer; anahtarsız sınır aynı kalır |
+| 2 | `CF-IPCountry` herkesçe yazılabiliyor | Yalnız `TRUST_CF=1` iken okunur | Testte sahte başlık ülkeyi değiştiremez |
+| 3 | `?simulation=1` herkesin ekranına "Test salonu" yazdırıyor | Simülasyon bayrağı yalnız `ALLOW_SIMULATION=1` sunucuda | Üretim ayarında bayrak etkisiz, simüle makine reddedilir |
+| 4 | Ses motoru ve örnekleri dış kaynaktan, CSP yok | `web/vendor/smplr` + `web/sounds` (sağlama toplamlı indirme betiği, Docker'da da), CSP başlığı, uzun önbellek | Tarayıcıda zengin ses yalnız aynı kaynaktan yüklenir, CSP ihlali yok |
+| 5 | iPhone sessiz anahtarı web sesini kısıyor | `navigator.audioSession.type = "playback"` | Kod yolu; gerçek iPhone denemesi açık |
+| 6 | Yayın başarısı ölçülemiyor | Çerezsiz, kimliksiz günlük toplam sayaçlar; `METRICS_KEY` ile okuma | Testte sayım, isim beyaz listesi, anahtarsız 404 |
+| 7 | Görünmeyen canvas sürekli çiziliyor | Görünürlük gözlemcisiyle çizim durur | Ekran dışındayken çizim çağrısı yok |
+| 8 | Paylaşım görseli eski yazı tipi, olmayan türe nota | Görsel, sesin gerçek notalarını porte üstünde gösterir; Fraunces + Instrument Sans | Önizleme görüntüsü kanıtta |
+| 9 | Boş salon, sahte kalabalık istenmiyor | **Demo konseri**: şef tarayıcıda, açık etiket, canlı bağlantı kapalı, gerçek sayaçlara karışmaz | Demo süresince sunucuya SSE yok; etiket her an görünür |
+| 10 | Linux destekli ama sayfa "yalnız macOS" diyor; gizlilik ve ses lisansı atfı yok | Metin düzeltmesi, gizlilik görünümü (taslak, hukuki onay Selim'de), CC BY 3.0 atfı | Metin gerçek davranışla aynı |
+
+Döngü planı (ek bütçe 72–80): 72 güven başlıkları (2, 3) · 73 etkinlik bağlantısı (1) · 74 sayaçlar (6) · 75 dış bağımlılık ve CSP (4) · 76 mobil ses ve çizim (5, 7) · 77 demo konseri (9) · 78 paylaşım görseli (8) · 79 metinler (10) · 80 bütünsel doğrulama, bağımsız denetim notu, teslim.

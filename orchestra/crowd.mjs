@@ -1,5 +1,5 @@
 // Zero-token crowd: N fake machines join one by one and report steps like real agents.
-//   node orchestra/crowd.mjs [machines=200] [seconds=90] [url=http://localhost:4480] [listeners=machines]
+//   (server needs ALLOW_SIMULATION=1) node orchestra/crowd.mjs [machines=200] [seconds=90] [url=http://localhost:4480] [listeners=machines]
 // Machines arrive over the first third, work hard in the middle (climax), then calm down.
 import { randomBytes } from "node:crypto";
 import http from "node:http";

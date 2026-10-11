@@ -4,8 +4,21 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { connect } from 'node:net';
 const port = 4493, base = `http://127.0.0.1:${port}`;
-const server = spawn(process.execPath, ['orchestra/server.mjs'], { env: { ...process.env, PORT: String(port), TRUST_PROXY: '1', PUBLIC_URL:'https://orchestra.example.test' }, stdio: ['ignore', 'pipe', 'pipe'] });
-await new Promise((resolve, reject) => { server.stdout.on('data', x => { if (String(x).includes('Agent Orchestra')) resolve(); }); server.once('error', reject); server.once('exit', code => reject(new Error(`server exited ${code}`))); });
+const EVENT_KEY = 'event-test-key-0123456789', METRICS_KEY = 'metrics-test-key-0123456789';
+// Test tools may label simulated machines only on a server that allows it (never in production).
+async function start(port, env) {
+  const child = spawn(process.execPath, ['orchestra/server.mjs'], { env: { ...process.env, PORT: String(port), ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
+  await new Promise((resolve, reject) => { child.stdout.on('data', x => { if (String(x).includes('Agent Orchestra')) resolve(); }); child.once('error', reject); child.once('exit', code => reject(new Error(`server exited ${code}`))); });
+  return child;
+}
+async function streamHello(url, headers = {}) {
+  const controller = new AbortController();
+  const response = await fetch(url, { signal: controller.signal, headers });
+  const text = new TextDecoder().decode((await response.body.getReader().read()).value);
+  controller.abort();
+  return JSON.parse(text.slice(text.indexOf('data: ') + 6).split('\n')[0]);
+}
+const server = await start(port, { TRUST_PROXY: '1', ALLOW_SIMULATION: '1', EVENT_KEYS: EVENT_KEY, METRICS_KEY, PUBLIC_URL: 'https://orchestra.example.test' });
 let ip = 1;
 async function post(path, body, headers = {}) {
   const res = await fetch(base + path, { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': `192.0.2.${ip++}`, ...headers }, body: JSON.stringify(body) });
@@ -35,6 +48,66 @@ try {
     const headers = { 'x-forwarded-for': '192.0.2.60' }, codes = [];
     for (let i = 0; i < 6; i++) codes.push((await post('/api/pair', {}, headers)).status);
     assert.deepEqual(codes, [201, 201, 201, 201, 201, 429]);
+  });
+  await test('a client cannot pick its country with a forged Cloudflare header', async () => {
+    const hello = await streamHello(base + '/api/stream', { 'x-forwarded-for': '192.0.2.70', 'cf-ipcountry': 'TR' });
+    assert.notEqual(hello.you.cc, 'TR');
+  });
+  await test('production ignores simulation labels; a Cloudflare deployment may trust its country header', async () => {
+    const prodPort = 4496, prod = await start(prodPort, { TRUST_PROXY: '1', TRUST_CF: '1' });
+    try {
+      const hello = await streamHello(`http://127.0.0.1:${prodPort}/api/stream?simulation=1`, { 'x-forwarded-for': '192.0.2.71', 'cf-ipcountry': 'TR' });
+      assert.equal(hello.simulatedListeners, 0);
+      assert.equal(hello.you.cc, 'TR');
+      const res = await fetch(`http://127.0.0.1:${prodPort}/api/play`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': '192.0.2.72' }, body: JSON.stringify({ id: '9'.repeat(32), simulation: true, steps: 2 }) });
+      assert.equal(res.status, 403);
+    } finally { prod.kill(); await once(prod, 'exit'); }
+  });
+  await test('an event link opens a shared venue network to the whole room', async () => {
+    const venue = { 'x-forwarded-for': '192.0.2.90' }, controllers = [];
+    try {
+      for (let i = 0; i < 12; i++) {
+        const controller = new AbortController(); controllers.push(controller);
+        assert.equal((await fetch(`${base}/api/stream?event=${EVENT_KEY}`, { signal: controller.signal, headers: venue })).status, 200);
+      }
+      const machines = [];
+      for (let i = 0; i < 15; i++) machines.push((await post('/api/play', { id: (i + 10).toString(16).padStart(32, 'e'), event: EVENT_KEY, steps: 1, working: true }, venue)).status);
+      assert.deepEqual([...new Set(machines)], [200]);
+      const pairs = [];
+      for (let i = 0; i < 8; i++) pairs.push((await post('/api/pair', { event: EVENT_KEY }, venue)).status);
+      assert.deepEqual([...new Set(pairs)], [201]);
+      // A wrong key is no key: the ordinary per-address limits apply.
+      const other = { 'x-forwarded-for': '192.0.2.91' };
+      for (let i = 0; i < 8; i++) { const controller = new AbortController(); controllers.push(controller); await fetch(`${base}/api/stream?event=wrong-key-0123456789`, { signal: controller.signal, headers: other }); }
+      assert.equal((await fetch(`${base}/api/stream?event=wrong-key-0123456789`, { headers: other })).status, 429);
+    } finally { controllers.forEach(c => c.abort()); }
+  });
+  await test('daily counts without cookies or identities, readable only with the metrics key', async () => {
+    const send = (name, from) => fetch(base + '/api/metric', { method: 'POST', headers: { 'content-type': 'text/plain', 'x-forwarded-for': from }, body: JSON.stringify({ name }) });
+    assert.equal((await send('listen', '192.0.2.110')).status, 204);
+    assert.equal((await send('listen', '192.0.2.110')).status, 204);
+    assert.equal((await send('listen', '192.0.2.111')).status, 204);
+    assert.equal((await send('prompt', '192.0.2.112')).status, 400);
+    assert.equal((await fetch(base + '/api/metrics')).status, 404);
+    assert.equal((await fetch(base + '/api/metrics', { headers: { authorization: 'Bearer wrong' } })).status, 404);
+    const read = await fetch(base + '/api/metrics', { headers: { authorization: `Bearer ${METRICS_KEY}` } });
+    assert.equal(read.status, 200);
+    const { days } = await read.json(), today = days[new Date().toISOString().slice(0, 10)];
+    assert.deepEqual(today.listen, { count: 3, unique: 2 });
+    assert.ok(today.machine.count > 0);   // new machines are counted by the server itself
+    assert.equal(JSON.stringify(days).includes('192.0.2'), false);
+  });
+  await test('the page loads code and sound only from this site', async () => {
+    const page = await fetch(base + '/');
+    const csp = page.headers.get('content-security-policy') || '';
+    for (const rule of ["default-src 'self'", "script-src 'self'", "connect-src 'self'", "object-src 'none'", "frame-ancestors 'none'"]) assert.ok(csp.includes(rule), rule);
+    assert.equal(/https?:/.test(csp), false);
+    const html = await page.text();
+    assert.equal(html.includes('cdn.jsdelivr'), false);
+    const engine = await fetch(base + '/vendor/smplr-1.1.0.mjs');
+    assert.equal(engine.status, 200);
+    assert.match(engine.headers.get('content-type'), /javascript/);
+    assert.match(engine.headers.get('cache-control'), /immutable/);
   });
   await test('malformed input cannot crash conductor or expose unsupported values', async () => {
     for (const body of [null, [], 3, 'x', {}]) assert.equal((await post('/api/play', body)).status, 400);

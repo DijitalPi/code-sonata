@@ -534,10 +534,20 @@ class GlobalReporter:
             raise ValueError("Eşleştirme anahtarı geçersiz; tarayıcıdan yeni bağlantı oluştur.")
         return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/") + "/api/play", "", "")), pair
 
+    @staticmethod
+    def event(url):
+        # An event link (#event=<key>) lifts the venue's shared-address limits on the server.
+        import urllib.parse
+        key = urllib.parse.parse_qs(urllib.parse.urlsplit(url).fragment).get("event", [None])[0]
+        if key is not None and not re.fullmatch(r"[A-Za-z0-9_-]{16,64}", key):
+            raise ValueError("Etkinlik anahtarı geçersiz; etkinlik bağlantısını yeniden kopyala.")
+        return key
+
     def __init__(self, url, music):
         import secrets
         import urllib.request
         self.url, self.pair = self.connection(url)
+        self.event_key = self.event(url)
         self.request = urllib.request
         self.music = music
         id_file = CACHE / "global-id"
@@ -589,7 +599,8 @@ class GlobalReporter:
                 tools[tool] = tools.get(tool, 0) + 1
             body = json.dumps({"id": self.id, "steps": steps, "signals": signals, "working": working,
                                "sessions": len(self.music.sessions), "tools": tools,
-                               "activity": activity, "pair": self.pair}).encode()
+                               "activity": activity, "pair": self.pair,
+                               **({"event": self.event_key} if self.event_key else {})}).encode()
             try:
                 request = self.request.Request(self.url, data=body, headers={"content-type": "application/json"})
                 with self.request.urlopen(request, timeout=3) as response:
@@ -748,6 +759,7 @@ def main():
     if args.global_url:
         try:
             GlobalReporter.connection(args.global_url)
+            GlobalReporter.event(args.global_url)
         except ValueError as exc:
             parser.error(str(exc))
     CACHE.mkdir(parents=True, exist_ok=True)

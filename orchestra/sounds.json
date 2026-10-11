@@ -1,0 +1,18 @@
+{
+  "license": "FluidR3 GM by Frank Wen, rendered by gleitz/midi-js-soundfonts, CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/)",
+  "source": "https://gleitz.github.io/midi-js-soundfonts/FluidR3_GM/",
+  "prefix": "sounds/FluidR3_GM/",
+  "pinned": "2026-10-11",
+  "files": [
+    {"path": "sounds/FluidR3_GM/acoustic_grand_piano-mp3.js", "sha256": "00eebe0214c12ff8f32c47c2f7ac92ef352800e868ab0f883b80854486ac4ca6", "bytes": 2631954},
+    {"path": "sounds/FluidR3_GM/string_ensemble_1-mp3.js", "sha256": "8571395f4c42a989a63e0aed48ad9d79f0ac1a822ff2afd7cb356191be8fd4a2", "bytes": 2803855},
+    {"path": "sounds/FluidR3_GM/choir_aahs-mp3.js", "sha256": "45586b4abdfc7595af8ae1784dee9bf8b7da73fc4f967cd0333f460297f1eb7a", "bytes": 2803848},
+    {"path": "sounds/FluidR3_GM/cello-mp3.js", "sha256": "fc72c9351e0dda586802f97a1b890e415640f54dc6cc397bd5dc32b078f6ce4c", "bytes": 3005203},
+    {"path": "sounds/FluidR3_GM/flute-mp3.js", "sha256": "e2e35283876eec60b919beeb8bfa49f46f12dddf5b8c6025e7a45c5d2a24bda5", "bytes": 2969583},
+    {"path": "sounds/FluidR3_GM/vibraphone-mp3.js", "sha256": "263bf866f7facd9652d39d4f7f499e8f883bc40adbdee75d8c5caf11403132f5", "bytes": 2020776},
+    {"path": "sounds/FluidR3_GM/french_horn-mp3.js", "sha256": "02ab9a746f2f43c9867d67735e52d100996a0d194f06da5e3c4844528869928e", "bytes": 2803849},
+    {"path": "sounds/FluidR3_GM/orchestral_harp-mp3.js", "sha256": "e6da3bb7c987e2085d923e3a03b2f475c202a2edc9a8fb88ac821e53eca082b3", "bytes": 1920729},
+    {"path": "sounds/FluidR3_GM/timpani-mp3.js", "sha256": "9f6230ae7fd6e4019c2fc9b7a0ac353103b777e45a2cb50880f5f6f6b3a0cba6", "bytes": 2012089},
+    {"path": "sounds/FluidR3_GM/tremolo_strings-mp3.js", "sha256": "571d11230d47f111fc39795eb0d5b2fec1b655aef555ad1a2e4bbc0ef553412f", "bytes": 2803853},
+    {"path": "sounds/FluidR3_GM/accordion-mp3.js", "sha256": "a7fe9c0532f7d8a3fec066d3059fed27c82d942bf70c3079c58d25ad91ae69de", "bytes": 3002635}  ]
+}

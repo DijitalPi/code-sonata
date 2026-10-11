@@ -271,6 +271,15 @@ class ReporterTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 GlobalReporter.connection(url)
 
+    def test_event_key_is_read_from_the_fragment_and_bad_keys_are_rejected(self):
+        from agents import GlobalReporter
+        key = 'event-test-key-0123456789'
+        self.assertEqual(GlobalReporter.event('https://orchestra.example/#pair=' + 'a' * 48 + '&event=' + key), key)
+        self.assertIsNone(GlobalReporter.event('https://orchestra.example/'))
+        for url in ('https://orchestra.example/#event=short', 'https://orchestra.example/#event=bad key with spaces!!'):
+            with self.assertRaises(ValueError):
+                GlobalReporter.event(url)
+
     def test_report_payload_contains_counts_without_paths_or_content(self):
         from agents import GlobalReporter
         from unittest.mock import patch, MagicMock

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { personalNotes, liveNotes, deltaActivity, wavBytes, publicInvite } from './web/moment.js';
+import { personalNotes, liveNotes, deltaActivity, wavBytes, publicInvite, eventKey } from './web/moment.js';
 import { SONGS, PLANS, METERS } from './music.mjs';
 test('personal output requires activity and has bounded harmonious notes', () => {
   assert.deepEqual(personalNotes({}), []);
@@ -33,3 +33,18 @@ test('live motifs fit inside a polling interval and represent every active kind'
  assert.equal(notes.length,10); assert.ok(Math.max(...notes.map(n=>n[0]+n[3]*1000)) < 2000);
  assert.deepEqual(liveNotes({}),[]);
 });
+test('an event key comes only from a well-formed ?event= parameter', () => {
+  assert.equal(eventKey('?event=event-test-key-0123456789'), 'event-test-key-0123456789');
+  assert.equal(eventKey('?from=invite'), '');
+  assert.equal(eventKey('?event=short'), '');
+  assert.equal(eventKey('?event=has%20space-0123456789'), '');
+});
+test('every instrument the hall plays has a pinned, checksummed sample file', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const app = await readFile(new URL('./web/app.js', import.meta.url), 'utf8');
+  const names = JSON.parse(app.match(/const SOUNDFONT = (\[[^\]]*\])/)[1]).filter(Boolean);
+  const manifest = JSON.parse(await readFile(new URL('./sounds.json', import.meta.url), 'utf8'));
+  for (const name of names) assert.ok(manifest.files.some(f => f.path === `sounds/FluidR3_GM/${name}-mp3.js` && /^[a-f0-9]{64}$/.test(f.sha256)), name);
+  assert.equal(app.includes('cdn.jsdelivr'), false);
+});
+

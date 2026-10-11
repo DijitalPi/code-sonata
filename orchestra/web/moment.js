@@ -46,3 +46,8 @@ export function wavBytes(notes, seconds = 12, rate = 22050) {
 export function publicInvite(location) {
   const url = new URL(location); url.hash = ''; url.search = '?from=invite'; return url.href;
 }
+// An event link (?event=<key>) opens a shared venue network; anything malformed is no key.
+export function eventKey(search) {
+  const key = new URLSearchParams(search).get('event') || '';
+  return /^[A-Za-z0-9_-]{16,64}$/.test(key) ? key : '';
+}

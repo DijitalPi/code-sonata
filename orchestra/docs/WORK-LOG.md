@@ -1,5 +1,7 @@
 # Geliştirme kaydı
 
+Duraklatıldı: Claude · 2026-10-11 10:10, disk doldu (ENOSPC). Yayın hazırlığı turu 72–75 bitti, 76 ölçümü ve 77–80 kaldı; devam için `/gg devam`.
+
 Başlangıç: 2026-10-09. Durum: yerel teslim tamamlandı; dış kabul bağımlılıkları VALIDATION.md içinde. Kaynak brief: PRODUCT-BRIEF.md ve kök ORCHESTRA-HANDOFF.md.
 
 ## 01 — Mevcut durum ve mimari
@@ -402,3 +404,11 @@ Brief ve plan: PRODUCT-BRIEF.md "Tasarım briefi · 2026-10-10". Tez: gece konse
 - **69 Mobil / erişilebilirlik / azaltılmış hareket.** 390x844: taşma yok, sıra başlık → işlem → salon → şerit → kontroller → şu an → program. Azaltılmış hareket: CSS ve `motionPaused` yolu kodla incelendi; tarayıcı emülasyonuyla denenmedi.
 - **70 Bütünsel kontrol.** Bulgu: bayraklar bölüm adlarının üstüne biniyordu → adlar bayraklardan önce ve dolu bölümde soluk çiziliyor. Konsol hatası yok, 1440x900 sütun 900/900.
 - **71 Teslim.** 39/39 Python + 13/13 Node. Kanıt: evidence/design-desktop-empty.jpg, design-desktop-crowd.jpg, design-mobile-390.jpg. Açık: Selim'in gözüyle onay; Safari/telefon; ses açıkken spot ışığının gerçek tarayıcıda görünümü (otomasyonda ses jesti yok). Ek bütçe: 61–71 kullanıldı, 72–80 kullanılmadı.
+
+## 72–76 — Yayın hazırlığı turu, ilk yarı (2026-10-11)
+- **72 Güven başlıkları** (09:59–10:01). `CF-IPCountry` yalnız `TRUST_CF=1` iken; simülasyon etiketi yalnız `ALLOW_SIMULATION=1` sunucuda (üretimde etiketli makine 403). Kanıt: test-api "forged Cloudflare header", "production ignores simulation labels". benchmark.mjs bayrağı açıyor.
+- **73 Etkinlik bağlantısı** (10:01–10:02). `EVENT_KEYS` + `?event=`/`#event=`: IP başına dinleyici, makine, eşleştirme ve hız sınırı 300'e çıkar; yanlış anahtar normal sınır. Okuyucu `GlobalReporter.event()`, sayfa `eventKey()`. Kanıt: test-api "event link", test_agents, test-moment.
+- **74 Sayaçlar** (10:02–10:04). `POST /api/metric` (beyaz liste), sunucu yeni makineyi kendisi sayar; `GET /api/metrics` yalnız `Authorization: Bearer METRICS_KEY`; `METRICS_FILE` ile kalıcı (kapanışta yazma, açılışta okuma elle doğrulandı). Adres yalnız günlük tuzlu özet, bellekte.
+- **75 Dış bağımlılık + CSP** (10:04–10:08). smplr 1.1.0 npm dosyası `web/vendor` (SHA-256 tarball ile aynı, MIT notu); 11 örnek `fetch-sounds.mjs` + `sounds.json` sağlama toplamı (bozuk dosya yakalandı ve onarıldı), git dışı, Docker'da build aşamasında. CSP + `vendor/sounds` için 1 yıl önbellek. Gerçek tıklamayla: 11 örnek ve motor yalnız 127.0.0.1'den, CSP ihlali yok, spot ışığı yandı (`evidence/release-playing-spotlight.jpeg`). **Düzeltme:** örnekler CC BY 3.0, atıf zorunlu (denetimde "serbest" denmişti).
+- **76 iPhone + pil** (10:08–). `newAudioContext()` sessiz anahtarı aşar; salon/şerit ekran dışındayken çizilmez. Kod ve sözdizimi tamam; ölçüm **disk dolduğu için yapılamadı** (ENOSPC, 118 MB boş). Gerçek iPhone denemesi açık.
+Durum: 77 demo konseri, 78 paylaşım görseli, 79 metinler (Linux, gizlilik, CC BY atfı, görev numaralarının ekran okuyucuda "." okunması, "internetten indirir" metni), 80 doğrulama + Docker build + denetim notu kaldı. Testler: test-api 13/13, test-moment 8/8, Python 40/40.
