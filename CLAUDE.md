@@ -5,13 +5,14 @@ sitesi (`orchestra/`). Ayrıntı tek kaynakta: `README.md` (araç) ve `orchestra
 Skill: `skill/` (kurulu kopya `~/.codex/skills/code-sonata/`, yardımcı `scripts/control.py`).
 Test/demo sıfır token: `demo.py` (araç), `orchestra/crowd.mjs` (site). Test için ajan açılmaz.
 
-## Son iş — 2026-10-11: yayın hazırlığı turu (DURAKLATILDI, disk doldu)
+## Son iş — 2026-10-11: yayın hazırlığı turu (72-80 bitti, Codex denetimi bekliyor)
 
-- `5526279` (main): /gg tam döngü 72-76. Brief `orchestra/docs/PRODUCT-BRIEF.md` "Yayın hazırlığı briefi", kayıt WORK-LOG 72-76. Devam: `/gg devam` (77 demo konseri, 78 paylaşım görseli, 79 metinler + CC BY atfı, 80 doğrulama + Docker build + Codex denetim notu).
-- Yeni ortam değişkenleri: `EVENT_KEYS` (etkinlik salonu, IP başına sınır 300), `TRUST_CF=1` (yalnız Cloudflare arkasında), `ALLOW_SIMULATION=1` (yalnız test/crowd), `METRICS_KEY` + `METRICS_FILE` (çerezsiz günlük sayaç).
-- Zengin ses kendi sitemizden: `web/vendor/smplr-1.1.0.mjs` + `node orchestra/fetch-sounds.mjs` (27 MB, `sounds.json` sağlama toplamı, git dışı). Yerelde zengin ses için önce bu betik.
-- 🔴 Ses örnekleri CC BY 3.0: sayfada atıf ZORUNLU (79'da eklenecek). Okuyucu Linux'ta da çalışıyor (MSI'da denendi), sayfa hâlâ "yalnız macOS" diyor.
-- Tuzak: crowd.mjs/benchmark artık `ALLOW_SIMULATION=1` ister; üretimde simüle makine 403.
+- `5526279` + `5b4e7d0` (main). Brief `orchestra/docs/PRODUCT-BRIEF.md` "Yayın hazırlığı briefi", kayıt WORK-LOG 72-80, kabul VALIDATION "Yayın hazırlığı kabulü". **Denetim bekliyor:** `orchestra/docs/CODEX-REVIEW.md` (sonuç `CODEX-REVIEW-RESULT.md`'ye).
+- **Demo konseri:** şef `web/conductor.mjs` (sunucu + tarayıcı, `population()` arayüzü), `web/demo.js` 24 simüle makine; demo sırasında SSE kapalı, sunucuya yük yok, etiket sürekli. `music.mjs` artık `web/music.mjs`.
+- Ortam: `EVENT_KEYS` (etkinlik, IP başına 300), `TRUST_CF=1` (yalnız Cloudflare), `ALLOW_SIMULATION=1` (yalnız test/crowd), `METRICS_KEY`/`METRICS_FILE`. Tablo: OPERATIONS "Yayın ayarları".
+- Zengin ses yerel: `node orchestra/fetch-sounds.mjs` (27 MB, git dışı, Docker build yapar). CC BY atfı "Proje ve iletişim"de, gizlilik görünümü taslak (hukuki onay Selim'de).
+- Yayın koşulu: Traefik erişim kaydı kapalı/IP'siz (gizlilik "IP kaydedilmez" diyor) + compress. Açık: gerçek iPhone/Safari, Docker build, okuyucu dağıtımı (repo private), VPS/DNS.
+- Tarayıcı ölçümü: MCP takılırsa headless Chrome + CDP betiği; disk %100 olunca MCP takılıyor (bkz. memory disk notu).
 
 ## Son iş — 2026-10-10: Agent Orchestra /gg tam teslimi, Claude incelemesi, tasarım
 
