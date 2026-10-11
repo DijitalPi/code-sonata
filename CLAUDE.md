@@ -5,6 +5,14 @@ sitesi (`orchestra/`). Ayrıntı tek kaynakta: `README.md` (araç) ve `orchestra
 Skill: `skill/` (kurulu kopya `~/.codex/skills/code-sonata/`, yardımcı `scripts/control.py`).
 Test/demo sıfır token: `demo.py` (araç), `orchestra/crowd.mjs` (site). Test için ajan açılmaz.
 
+## Son iş — 2026-10-11: yayın hazırlığı turu (DURAKLATILDI, disk doldu)
+
+- `5526279` (main): /gg tam döngü 72-76. Brief `orchestra/docs/PRODUCT-BRIEF.md` "Yayın hazırlığı briefi", kayıt WORK-LOG 72-76. Devam: `/gg devam` (77 demo konseri, 78 paylaşım görseli, 79 metinler + CC BY atfı, 80 doğrulama + Docker build + Codex denetim notu).
+- Yeni ortam değişkenleri: `EVENT_KEYS` (etkinlik salonu, IP başına sınır 300), `TRUST_CF=1` (yalnız Cloudflare arkasında), `ALLOW_SIMULATION=1` (yalnız test/crowd), `METRICS_KEY` + `METRICS_FILE` (çerezsiz günlük sayaç).
+- Zengin ses kendi sitemizden: `web/vendor/smplr-1.1.0.mjs` + `node orchestra/fetch-sounds.mjs` (27 MB, `sounds.json` sağlama toplamı, git dışı). Yerelde zengin ses için önce bu betik.
+- 🔴 Ses örnekleri CC BY 3.0: sayfada atıf ZORUNLU (79'da eklenecek). Okuyucu Linux'ta da çalışıyor (MSI'da denendi), sayfa hâlâ "yalnız macOS" diyor.
+- Tuzak: crowd.mjs/benchmark artık `ALLOW_SIMULATION=1` ister; üretimde simüle makine 403.
+
 ## Son iş — 2026-10-10: Agent Orchestra /gg tam teslimi, Claude incelemesi, tasarım
 
 - Kod `02cad6e`, belgeler/kanıtlar `bc24dcc` (main). Codex 60 döngü yaptı; Claude inceledi ve iki ek döngü ekledi (61-62). Kayıt: `orchestra/docs/WORK-LOG.md`, kabul: `VALIDATION.md`.

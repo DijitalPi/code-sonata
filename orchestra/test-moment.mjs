@@ -47,4 +47,3 @@ test('every instrument the hall plays has a pinned, checksummed sample file', as
   for (const name of names) assert.ok(manifest.files.some(f => f.path === `sounds/FluidR3_GM/${name}-mp3.js` && /^[a-f0-9]{64}$/.test(f.sha256)), name);
   assert.equal(app.includes('cdn.jsdelivr'), false);
 });
-
