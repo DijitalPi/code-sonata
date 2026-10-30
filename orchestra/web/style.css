@@ -1,0 +1,192 @@
+/* Agent Orchestra: a concert hall at night and its printed programme.
+   The stage speaks with light, the column with type. Fonts are served from this site (OFL). */
+@font-face { font-family: Fraunces; font-style: normal; font-weight: 300 500; font-display: swap; src: url(fonts/fraunces-latin-ext.woff2) format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: Fraunces; font-style: normal; font-weight: 300 500; font-display: swap; src: url(fonts/fraunces-latin.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Instrument Sans"; font-style: normal; font-weight: 400 600; font-display: swap; src: url(fonts/instrument-sans-latin-ext.woff2) format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "Instrument Sans"; font-style: normal; font-weight: 400 600; font-display: swap; src: url(fonts/instrument-sans-latin.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+
+:root {
+  --bg: #0b0907; --paper: #100d0a; --ink: #f3e9d6; --dim: #b3a58f; --gold: #e6b45a; --gold-hi: #f3d08c;
+  --line: rgba(243, 233, 214, .12); --field: #18140f;
+  --serif: Fraunces, Georgia, serif; --sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --col: clamp(380px, 36vw, 540px); --pad: clamp(20px, 2.6vw, 40px);
+}
+* { box-sizing: border-box; }
+html { background: var(--bg); }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.6 var(--sans); -webkit-font-smoothing: antialiased; }
+/* Fine film grain over the whole page: one surface, not a stack of panels. */
+body::after { content: ""; position: fixed; inset: 0; z-index: 20; pointer-events: none; opacity: .045; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+p { margin: 0 0 14px; }
+a { color: var(--gold); text-underline-offset: 4px; }
+[hidden] { display: none !important; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.label { font: 500 10.5px/1.4 var(--sans); letter-spacing: .18em; text-transform: uppercase; color: var(--gold); }
+
+/* ---------- the programme (column) ---------- */
+.column { display: flex; flex-direction: column; padding: var(--pad); background: var(--paper); border-right: 1px solid var(--line); scrollbar-width: thin; scrollbar-color: rgba(243, 233, 214, .16) transparent; }
+.brand { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 14px; margin-bottom: clamp(22px, 5vh, 64px); border-bottom: 1px solid var(--line); }
+.wordmark { font: 500 21px/1 var(--serif); color: var(--ink); text-decoration: none; letter-spacing: -.01em; }
+.wordmark em, h1 em { font-style: normal; color: var(--gold); }
+.maker { font: italic 300 14px/1 var(--serif); color: var(--dim); }
+section[data-view] { display: flex; flex-direction: column; align-items: flex-start; }
+h1 { font: 300 clamp(42px, 3.5vw, 62px)/1 var(--serif); letter-spacing: -.025em; margin: 0 0 18px; }
+h2 { font: 300 clamp(34px, 2.8vw, 46px)/1.04 var(--serif); letter-spacing: -.02em; margin: 6px 0 14px; }
+h1:focus, h2:focus { outline: none; }
+.lead { color: var(--dim); font-size: 16px; max-width: 40ch; margin-bottom: 22px; }
+.note { font-size: 13px; color: var(--dim); max-width: 52ch; }
+.actions, .row { display: flex; flex-wrap: wrap; gap: 8px; }
+.actions { margin-bottom: 12px; }
+.row { margin: 12px 0; }
+#loading { font-size: 12.5px; color: var(--dim); max-width: 46ch; margin: 8px 0 0; }
+
+/* Now playing, like the line under a concert title. */
+.now-block { margin-top: auto; padding-top: 26px; max-width: 46ch; }
+.now-block .label { margin-bottom: 8px; }
+#now { font-size: 13px; color: var(--dim); margin-bottom: 6px; }
+#now strong { color: var(--ink); font: italic 400 19px/1.3 var(--serif); }
+.caption { font-size: 12px; color: rgba(179, 165, 143, .8); margin: 0; }
+.heat { display: inline-block; width: 96px; height: 2px; margin-left: 10px; vertical-align: middle; background: var(--line); overflow: hidden; }
+.heat i { display: block; height: 100%; background: linear-gradient(90deg, var(--gold), var(--gold-hi)); }
+
+/* What you can do, numbered like the movements of a programme. */
+.tasks { counter-reset: act; display: flex; flex-direction: column; padding-top: 22px; }
+.task { all: unset; box-sizing: border-box; display: grid; grid-template-columns: 38px 1fr; width: 100%; padding: 11px 0; border-top: 1px solid var(--line); cursor: pointer; }
+.task::before { counter-increment: act; content: counter(act, upper-roman) "."; content: counter(act, upper-roman) "." / ""; grid-row: span 2; font: italic 300 16px/1.55 var(--serif); color: var(--gold); }
+.task span { grid-column: 2; font: 400 19px/1.3 var(--serif); color: var(--ink); transition: transform .15s ease, color .15s ease; }
+.task small { grid-column: 2; font-size: 12.5px; color: var(--dim); }
+.task:hover span { color: var(--gold-hi); transform: translateX(3px); }
+.task:active span { opacity: .7; }
+.more { display: flex; flex-wrap: wrap; gap: 4px 22px; margin: 0; padding-top: 12px; border-top: 1px solid var(--line); }
+.link { all: unset; cursor: pointer; color: var(--gold); font-size: 14px; padding: 6px 0; text-decoration: underline; text-decoration-color: rgba(230, 180, 90, .35); text-underline-offset: 4px; }
+.link:hover { text-decoration-color: var(--gold); }
+.link:active { opacity: .7; }
+.more .link { color: var(--dim); text-decoration-color: rgba(179, 165, 143, .35); font-size: 13px; }
+.more .link:hover { color: var(--ink); }
+.minor { display: flex; flex-wrap: wrap; gap: 2px 22px; margin: 0; }
+#demo-offer { margin-top: 10px; font-size: 13px; }
+.back { all: unset; cursor: pointer; color: var(--dim); font-size: 13px; padding: 6px 0; }
+.back:hover { color: var(--ink); }
+
+/* ---------- controls ---------- */
+button, .pill { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 46px; padding: 0 22px; border: 0; border-radius: 999px; background: var(--gold); color: #1a1208; font-family: inherit; font-size: 15px; font-weight: 600; line-height: 1; letter-spacing: .005em; text-decoration: none; cursor: pointer; transition: transform .12s ease, background-color .12s ease, box-shadow .12s ease; }
+button:hover, .pill:hover { background: var(--gold-hi); }
+button:active, .pill:active { transform: scale(.97); }
+button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+/* The main action carries a small play mark; it survives the script rewriting the label. */
+[data-team]::before { content: ""; width: 0; height: 0; border-left: 8px solid currentColor; border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
+.quiet { background: transparent; color: var(--ink); font-weight: 500; box-shadow: inset 0 0 0 1px rgba(243, 233, 214, .28); }
+button.quiet:hover { background: rgba(243, 233, 214, .05); box-shadow: inset 0 0 0 1px var(--ink); }
+:focus-visible, .task:focus-visible, .back:focus-visible, .link:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+label { display: block; font-size: 13px; color: var(--dim); margin: 14px 0 6px; }
+input, select, textarea { font: inherit; color: var(--ink); }
+#moment-title-input, #invite-url, select, textarea { width: 100%; background: var(--field); border: 1px solid rgba(243, 233, 214, .2); border-radius: 8px; padding: 11px 12px; }
+textarea { font: 12.5px/1.55 ui-monospace, Menlo, monospace; resize: none; overflow-wrap: anywhere; }
+.check { display: flex; gap: 10px; align-items: center; color: var(--ink); font-size: 14px; margin: 16px 0 8px; }
+input[type=checkbox] { width: 18px; height: 18px; margin: 0; accent-color: var(--gold); }
+input[type=range] { width: 88px; accent-color: var(--gold); }
+#pair, #create-moment, #invite { margin-top: 6px; }
+
+/* ---------- task views ---------- */
+.steps { padding-left: 20px; margin: 18px 0 6px; color: var(--dim); font-size: 14px; }
+.steps li { padding: 3px 0; }
+.steps li::marker { color: var(--gold); font-family: var(--serif); font-style: italic; }
+#personal-status, #moment-status, #invite-status { color: var(--gold); font-size: 14px; margin-top: 16px; }
+#invite-status:empty { display: none; }
+#seat-label { color: var(--ink); }
+.count { display: flex; align-items: baseline; gap: 10px; }
+.count b { font: 300 46px/1 var(--serif); color: var(--gold); }
+.count span, #activity-label { color: var(--dim); font-size: 13px; }
+details { align-self: stretch; margin-top: 28px; border-top: 1px solid var(--line); padding-top: 8px; }
+summary { cursor: pointer; font-size: 14px; padding: 8px 0; }
+details p { font-size: 13px; color: var(--dim); }
+#moment-canvas { width: 100%; height: auto; display: block; margin: 18px 0 10px; border-radius: 4px; box-shadow: 0 0 0 1px var(--line); }
+#preview { align-self: stretch; }
+audio, video { width: 100%; display: block; margin: 8px 0; }
+.league { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-self: stretch; }
+.league h3 { font: 500 10.5px/1.4 var(--sans); letter-spacing: .18em; text-transform: uppercase; color: var(--gold); margin: 0 0 8px; }
+.league h3 small { color: var(--dim); text-transform: none; letter-spacing: 0; }
+.league ol { list-style: none; margin: 0; padding: 0; font-size: 14px; }
+.league li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); color: var(--dim); }
+.league li.mine { color: var(--gold); }
+.league li b { font-weight: 500; font-variant-numeric: tabular-nums; color: var(--ink); }
+#mine { margin-top: 16px; }
+#contact { margin: 4px 0 18px; }
+.facts { list-style: none; margin: 0 0 18px; padding: 0; align-self: stretch; }
+.facts li { padding: 10px 0; border-top: 1px solid var(--line); font-size: 14px; color: var(--dim); }
+.facts b { color: var(--ink); font-weight: 600; }
+h3.label { margin: 22px 0 6px; }
+
+/* ---------- the hall ---------- */
+.stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; display: grid; grid-template-rows: minmax(0, 1fr) auto; background: var(--bg); }
+/* House lights: a warm glow on the stage floor, always on. */
+#hall { width: 100%; height: 100%; min-height: 0; display: block; background: radial-gradient(ellipse 58% 72% at 50% 84%, rgba(230, 180, 90, .14), rgba(230, 180, 90, .04) 45%, transparent 72%); }
+/* Spotlight from the rig: on while sound plays, warmer and wider at a climax. */
+.stage::before { content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none; opacity: 0; mix-blend-mode: screen; transition: opacity .8s ease; background: radial-gradient(ellipse 24% 92% at 50% -14%, rgba(243, 233, 214, .14), rgba(243, 233, 214, .04) 55%, transparent 76%); }
+body.is-playing .stage::before { opacity: 1; }
+body.is-climax .stage::before { opacity: 1; background: radial-gradient(ellipse 36% 100% at 50% -14%, rgba(243, 208, 140, .24), rgba(230, 180, 90, .07) 55%, transparent 76%); }
+.live { position: absolute; z-index: 2; top: var(--pad); right: var(--pad); text-align: right; pointer-events: none; }
+#connection { font-size: 12px; color: var(--dim); margin-bottom: 10px; }
+.stats { display: flex; gap: 22px; justify-content: flex-end; }
+.stats b { display: block; font: 300 26px/1.1 var(--serif); font-variant-numeric: tabular-nums; }
+.stats span { font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
+
+/* Demo concert: always says what it is while it plays. */
+.demo-banner { position: absolute; z-index: 3; top: var(--pad); left: var(--pad); display: flex; align-items: center; gap: 14px; max-width: calc(100% - 2 * var(--pad)); padding: 6px 6px 6px 16px; border-radius: 999px; background: rgba(11, 9, 7, .86); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); box-shadow: inset 0 0 0 1px rgba(230, 180, 90, .5); font-size: 13px; }
+.demo-banner b { color: var(--gold); font-weight: 600; }
+.demo-banner button { min-height: 34px; padding: 0 14px; font-size: 13px; }
+body.is-demo #connection { color: var(--gold); }
+
+/* The live score: every note the conductor sends crosses this staff. */
+.stage-foot { position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 0 var(--pad) 18px; }
+.score { position: relative; align-self: stretch; height: 88px; margin: 0 calc(-1 * var(--pad)); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: linear-gradient(90deg, var(--bg), transparent 14%, transparent 86%, var(--bg)); }
+#score { width: 100%; height: 100%; display: block; }
+.score .label { position: absolute; left: var(--pad); top: 8px; color: rgba(230, 180, 90, .8); }
+
+.dock { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; padding: 6px 6px 6px 16px; border-radius: 999px; background: rgba(11, 9, 7, .82); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); box-shadow: inset 0 0 0 1px var(--line); }
+.dock label { display: flex; align-items: center; gap: 8px; margin: 0; }
+.dock select { width: auto; padding: 7px 12px; border-radius: 999px; }
+.dock button { min-height: 36px; padding: 0 16px; font-size: 13px; }
+#sound:disabled { display: none; }   /* nothing to stop until sound has started */
+#mode-status { flex-basis: 100%; padding: 0 10px 4px; font-size: 12px; color: var(--gold); }
+#mode-status:empty { display: none; }
+
+.announce { position: fixed; left: 50%; top: 20px; z-index: 30; transform: translate(-50%, -8px); opacity: 0; pointer-events: none; padding: 10px 20px; border-radius: 999px; background: var(--gold); color: #1a1208; font-weight: 600; transition: opacity .25s, transform .25s; }
+.announce.show { opacity: 1; transform: translate(-50%, 0); }
+.skip { position: fixed; left: 12px; top: -60px; z-index: 40; padding: 10px 16px; border-radius: 999px; background: var(--gold); color: #1a1208; text-decoration: none; }
+.skip:focus { top: 12px; }
+
+/* Desktop: one screen. The programme scrolls on its own, the hall never moves. */
+@media (min-width: 960px) {
+  body { display: grid; grid-template-columns: var(--col) 1fr; height: 100vh; height: 100svh; overflow: hidden; }
+  .column { overflow-y: auto; }
+}
+/* Phone and tablet: title, what you are doing, the hall, now playing, the task list. */
+@media (max-width: 959px) {
+  body { display: flex; flex-direction: column; }
+  .column { display: contents; }
+  .brand { order: 1; margin: 0 16px 28px; padding: 18px 0 14px; }
+  section[data-view] { order: 2; padding: 0 16px 24px; }
+  .stage { order: 3; display: flex; flex-direction: column; overflow: visible; border-top: 1px solid var(--line); }
+  .now-block { order: 4; margin: 0; padding: 22px 16px 0; max-width: none; }
+  .tasks { order: 5; margin: 0; padding: 20px 16px 40px; }
+  .live { position: static; order: -1; text-align: left; padding: 16px 16px 0; }
+  .demo-banner { position: static; order: -2; margin: 12px 16px 0; border-radius: 16px; flex-wrap: wrap; }
+  .stats { justify-content: space-between; gap: 12px; }
+  #hall { height: calc(124px + 46vw); max-height: 70svh; }
+  .stage-foot { padding: 0 16px 8px; }
+  .score { height: 60px; margin: 0 -16px; }
+  .score .label { left: 16px; }
+  .dock { border-radius: 16px; padding: 8px; }
+  .actions button { flex: 1 1 auto; }
+  .league { grid-template-columns: 1fr; }
+}
+/* Arrival: text settles in under 0.35 s and never holds the reader back. */
+@keyframes settle { from { opacity: 0; transform: translateY(6px); } }
+@media (prefers-reduced-motion: no-preference) {
+  section[data-view]:not([hidden]) > *, .tasks:not([hidden]), .now-block:not([hidden]) { animation: settle .24s ease-out both; }
+  section[data-view] > :nth-child(2) { animation-delay: .03s; }
+  section[data-view] > :nth-child(3) { animation-delay: .06s; }
+  section[data-view] > :nth-child(n+4), .now-block, .tasks { animation-delay: .09s; }
+}
+@media (prefers-reduced-motion: reduce) { button, .pill, .announce, .task span, .stage::before { transition: none; } }
+@media (prefers-reduced-transparency: reduce) { .demo-banner, .dock { background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; } }

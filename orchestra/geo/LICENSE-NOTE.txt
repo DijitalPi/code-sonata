@@ -1,0 +1,3 @@
+IP to Country Lite by DB-IP (https://db-ip.com), CC BY 4.0.
+Kaynak: npm @ip-location-db/dbip-country 2.3.2026060120. Yalnızca IPv4; aylık güncellenebilir:
+curl -o dbip-country-ipv4.csv https://cdn.jsdelivr.net/npm/@ip-location-db/dbip-country/dbip-country-ipv4.csv

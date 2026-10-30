@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Orchestra · Bugünkü çalışmanın bir sesi var</title>
+<meta name="description" content="Claude ve Codex oturumlarındaki adımlar canlı bir orkestrada nota olarak çalar. Dinle, kendi ajanını bağla, çalışma anını indir. DijitalPi tarafından geliştirildi.">
+<meta property="og:title" content="Bugünkü çalışmanın bir sesi var · Agent Orchestra">
+<meta property="og:description" content="Claude ve Codex adımların canlı orkestrada çalar. Dinle, ajanını bağla, anını indir.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Bugünkü çalışmanın bir sesi var · Agent Orchestra">
+<meta name="twitter:description" content="Claude ve Codex adımların canlı orkestrada çalar. Dinle, ajanını bağla, anını indir.">
+<meta name="twitter:image" content="/og.png">
+<meta name="theme-color" content="#0d0b09">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cellipse cx='12' cy='23' rx='7' ry='5' fill='%23e8b65a'/%3E%3Crect x='17' y='4' width='3' height='19' fill='%23e8b65a'/%3E%3C/svg%3E">
+<link rel="preload" href="fonts/fraunces-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/fraunces-latin-ext.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/instrument-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip" href="#controls">Ses kontrollerine geç</a>
+
+<div class="column">
+  <header class="brand">
+    <a href="#" class="wordmark" data-open="home">Agent <em>Orchestra</em></a>
+    <span class="maker">DijitalPi</span>
+  </header>
+
+  <section data-view="home" aria-labelledby="title">
+    <h1 id="title" tabindex="-1">Bugünkü çalışmanın bir <em>sesi var.</em></h1>
+    <p class="lead">Claude ve Codex'te atılan her adım bu salonda bir nota olarak çalar. Dinlemek için kurulum gerekmez.</p>
+    <div class="actions">
+      <button data-team="listen">Orkestrayı dinle</button>
+      <button id="simple-sound" class="quiet">Sade tınıyla dinle</button>
+    </div>
+    <p class="minor"><button id="demo-concert" class="link">Demo konseri: dolu salonu dinle</button><button id="demo" class="link">Örnek kişisel ses</button></p>
+    <p id="loading" role="status">Ses sen başlatınca hemen çalar. Enstrüman örnekleri bu siteden gelir: önce piyano (yaklaşık 2,6 MB), diğerleri sahneye çıktıkça; o zamana kadar sade tınıyla. Sade tını hiçbir şey indirmez.</p>
+  </section>
+
+  <section data-view="join" hidden aria-labelledby="join-title">
+    <button class="back" data-open="home">‹ Salona dön</button>
+    <h2 id="join-title" tabindex="-1">Ajanını bağla</h2>
+    <p class="lead">Bilgisayarındaki yerel okuyucu (macOS ve Linux) yeni Claude ve Codex adımlarını sayıya çevirip salona gönderir. Prompt, kod ve dosya yolu gönderilmez.</p>
+    <button id="pair">Bağlantı komutumu oluştur</button>
+    <div id="setup" hidden>
+      <ol class="steps">
+        <li>macOS ya da Linux'ta Terminal'i aç. Python 3 gerekir (macOS'ta Xcode Command Line Tools ile gelir).</li>
+        <li>Aşağıdaki komutu çalıştır. Komut tek dosyalık okuyucuyu bu siteden indirip başlatır; kurulum gerekmez. İstersen önce <a href="/reader.py" target="_blank" rel="noopener">okuyucunun kodunu oku</a>.</li>
+        <li>Claude ya da Codex ile bir adım at. Bağlantın ve ilk adımın aşağıda görünür.</li>
+      </ol>
+      <label for="command">Bu tarayıcıya özel komut</label>
+      <textarea id="command" rows="3" readonly spellcheck="false"></textarea>
+      <div class="row"><button id="copy-command" class="quiet">Komutu kopyala</button><button id="unpair" class="quiet">Eşleştirmeyi kaldır</button></div>
+      <p class="note">Komut sana özel bir anahtar içerir, paylaşma. Anahtar bir saat sonra silinir. Eşleştirmeyi kaldırmak ortak çalmayı durdurmaz; okuyucuyu durdurmak için Terminal'de Ctrl+C.</p>
+    </div>
+    <p id="personal-status" role="status">Henüz ajan bağlamadın.</p>
+    <div id="personal" hidden>
+      <p id="seat-label"></p>
+      <p class="count"><b id="my-steps">0</b> <span>adım bu bağlantıdan geldi</span></p>
+      <p id="activity-label"></p>
+      <p class="note">Salonda bölümün bir katman çalar; koltuğun o katmanın notalarıyla yanar. Katmanını öne almak için alttaki Dinleme seçiminden "Ortak · katmanım önde"yi seç. "Yalnız benim sesim" ise yalnız kendi motifini çalar: düzenleme melodiyi, komut bası, okuma ince notaları, düşünme akoru, bitiş kapanışı.</p>
+    </div>
+    <button class="link" data-open="privacy">Neler gönderiliyor, neler saklanıyor</button>
+    <details>
+      <summary>Bağlanmazsa ne yapmalı</summary>
+      <p>Sunucuya anonim makine kimliği, adım türü sayıları, çalışıyor bilgisi, oturum ve araç sayıları gider. Prompt, kaynak kod, proje adı ve dosya yolu gitmez. IP yalnız ülkeyi bulmak için kullanılır; hız sınırı için her açılışta değişen tuzlu özeti tutulur. Eşleştirme ve adım toplamları sunucu belleğinde en fazla bir saat kalır.</p>
+      <p>Bağlanmıyorsa yerel sunucunun çalıştığını ve adresin aynı bilgisayardan açıldığını kontrol et, sonra yeni komut oluştur. Anahtarın süresi dolar, kaldırılır veya başka makinede kullanılırsa okuyucu bunu Terminal'e yazar ve ortak orkestrada anonim olarak devam eder; kendi sesin için yeni komut oluştur. 429 hız sınırıdır. Okuyucu macOS ve Linux'ta çalışır; Windows henüz desteklenmiyor.</p>
+      <p>Sayfa localhost'ta açıksa yalnız aynı bilgisayardaki ajan bağlanabilir.</p>
+    </details>
+  </section>
+
+  <section data-view="moment" hidden aria-labelledby="moment-title">
+    <button class="back" data-open="home">‹ Salona dön</button>
+    <h2 id="moment-title" tabindex="-1">Çalışma anını indir</h2>
+    <p class="lead">Son adımlarından 12 saniyelik bir ses, paylaşım görseli ve desteklenen tarayıcıda video oluşur. Dosyalar bu tarayıcıda hazırlanır, sunucuya yüklenmez.</p>
+    <label for="moment-title-input">Başlık</label>
+    <input id="moment-title-input" maxlength="60" value="Bugünkü çalışmanın sesi">
+    <label for="capture-kind">Kaynak</label>
+    <select id="capture-kind"><option value="personal">Kendi adımlarım</option><option value="common">Salonun son 12 saniyesi</option></select>
+    <label class="check"><input id="show-count" type="checkbox" checked> Adım sayısını görselde göster</label>
+    <p class="note">Kendi adımların: son anından bu yana gelen adımlar, ajan bağlı olmalı. Salonun son 12 saniyesi: bu sayfada çalan anonim notalar.</p>
+    <button id="create-moment">Anımı oluştur</button>
+    <p id="moment-status" role="status">Kendi anın için önce ajanını bağla ve bir adım at.</p>
+    <div id="preview" hidden>
+      <canvas id="moment-canvas" width="1200" height="630" role="img" aria-label="Çalışma anının paylaşım görseli"></canvas>
+      <audio id="moment-audio" controls aria-label="Anın ses önizlemesi"></audio>
+      <p id="visible-info" class="note"></p>
+      <div class="row">
+        <a id="download-png" class="pill" download="calisma-anim.png">Görseli indir</a>
+        <a id="download-wav" class="pill" download="calisma-anim.wav">Sesi indir</a>
+        <button id="video" class="quiet">Video oluştur</button>
+        <button id="clear-moment" class="quiet">Anı sil</button>
+      </div>
+      <video id="moment-video" controls hidden aria-label="Anın video önizlemesi"></video>
+      <div class="row"><a id="download-video" class="pill" hidden download="calisma-anim.webm">Videoyu indir</a><button id="cancel-video" hidden class="quiet">Videoyu iptal et</button></div>
+      <p class="note">Silmek yalnız bu sayfadaki önizlemeyi kaldırır, indirdiğin dosyalar kalır.</p>
+    </div>
+  </section>
+
+  <section data-view="invite" hidden aria-labelledby="invite-title">
+    <button class="back" data-open="home">‹ Salona dön</button>
+    <h2 id="invite-title" tabindex="-1">Arkadaşını davet et</h2>
+    <p class="lead">Aynı anda çalışan herkesin adımı aynı müzikte çalar. Bağlantıyı kopyalayıp gönder.</p>
+    <button id="invite">Davet bağlantısını kopyala</button>
+    <p id="invite-status" role="status"></p>
+    <input id="invite-url" readonly hidden aria-label="Davet bağlantısı">
+    <p class="note">Bağlantıda eşleştirme anahtarın bulunmaz. Sayfa localhost'ta açıksa bağlantı yalnız senin bilgisayarında çalışır.</p>
+  </section>
+
+  <section data-view="league" hidden aria-labelledby="league-title">
+    <button class="back" data-open="home">‹ Salona dön</button>
+    <h2 id="league-title" tabindex="-1">Ülkelerin nota katkısı</h2>
+    <p class="lead">Son adımların ağırlığı zamanla azalır. Bu bir başarı ya da üretkenlik sıralaması değildir.</p>
+    <div class="league">
+      <div><h3>Toplam nota</h3><ol id="total"></ol></div>
+      <div><h3>Makine başına <small>en az 3 makine</small></h3><ol id="passion"></ol></div>
+    </div>
+    <p id="mine"></p>
+  </section>
+
+  <section data-view="about" hidden aria-labelledby="about-title">
+    <button class="back" data-open="home">‹ Salona dön</button>
+    <h2 id="about-title" tabindex="-1">Proje ve iletişim</h2>
+    <p class="lead">Agent Orchestra, DijitalPi'nin deneme projesi. Claude ve Codex'teki adımları anonim sayılara çevirir ve herkesin aynı anda duyduğu müziğe dönüştürür.</p>
+    <p>DijitalPi; etkinlik, hackathon ve ekipler için katılımcıların birlikte oluşturduğu canlı dijital deneyimler kurar.</p>
+    <a id="contact" class="pill" href="https://dijitalpi.com/iletisim/" target="_blank" rel="noopener noreferrer">DijitalPi ile iletişime geç ↗</a>
+    <p class="note">Geliştirme aşamasında. Kullanıcı araştırması ve genel yayın henüz yapılmadı.</p>
+    <h3 class="label">Kaynaklar</h3>
+    <p class="note">Ses örnekleri: FluidR3 GM (Frank Wen), <a href="https://github.com/gleitz/midi-js-soundfonts" target="_blank" rel="noopener noreferrer">MIDI.js Soundfonts</a> üzerinden, <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener noreferrer">CC BY 3.0</a>. Ses motoru: <a href="https://github.com/danigb/smplr" target="_blank" rel="noopener noreferrer">smplr</a> (MIT). Yazı tipleri: Fraunces ve Instrument Sans (SIL Open Font License). Eserler kamu malıdır.</p>
+    <details id="metrics">
+      <summary>Bu cihazdaki kullanım sayıları (isteğe bağlı)</summary>
+      <label class="check"><input id="metrics-consent" type="checkbox"> Dinleme, bağlantı ve an sayılarını yalnız bu cihazda tut</label>
+      <p class="note">Sunucuya gönderilmez, kimlik ya da adım içeriği içermez.</p>
+      <p id="metrics-values" role="status">Ölçüm kapalı.</p>
+      <button id="clear-metrics" class="quiet">Sayıları sil</button>
+    </details>
+  </section>
+
+  <div class="now-block" data-view="home">
+    <p class="label">Şu an salonda</p>
+    <p id="now">İlk adım bekleniyor.</p>
+    <p class="caption">Her ışık bağlı bir makinedir ve adım gelince yanar. Adım sayısı iş kalitesini ölçmez.</p>
+    <button id="demo-offer" class="link" hidden>Dolu bir salonu duymak için demo konserini aç</button>
+  </div>
+  <section data-view="privacy" hidden aria-labelledby="privacy-title">
+    <button class="back" data-open="home">‹ Salona dön</button>
+    <h2 id="privacy-title" tabindex="-1">Gizlilik ve veriler</h2>
+    <p class="lead">Hesap, çerez ve kişisel profil yok. Hangi durumda neyin kullanıldığı:</p>
+    <ul class="facts">
+      <li><b>Dinlerken.</b> Tarayıcın canlı salona bağlanır. IP adresin yalnız ülkeyi bulmak ve kötüye kullanımı sınırlamak için o an kullanılır, kaydedilmez. Hız sınırı için her açılışta değişen tuzlu bir özet bellekte tutulur.</li>
+      <li><b>Ajanını bağlarsan.</b> Okuyucu anonim bir makine kimliği, adım türü sayıları, çalışıyor bilgisi ve oturum sayısı gönderir. Prompt, kod, proje adı ve dosya yolu gönderilmez. Eşleştirme ve adım toplamları sunucu belleğinde en fazla bir saat kalır. Salondaki herkes koltuğunun ülke bayrağını, aracını (Claude, Codex ya da diğer), oturum sayısını ve adım attığın anları görür; küçük bir salonda ülkenden tek kişiysen tanınabilirsin.</li>
+      <li><b>Ölçüm.</b> Sunucu yalnız günlük toplam sayılar tutar, örneğin bugün kaç kez dinleme başlatıldığı. Kimlik ya da kişiye bağlanan kayıt yoktur.</li>
+      <li><b>Çalışma anın.</b> Ses, görsel ve video bu tarayıcıda üretilir, sunucuya yüklenmez.</li>
+      <li><b>Dış kaynaklar.</b> Sayfa, ses motoru, ses örnekleri ve yazı tipleri bu siteden gelir; başka bir siteye istek gitmez. "DijitalPi ile iletişime geç" bağlantısı dijitalpi.com'u açar.</li>
+      <li><b>Demo konseri.</b> Tamamen tarayıcında çalar; bu sırada canlı salonla bağlantı kapalıdır.</li>
+    </ul>
+    <p class="note">Soru ve silme talepleri için <a href="https://dijitalpi.com/iletisim/" target="_blank" rel="noopener noreferrer">dijitalpi.com/iletisim</a>.</p>
+  </section>
+
+  <nav class="tasks" data-view="home" aria-label="Yapabileceklerin">
+    <button class="task" data-open="join"><span>Ajanımı bağla</span><small>Kendi adımlarını ayrı duy, salondaki koltuğunu gör.</small></button>
+    <button class="task" data-open="moment"><span>Çalışma anımı indir</span><small>Son adımlarından 12 saniyelik ses, görsel ve video oluştur.</small></button>
+    <button class="task" data-open="invite"><span>Arkadaşımı davet et</span><small>Bu sayfanın bağlantısını kopyala.</small></button>
+    <p class="more"><button class="link" data-open="league">Ülkelerin nota katkısı</button><button class="link" data-open="about">Proje ve iletişim</button><button class="link" data-open="privacy">Gizlilik</button></p>
+  </nav>
+</div>
+
+<main class="stage" aria-label="Canlı orkestra salonu">
+  <canvas id="hall" aria-hidden="true"></canvas>
+  <div class="demo-banner" id="demo-banner" role="status" hidden><span><b>Demo konseri</b> · 24 simüle makine, gerçek katılımcı değil</span><button id="demo-exit" class="quiet">Canlı salona dön</button></div>
+  <div class="live">
+    <p id="connection" role="status">Salona bağlanıyor…</p>
+    <div class="stats">
+      <div><b id="claudes">0</b><span>ajan oturumu</span></div>
+      <div><b id="players">0</b><span>makine</span></div>
+      <div><b id="listeners">0</b><span>dinleyici</span></div>
+      <div><b id="countries">0</b><span>ülke</span></div>
+    </div>
+  </div>
+  <div class="stage-foot">
+    <div class="score"><canvas id="score" aria-hidden="true"></canvas><span class="label">Canlı nota</span></div>
+    <section id="controls" tabindex="-1" class="dock" aria-label="Ses kontrolleri">
+      <button id="sound" class="quiet" disabled>Sesi durdur</button>
+      <label for="volume">Ses <input id="volume" type="range" min="0" max="100" value="65"></label>
+      <label for="mode"><span class="visually-hidden">Dinleme</span><select id="mode"><option value="common">Ortak orkestra</option><option value="mine">Ortak · katmanım önde</option><option value="personal">Yalnız benim sesim</option></select></label>
+      <button id="motion" class="quiet" aria-pressed="false">Hareketi durdur</button>
+      <span id="mode-status" role="status"></span>
+    </section>
+  </div>
+</main>
+
+<div class="announce" id="announce" role="status"></div><div id="enter" hidden></div>
+<noscript><p class="lead">Dinlemek ve anını oluşturmak için JavaScript gerekir.</p></noscript>
+<script type="module" src="views.js"></script>
+<script type="module" src="app.js?v=15"></script>
+</body>
+</html>

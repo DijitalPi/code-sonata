@@ -1,0 +1,289 @@
+import json
+import os
+from pathlib import Path
+import tempfile
+import threading
+import time
+import unittest
+from unittest.mock import MagicMock, patch
+
+import reader
+from reader import AgentWatcher, Classifier, GlobalReporter, classify, codex_result
+
+
+def claude(*blocks, stop=None):
+    return {"type": "assistant", "message": {"content": list(blocks), "stop_reason": stop}}
+
+
+def tool(name, call_id, command=None):
+    block = {"type": "tool_use", "name": name, "id": call_id}
+    if command is not None:
+        block["input"] = {"command": command}
+    return claude(block)
+
+
+def result(call_id, text, error=False):
+    return {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": call_id, "is_error": error, "content": text}]}}
+
+
+class ClassifyTests(unittest.TestCase):
+    def test_claude_steps(self):
+        entry = claude({"type": "thinking"}, {"type": "tool_use", "name": "Edit"},
+                       {"type": "tool_use", "name": "Bash"}, {"type": "tool_use", "name": "Grep"},
+                       {"type": "tool_use", "name": "mcp__wise__create_task"})
+        self.assertEqual(classify(entry), ["think", "edit", "bash", "read", "tool"])
+        self.assertEqual(classify(claude({"type": "text"}, stop="end_turn")), ["text", "done"])
+
+    def test_test_results_count_only_for_commands(self):
+        session = Classifier()
+        self.assertEqual(session(tool("Bash", "b1", "pytest")), ["bash"])
+        self.assertEqual(session(result("b1", "===== 34 passed in 0.3s =====")), ["busy", "pass"])
+        session(tool("Bash", "b2", "npm test"))
+        self.assertEqual(session(result("b2", "Tests: 2 failed, 32 passed")), ["busy", "testfail"])
+        session(tool("Read", "r1"))
+        self.assertEqual(session(result("r1", "FAILED (failures=3)\n2 failed, 1 passed")), ["busy"])  # a log that was read
+        for command, text in (("cargo test", "test result: ok. 10 passed; 0 failed"),
+                              ("python3 -m unittest", "Ran 40 tests in 0.08s\n\nOK"), ("node --test", "ℹ pass 12\nℹ fail 0")):
+            session(tool("Bash", "b3", command))
+            self.assertEqual(session(result("b3", text)), ["busy", "pass"], text)
+        for i, command in enumerate(("cat previous-test.log", "cat pytest.log", "tail -n 50 /tmp/unittest.log", "grep FAILED jest-output.txt",
+                                     'echo "previous run (pytest): 3 failed"', "echo 'a; pytest'", 'git commit -m "fix (pytest)"',
+                                     'echo ";" pytest "3 failed"', "printf '%s' '&&' pytest",
+                                     "cat <<EOF > notes.md\npytest: 3 failed\nEOF", "python3 - <<'PY'\nimport pytest\nPY")):
+            session(tool("Bash", f"c{i}", command))   # reading an old log runs no tests
+            self.assertEqual(session(result(f"c{i}", "FAILED\n3 failed, 34 passed")), ["busy"], command)
+        for i, command in enumerate(("cd app && npm test", "CI=1 npx vitest run", "uv run pytest -q", "python3.12 -m pytest", "npm run test:unit",
+                                     "(cd api; pytest -x) | tail -20", "make build\npytest -q > out.log", 'CI="1" pytest',
+                                     "cat <<EOF > notes.md\nold\nEOF\npytest -q")):
+            session(tool("Bash", f"t{i}", command))
+            self.assertEqual(session(result(f"t{i}", "3 failed, 34 passed")), ["busy", "testfail"], command)
+        session(tool("Bash", "b4", "node --test"))
+        self.assertEqual(session(result("b4", "ℹ pass 8\nℹ fail 3")), ["busy", "testfail"])
+        session(tool("Bash", "b5", "ls /missing"))
+        self.assertEqual(session(result("b5", "No such file", True)), ["busy", "fail"])
+        self.assertEqual(session(result("unknown", "2 failed", True)), ["busy"])   # its call came before the reader started
+
+    def test_commit_counts_only_when_git_reports_it(self):
+        session = Classifier()
+        self.assertEqual(session(tool("Bash", "c1", "git add -A && git commit -m x")), ["bash"])
+        self.assertEqual(session(result("c1", "[main 1a2b3c4] x\n 1 file changed")), ["busy", "ship"])
+        session(tool("Bash", "c2", "git commit -m x"))
+        self.assertEqual(session(result("c2", "nothing to commit, working tree clean", True)), ["busy", "fail"])
+        session(tool("Bash", "c3", "git commit -m x"))
+        self.assertEqual(session(result("c3", "pre-commit hook failed", True)), ["busy", "fail"])
+        session(tool("Bash", "p1", "git push"))
+        self.assertEqual(session(result("p1", "To github.com:a/b.git\n   1a2b3c4..5d6e7f8  main -> main")), ["busy", "ship"])
+        session(tool("Bash", "s1", "git status"))
+        self.assertEqual(session(result("s1", "[main 1a2b3c4] old line in a log")), ["busy"])
+
+    def test_codex_steps_and_results(self):
+        self.assertEqual(classify({"type": "response_item", "payload": {"type": "custom_tool_call", "name": "exec"}}), ["bash"])
+        self.assertEqual(classify({"type": "response_item", "payload": {"type": "function_call", "name": "apply_patch"}}), ["edit"])
+        self.assertEqual(classify({"type": "response_item", "payload": {"type": "reasoning"}}), ["think"])
+        self.assertEqual(classify({"type": "event_msg", "payload": {"type": "task_complete"}}), ["done"])
+        self.assertEqual(classify({"type": "event_msg", "payload": {"type": "turn_aborted"}}), ["done"])
+        session = Classifier()
+        call = {"type": "response_item", "payload": {"type": "custom_tool_call", "name": "exec", "call_id": "x1",
+                                                     "input": 'tools.exec_command({cmd: "git commit -m fix"})'}}
+        self.assertEqual(session(call), ["bash"])
+        report = json.dumps({"i": 0, "result": {"status": "fulfilled", "value": {"exit_code": 0, "output": "[main 9f8e7d6] fix\n 2 files changed"}}})
+        output = {"type": "response_item", "payload": {"type": "custom_tool_call_output", "call_id": "x1",
+                                                       "output": [{"type": "input_text", "text": "Script completed\nOutput:\n"}, {"type": "input_text", "text": report}]}}
+        self.assertEqual(session(output), ["busy", "ship"])
+        session({"type": "response_item", "payload": {"type": "function_call", "name": "exec_command", "call_id": "x2", "arguments": '{"cmd":"pytest"}'}})
+        failed = {"type": "response_item", "payload": {"type": "function_call_output", "call_id": "x2", "output": "Exit code: 1\nOutput:\n3 failed, 9 passed"}}
+        self.assertEqual(session(failed), ["busy", "testfail"])
+        for i, source in enumerate(('tools.exec_command({cmd: "cat pytest.log"})', 'tools.exec_command({"cmd":"python3 -m unittest -q"})')):
+            session({"type": "response_item", "payload": {"type": "custom_tool_call", "name": "exec", "call_id": f"y{i}", "input": source}})
+            out = {"type": "response_item", "payload": {"type": "custom_tool_call_output", "call_id": f"y{i}", "output": "FAILED (failures=2)"}}
+            self.assertEqual(session(out), ["busy"] + (["testfail"] if i else []), source)
+        self.assertEqual(codex_result("Exit code: 2\nOutput:\nboom"), ("Exit code: 2\nOutput:\nboom", True))
+
+    def test_interrupt_ends_the_turn_and_noise_is_ignored(self):
+        stopped = {"type": "user", "message": {"content": [{"type": "text", "text": "[Request interrupted by user]"}]}}
+        self.assertEqual(classify(stopped), ["done"])
+        self.assertEqual(classify({"type": "user"}), ["busy"])
+        self.assertEqual(classify({"type": "event_msg", "payload": {"type": "user_message"}}), ["busy"])
+        for entry in ({"type": "attachment"}, {"type": "system"}, [], "x", {"type": "event_msg", "payload": {"type": "token_count"}}):
+            self.assertEqual(classify(entry), [])
+
+
+class WatcherTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        (self.root / "proj").mkdir()
+        self.log = self.root / "proj/s1.jsonl"
+        self.log.write_text(json.dumps(claude({"type": "tool_use", "name": "Edit"})) + "\n")
+
+    def append(self, path, *entries):
+        with path.open("a") as stream:
+            stream.write("".join(json.dumps(e) + "\n" for e in entries))
+
+    def kinds(self, events):
+        return [k for _, k in events]
+
+    def test_history_is_silent_new_lines_play(self):
+        watcher = AgentWatcher([self.root], rescan=0)
+        self.assertEqual(watcher.poll(0), [])
+        self.append(self.log, claude({"type": "tool_use", "name": "Bash"}))
+        self.assertEqual(self.kinds(watcher.poll(1)), ["bash"])
+        self.assertEqual(watcher.poll(2), [])
+
+    def test_partial_line_waits_for_newline(self):
+        watcher = AgentWatcher([self.root], rescan=0)
+        raw = json.dumps(claude({"type": "tool_use", "name": "Read"}))
+        with self.log.open("a") as stream:
+            stream.write(raw[:20])
+        self.assertEqual(watcher.poll(1), [])
+        with self.log.open("a") as stream:
+            stream.write(raw[20:] + "\n")
+        self.assertEqual(self.kinds(watcher.poll(2)), ["read"])
+
+    def test_new_session_and_new_folder_found_without_a_full_walk(self):
+        watcher = AgentWatcher([self.root], rescan=0, full_scan=1e9)
+        watcher.poll(0)
+        other = self.root / "proj/s2.jsonl"
+        self.append(other, claude({"type": "thinking"}))
+        nested = self.root / "proj/s1/subagents"
+        nested.mkdir(parents=True)
+        self.append(nested / "agent-1.jsonl", claude({"type": "tool_use", "name": "Grep"}))
+        self.append(self.log, claude({"type": "text"}, stop="end_turn"))
+        events = watcher.poll(1)
+        self.assertEqual(sorted(self.kinds(events)), ["done", "read", "text", "think"])
+        self.assertEqual(len({p for p, _ in events}), 3)
+
+    def test_old_session_waking_up_plays_only_what_is_new(self):
+        old = self.root / "proj/old.jsonl"
+        self.append(old, *[claude({"type": "tool_use", "name": "Bash"})] * 50)
+        hour_ago = time.time() - 3600
+        os.utime(old, (hour_ago, hour_ago))  # stale at start: not polled, but remembered
+        watcher = AgentWatcher([self.root], rescan=0)
+        self.assertNotIn(str(old), watcher.offsets)
+        self.append(old, claude({"type": "tool_use", "name": "Edit"}))
+        self.assertEqual(self.kinds(watcher.poll(1)), ["edit"])  # the wake-up is heard, history is not
+        self.append(old, claude({"type": "tool_use", "name": "Read"}))
+        self.assertEqual(self.kinds(watcher.poll(2)), ["read"])
+
+    def test_a_log_quiet_for_weeks_is_forgotten_and_wakes_up_from_its_end(self):
+        old = self.root / "proj/ancient.jsonl"
+        self.append(old, *[claude({"type": "tool_use", "name": "Bash"})] * 50)
+        os.utime(old, (0, 0))
+        watcher = AgentWatcher([self.root], rescan=0)
+        self.assertNotIn(str(old), watcher.resume)
+        self.append(old, claude({"type": "tool_use", "name": "Edit"}))
+        watcher.poll(1)                                     # found again: starts at its end
+        self.append(old, claude({"type": "tool_use", "name": "Read"}))
+        self.assertEqual(self.kinds(watcher.poll(2)), ["read"])
+
+    def test_quiet_log_stops_being_polled_and_resumes_where_it_was(self):
+        watcher = AgentWatcher([self.root], rescan=0, full_scan=1e9)
+        watcher.poll(0)
+        hour_ago = time.time() - 3600
+        os.utime(self.log, (hour_ago, hour_ago))
+        watcher.poll(1)
+        self.assertNotIn(str(self.log), watcher.offsets)
+        self.append(self.log, claude({"type": "tool_use", "name": "Bash"}))
+        self.assertEqual(watcher.poll(2), [])            # not polled, and its folder did not change
+        watcher.full_scan = 0
+        self.assertEqual(self.kinds(watcher.poll(3)), ["bash"])   # the full walk finds it; nothing lost
+
+    def test_missing_root_and_truncation(self):
+        watcher = AgentWatcher([self.root / "yok", self.root], rescan=0)
+        self.log.write_text("")
+        self.assertEqual(watcher.poll(1), [])
+        self.append(self.log, claude({"type": "tool_use", "name": "Write"}))
+        self.assertEqual(self.kinds(watcher.poll(2)), ["edit"])
+
+    def test_results_are_judged_per_session(self):
+        watcher = AgentWatcher([self.root], rescan=0)
+        self.append(self.log, tool("Read", "r1"))
+        watcher.poll(1)
+        self.append(self.log, result("r1", "12 failed"))
+        self.assertEqual(self.kinds(watcher.poll(2)), ["busy"])
+
+
+class ReporterTests(unittest.TestCase):
+    def reporter(self, directory, url='http://localhost:4480/#pair=' + 'a' * 48):
+        with patch.object(reader, 'CACHE', Path(directory)):
+            return GlobalReporter(url, start=False)
+
+    def test_pair_fragment_is_only_in_body_and_bad_urls_are_rejected(self):
+        secret = 'a' * 48
+        self.assertEqual(GlobalReporter.connection('http://localhost:4480/#pair=' + secret),
+                         ('http://localhost:4480/api/play', secret))
+        self.assertEqual(GlobalReporter.connection('https://example.test/base?ignored=x'),
+                         ('https://example.test/base/api/play', None))
+        for url in ('file:///private', 'https://user:password@example.test', 'http://', 'http://localhost/#pair=bad'):
+            with self.assertRaises(ValueError):
+                GlobalReporter.connection(url)
+
+    def test_event_key_is_read_from_the_fragment_and_bad_keys_are_rejected(self):
+        key = 'event-test-key-0123456789'
+        self.assertEqual(GlobalReporter.event('https://orchestra.example/#pair=' + 'a' * 48 + '&event=' + key), key)
+        self.assertIsNone(GlobalReporter.event('https://orchestra.example/'))
+        for url in ('https://orchestra.example/#event=short', 'https://orchestra.example/#event=bad key with spaces!!'):
+            with self.assertRaises(ValueError):
+                GlobalReporter.event(url)
+
+    def test_report_payload_contains_counts_without_paths_or_content(self):
+        with tempfile.TemporaryDirectory() as directory:
+            reporter = self.reporter(directory)
+            reporter.add([(Path('/private/project/secret'), k) for k in ('edit', 'read', 'tool', 'text', 'done', 'ship')],
+                         True, 1, {'codex': 1})
+            self.assertEqual(reporter.steps, 5)
+            self.assertEqual(reporter.activity, {'edit': 1, 'bash': 0, 'read': 1, 'think': 2, 'done': 1})
+            reporter.stop = MagicMock()
+            reporter.stop.wait.side_effect = [False, True]
+            response = MagicMock()
+            response.__enter__.return_value.read.return_value = b'{"section":"piano","seat":0,"players":1}'
+            with patch.object(reporter.request, 'urlopen', return_value=response) as request:
+                reporter.loop()
+            payload = json.loads(request.call_args.args[0].data)
+            self.assertEqual(set(payload), {'id', 'steps', 'signals', 'working', 'sessions', 'tools', 'activity', 'pair'})
+            self.assertNotIn('/private', json.dumps(payload))
+            self.assertEqual((payload['tools'], payload['sessions'], payload['working']), ({'codex': 1}, 1, True))
+            self.assertEqual(payload['signals'], ['ship'])
+
+    def test_expired_pair_is_dropped_and_machine_keeps_playing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            reporter = self.reporter(directory)
+            reporter.add([], True, 0, {})
+            reporter.stop = MagicMock()
+            reporter.stop.wait.side_effect = [False, False, True]
+            response = MagicMock()
+            response.__enter__.return_value.read.return_value = b'{"section":"piano","seat":0,"players":1,"pair":"expired"}'
+            with patch.object(reporter.request, 'urlopen', return_value=response) as request, \
+                    patch('builtins.print') as printed:
+                reporter.loop()
+            first, second = (json.loads(call.args[0].data) for call in request.call_args_list)
+            self.assertEqual(first['pair'], 'a' * 48)
+            self.assertIsNone(second['pair'])
+            self.assertIsNone(reporter.pair)
+            self.assertIsNotNone(reporter.seat)
+            self.assertTrue(any('anonim' in str(call.args[0]) for call in printed.call_args_list))
+
+    def test_sending_thread_never_touches_live_state(self):
+        # Everything the loop sends comes from add(); a busy main thread cannot break it.
+        with tempfile.TemporaryDirectory() as directory:
+            reporter = self.reporter(directory)
+            stop = threading.Event()
+
+            def churn():
+                for i in range(20000):
+                    reporter.add([(f"s{i % 50}", "edit")], i % 2 == 0, i % 7, {"claude": i % 3})
+                stop.set()
+            worker = threading.Thread(target=churn)
+            response = MagicMock()
+            response.__enter__.return_value.read.return_value = b'{"section":"piano","seat":0,"players":1}'
+            reporter.stop = MagicMock()
+            reporter.stop.wait.side_effect = lambda _: stop.is_set()
+            with patch.object(reporter.request, 'urlopen', return_value=response):
+                worker.start()
+                reporter.loop()
+                worker.join()
+
+
+if __name__ == "__main__":
+    unittest.main()

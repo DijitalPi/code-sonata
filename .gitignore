@@ -1,0 +1,6 @@
+.build/
+__pycache__/
+sessions/
+.DS_Store
+orchestra/web/sounds/
+orchestra/evidence/
