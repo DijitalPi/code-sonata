@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { personalNotes, liveNotes, deltaActivity, wavBytes, wavFromChannels, publicInvite, eventKey, momentLayout } from './web/moment.js';
+import { personalNotes, liveNotes, deltaActivity, wavBytes, wavFromChannels, publicInvite, eventKey, momentLayout, captureCommon } from './web/moment.js';
 import { SONGS, PLANS, METERS, PLAYLIST } from './web/music.mjs';
 import { createConductor } from './web/conductor.mjs';
 import { NOTE_RANGE, drumKit } from './web/instruments.js';
@@ -118,4 +118,15 @@ test('rendered moments become valid stereo WAV without clipping', () => {
   assert.equal(view.getUint16(22, true), 2); assert.equal(view.getUint32(24, true), 44100); assert.equal(view.getUint32(40, true), 44100 * 4);
   let peak = 0; for (let i = 44; i < bytes.byteLength; i += 2) peak = Math.max(peak, Math.abs(view.getInt16(i, true)));
   assert.ok(peak > 28000 && peak < 32767);
+});
+test('a shared-hall moment that contains any demo or test note keeps that label', () => {
+  const t = 1_700_000_000_000;
+  // Demo notes are scheduled ahead of time, so they stay in the 12 s window after the demo ends.
+  const heard = [{ at: t - 11_000, note: [69, 58, .5, 0], source: 'demo' }, { at: t - 2000, note: [72, 58, .5, 0], source: 'live' }];
+  const moment = captureCommon(heard, t);
+  assert.equal(moment.label, 'DEMO');
+  assert.equal(moment.notes.length, 2);
+  assert.deepEqual(moment.notes[0], [1000, 69, 58, .5, 0]);
+  assert.equal(captureCommon([{ at: t - 1000, note: [60, 58, .5, 0], source: 'live' }], t).label, '');
+  assert.equal(captureCommon([{ at: t - 13_000, note: [60, 58, .5, 0], source: 'demo' }], t).notes.length, 0);
 });

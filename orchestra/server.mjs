@@ -461,9 +461,10 @@ function count(name, key, now) {
 }
 function saveUsage() {
   if (!METRICS_FILE || !usageDirty) return;
-  usageDirty = false;
-  try { writeFileSync(`${METRICS_FILE}.tmp`, JSON.stringify({ days: usage })); renameSync(`${METRICS_FILE}.tmp`, METRICS_FILE); }
-  catch (error) { console.log(`metrics: not saved (${error.message})`); }
+  try {
+    writeFileSync(`${METRICS_FILE}.tmp`, JSON.stringify({ days: usage })); renameSync(`${METRICS_FILE}.tmp`, METRICS_FILE);
+    usageDirty = false;     // only after the file is really written; a failed write is retried
+  } catch (error) { console.log(`metrics: not saved, will retry (${error.message})`); }
 }
 if (METRICS_FILE) {
   setInterval(saveUsage, 60_000).unref();
@@ -478,23 +479,30 @@ const polls = new Map(), pollIPs = new Map();   // pairing / ip key -> [windowSt
 const plays = new Map();        // ip key -> [windowStart, count]: machines reporting
 const listenerIPs = new Map();
 
-function limited(map, key, now, max) {
+// Counts a request in its one-second window and returns how many came so far.
+function tally(map, key, now) {
   const h = map.get(key) || [now, 0];
   if (now - h[0] > 1000) { h[0] = now; h[1] = 0; }
   h[1]++;
   map.set(key, h);
   if (map.size > 50_000) for (const [k, w] of map) if (now - w[0] > 1000) map.delete(k);   // many addresses: drop finished windows only
-  return h[1] > max;
+  return h[1];
 }
+const limited = (map, key, now, max) => tally(map, key, now) > max;
+// Every request counts against its address before its body is read, broken and oversized ones too. Whether
+// it carries an event key is known only after reading, so until then the event allowance applies, if any.
+const anyEvent = EVENT_KEYS.size > 0;
 // Each machine reports once a second, so one address may send as many reports as it may seat
 // machines (twice that: a slow second can bunch two reports together).
 const PAGE_RATE = 8, playRate = (event) => 2 * (event ? EVENT_PER_IP : MAX_MACHINES_PER_IP);
 
 // Small JSON objects only: over 2 KiB, unreadable or not an object is answered here and gives null.
 async function readJson(req, res, empty) {
-  let raw = "";
-  try { for await (const chunk of req) { raw += chunk; if (Buffer.byteLength(raw) > 2048) { json(res, 413, { error: "too big" }); return null; } } }
+  const chunks = [];
+  let size = 0;     // real bytes: a character split across two chunks must not count twice
+  try { for await (const chunk of req) { size += chunk.length; if (size > 2048) { json(res, 413, { error: "too big" }); return null; } chunks.push(chunk); } }
   catch { json(res, 400, { error: "body" }); return null; }
+  const raw = Buffer.concat(chunks).toString("utf8");
   let body;
   try { body = JSON.parse(raw || empty); } catch { json(res, 400, { error: "json" }); return null; }
   if (!body || typeof body !== "object" || Array.isArray(body)) { json(res, 400, { error: "object" }); return null; }
@@ -528,13 +536,15 @@ const server = http.createServer({ connectionsCheckingInterval: 1000, requestTim
   res.setHeader("content-security-policy", "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
   if (req.method === "POST" && ["/api/pair", "/api/me", "/api/unpair"].includes(url.pathname)) {
     if (foreign) return json(res, 403, { error: "origin" });
+    // Each page asks for its own pairing every two seconds: that poll is limited per pairing, so an office of
+    // pages on one address never trips the address's page limit.
+    const me = url.pathname === "/api/me", rate = (e) => e ? EVENT_PER_IP : me ? LISTENERS_PER_IP : PAGE_RATE;
+    const seen = tally(me ? pollIPs : hits, key, now);
+    if (seen > rate(anyEvent)) return json(res, 429, { error: "slow down" });
     const body = await readJson(req, res, "{}");
     if (!body) return;
     const event = isEvent(body.event);
-    // Each page asks for its own pairing every two seconds: that poll is limited per pairing, so an office of
-    // pages on one address never trips the address's page limit.
-    if (url.pathname === "/api/me" ? limited(polls, String(body.pair).slice(0, 64), now, 5) || limited(pollIPs, key, now, event ? EVENT_PER_IP : LISTENERS_PER_IP)
-      : limited(hits, key, now, event ? EVENT_PER_IP : PAGE_RATE)) return json(res, 429, { error: "slow down" });
+    if (seen > rate(event) || (me && limited(polls, String(body.pair).slice(0, 64), now, 5))) return json(res, 429, { error: "slow down" });
     for (const [token, pair] of pairs) if (now - pair.created > PAIR_TTL) pairs.delete(token);
     if (url.pathname === "/api/pair") {
       if (pairs.size >= 5000) return json(res, 503, { error: "pair capacity" });
@@ -557,10 +567,12 @@ const server = http.createServer({ connectionsCheckingInterval: 1000, requestTim
     // Only the reader plays: it sends JSON and no browser headers. A browser cannot send that type to another
     // site without asking first, and this server never says yes.
     if (foreign || site || !/^application\/json\b/i.test(String(req.headers["content-type"] || ""))) return json(res, 403, { error: "reader only" });
+    const seen = tally(plays, key, now);
+    if (seen > playRate(anyEvent)) return json(res, 429, { error: "slow down" });
     const body = await readJson(req, res, "");
     if (!body) return;
     const event = isEvent(body.event);
-    if (limited(plays, key, now, playRate(event))) return json(res, 429, { error: "slow down" });
+    if (seen > playRate(event)) return json(res, 429, { error: "slow down" });
     if (typeof body.id !== "string" || !/^[a-f0-9]{16,64}$/.test(body.id)) return json(res, 400, { error: "id" });
     if (body.simulation === true && !ALLOW_SIMULATION) return json(res, 403, { error: "simulation disabled" });
     if (body.pair && (body.simulation || players.get(body.id)?.simulation)) return json(res, 403, { error: "simulation cannot pair" });
@@ -588,9 +600,9 @@ const server = http.createServer({ connectionsCheckingInterval: 1000, requestTim
   }
   if (req.method === "POST" && url.pathname === "/api/metric") {
     if (foreign) return json(res, 403, { error: "origin" });
+    if (limited(hits, key, now, PAGE_RATE)) return json(res, 429, { error: "slow down" });
     const body = await readJson(req, res, "");
     if (!body) return;
-    if (limited(hits, key, now, PAGE_RATE)) return json(res, 429, { error: "slow down" });
     if (!METRIC_NAMES.has(body.name)) return json(res, 400, { error: "name" });
     count(body.name, key, now);
     res.writeHead(204, { "cache-control": "no-store" });

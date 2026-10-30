@@ -204,6 +204,27 @@ try {
     assert.match(engine.headers.get('content-type'), /javascript/);
     assert.match(engine.headers.get('cache-control'), /immutable/);
   });
+  await test('broken and oversized bodies still count against the address rate limit', async () => {
+    const from = { 'x-forwarded-for': '192.0.2.120' };
+    for (let i = 0; i < 9; i++) await fetch(base + '/api/metric', { method: 'POST', headers: from, body: '{not json' });
+    assert.equal((await fetch(base + '/api/metric', { method: 'POST', headers: from, body: JSON.stringify({ name: 'visit' }) })).status, 429);
+  });
+  await test('a valid body near the size limit is judged by its bytes, not by how it was split', async () => {
+    const head = '{"name":"visit","extra":"', tail = '"}';
+    const emoji = '\u{1F600}'.repeat(200);                       // 800 bytes
+    const body = head + emoji + 'a'.repeat(2046 - Buffer.byteLength(head + emoji + tail)) + tail;
+    const bytes = Buffer.from(body), cut = Buffer.byteLength(head) + 2;   // inside the first emoji
+    const status = await new Promise((resolve, reject) => {
+      const socket = connect(port, '127.0.0.1', () => {
+        socket.setNoDelay(true);
+        socket.write(`POST /api/metric HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Forwarded-For: 192.0.2.121\r\nContent-Length: ${bytes.length}\r\nConnection: close\r\n\r\n`);
+        socket.write(bytes.subarray(0, cut));
+        setTimeout(() => socket.write(bytes.subarray(cut)), 80);
+      });
+      let raw = ''; socket.on('data', d => raw += d); socket.on('end', () => resolve(Number(raw.split(' ')[1]))); socket.on('error', reject);
+    });
+    assert.equal(status, 204);
+  });
   await test('malformed input cannot crash conductor or expose unsupported values', async () => {
     for (const body of [null, [], 3, 'x', {}]) assert.equal((await post('/api/play', body)).status, 400);
     const pair = (await post('/api/pair', {})).body.pair;

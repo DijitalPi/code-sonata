@@ -1,4 +1,4 @@
-import { receiveFrame, ownSeat, ownPulseAt, motionPaused, isPersonal, stopPersonalAudio, togglePersonalAudio, metric, newAudioContext, layerName } from './experience.js';
+import { receiveFrame, ownSeat, ownPulseAt, motionPaused, isPersonal, stopPersonalAudio, togglePersonalAudio, metric, newAudioContext, layerName, setDemoPlaying } from './experience.js';
 import { eventKey } from './moment.js';
 import { startDemo } from './demo.js';
 import { SECTIONS, SOUNDFONT, loadInstrument, voiceOfSection, hall, masterChain, drumKit } from './instruments.js';
@@ -746,7 +746,7 @@ async function enterDemo() {
   if (stopDemo) return;
   stopPersonalAudio();
   if (isPersonal()) { $("mode").value = "common"; $("mode-status").textContent = ""; }
-  clearTimeout(retryTimer); stream?.close(); stream = null;
+  clearTimeout(retryTimer); stream?.close(); stream = null; setDemoPlaying(true);
   resetHall();
   document.body.classList.add("is-demo"); $("demo-banner").hidden = false;
   stopDemo = startDemo({ onFrame: applyFrame });
@@ -761,7 +761,7 @@ async function enterDemo() {
 }
 function leaveDemo() {
   if (!stopDemo) return;
-  stopDemo(); stopDemo = null;
+  stopDemo(); stopDemo = null; setDemoPlaying(false);
   document.body.classList.remove("is-demo"); $("demo-banner").hidden = true;
   resetHall(); connect();
   $("loading").textContent = "Canlı salona dönüldü.";
