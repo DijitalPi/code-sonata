@@ -1,9 +1,10 @@
-import { KINDS, personalNotes, liveNotes, deltaActivity, wavBytes, publicInvite, eventKey, momentLayout } from './moment.js';
+import { KINDS, personalNotes, liveNotes, deltaActivity, wavBytes, publicInvite, eventKey, momentLayout, captureCommon } from './moment.js';
 const EVENT = eventKey(location.search);
 const $ = id => document.getElementById(id);
 const labels = { edit: 'düzenleme', bash: 'komut', read: 'okuma', think: 'düşünme', done: 'bitiş' };
 let token = null, me = null, baseline = {}, polling = false, recent = [], moment = null, revision = 0;
-let simulationUntil = 0, simulationLabel = 'TEST';
+let demoPlaying = false;   // the demo concert plays alone: no private polling meanwhile
+export function setDemoPlaying(on) { demoPlaying = on; }
 let synth = null, nodes = [], demoTimer = null, recorder = null, recordingCleanup = null;
 let personalEnabled = false, synthBus = null;
 const soundTabs = 'BroadcastChannel' in window ? new BroadcastChannel('agent-orchestra-audio') : null;
@@ -24,10 +25,10 @@ export let ownPulseAt = 0;
 export let motionPaused = matchMedia('(prefers-reduced-motion: reduce)').matches;
 export function isPersonal() { return $('mode').value === 'personal'; }
 export function receiveFrame(frame) {
-  if (frame.simulated || frame.demo) { simulationUntil = Date.now() + 12000; simulationLabel = frame.demo ? 'DEMO' : 'TEST'; }
-  const cutoff = Date.now() - 12000;
-  recent.push(...(frame.notes || []).map(n => [n[0] - frame.t + Date.now(), ...n.slice(1)]));
-  recent = recent.filter(n => n[0] >= cutoff).slice(-400);
+  // Every heard note keeps where it came from, so a moment can say if it holds simulated music.
+  const source = frame.demo ? 'demo' : frame.simulated ? 'test' : 'live', cutoff = Date.now() - 12000;
+  recent.push(...(frame.notes || []).map(n => ({ at: n[0] - frame.t + Date.now(), note: n.slice(1), source })));
+  recent = recent.filter(h => h.at >= cutoff).slice(-400);
 }
 // The server keeps anonymous daily totals (no cookie, no identity); this device's own counters
 // below stay opt-in and never leave the browser.
@@ -143,7 +144,7 @@ $('unpair').onclick = async () => {
   finally { $('unpair').disabled = false; }
 };
 async function poll() {
-  if (polling || !token) return; polling = true; const requested = token;
+  if (polling || !token || demoPlaying) return; polling = true; const requested = token;
   try {
     const data = await api('/api/me', { pair: requested });
     if (requested !== token) return;
@@ -198,23 +199,23 @@ $('create-moment').onclick = async () => {
   const personal = $('capture-kind').value === 'personal';
   const counts = deltaActivity(me?.activity || {}, baseline);
   if (personal && (!me?.connected || !Object.values(counts).some(Boolean))) { $('moment-status').textContent = 'Yeni gerçek faaliyet yok. Ajanını bağla ve son anından sonra yeni bir adım bekle.'; return; }
-  const time = Date.now(), captured = recent.filter(n => n[0] >= time - 12000 && n[0] <= time);
-  if (!personal && !captured.length) { $('moment-status').textContent = 'Ortak nota henüz alınmadı. Salona bağlan ve birkaç saniye bekle.'; return; }
+  const common = captureCommon(recent, Date.now());
+  if (!personal && !common.notes.length) { $('moment-status').textContent = 'Ortak nota henüz alınmadı. Salona bağlan ve birkaç saniye bekle.'; return; }
   $('create-moment').disabled = true;
   try {
     revokeMoment(); const current = revision;
-    const notes = personal ? personalNotes(counts) : captured.map(n => [n[0] - time + 12000, ...n.slice(1)]);
-    const simulated = !personal && Date.now() < simulationUntil;
-    const bytes = wavBytes(notes), wav = new Blob([bytes], { type: 'audio/wav' }), title = (simulated ? `${simulationLabel} · ` : '') + ($('moment-title-input').value.trim() || 'Bugünkü çalışmanın sesi');
+    const notes = personal ? personalNotes(counts) : common.notes;
+    const label = personal ? '' : common.label, simulated = Boolean(label);
+    const bytes = wavBytes(notes), wav = new Blob([bytes], { type: 'audio/wav' }), title = (simulated ? `${label} · ` : '') + ($('moment-title-input').value.trim() || 'Bugünkü çalışmanın sesi');
     const total = Object.values(counts).reduce((a, b) => a + b, 0);
-    await drawMoment(title, notes, { personal, showCount: $('show-count').checked, total, label: simulated ? simulationLabel : '' });
+    await drawMoment(title, notes, { personal, showCount: $('show-count').checked, total, label });
     const png = await new Promise(resolve => $('moment-canvas').toBlob(resolve, 'image/png'));
     if (!png) throw new Error('Görsel oluşturulamadı. Yeniden dene.');
     if (current !== revision) return;
     const wavUrl = URL.createObjectURL(wav), pngUrl = URL.createObjectURL(png);
-    moment = { bytes, notes, total, personal, simulated, label: simulationLabel, urls: [wavUrl, pngUrl] };
+    moment = { bytes, notes, total, personal, simulated, label, urls: [wavUrl, pngUrl] };
     $('moment-audio').src = wavUrl; $('download-wav').href = wavUrl; $('download-png').href = pngUrl;
-    $('visible-info').textContent = `Görünür bilgi: “${title}”, ${personal ? 'kişisel faaliyet yorumu' : simulated ? (simulationLabel === 'DEMO' ? 'demo konserinden simüle an' : 'simülasyon içeren ortak test anı') : 'anonim ortak an'}, ${personal && $('show-count').checked ? 'faaliyet sayısı, ' : ''}DijitalPi imzası. Makine kimliği, anahtar, kod veya prompt yok.`;
+    $('visible-info').textContent = `Görünür bilgi: “${title}”, ${personal ? 'kişisel faaliyet yorumu' : simulated ? (label === 'DEMO' ? 'demo konserinden simüle an' : 'simülasyon içeren ortak test anı') : 'anonim ortak an'}, ${personal && $('show-count').checked ? 'faaliyet sayısı, ' : ''}DijitalPi imzası. Makine kimliği, anahtar, kod veya prompt yok.`;
     $('preview').hidden = false;
     $('moment-status').textContent = 'Anın hazır. Ses önizlemesi sade bir sentez yorumudur; canlı salonun örneklenmiş tınısı değildir.';
     if (personal) baseline = { ...me.activity };

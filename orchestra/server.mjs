@@ -367,9 +367,10 @@ function count(name, key, now) {
 }
 function saveUsage() {
   if (!METRICS_FILE || !usageDirty) return;
-  usageDirty = false;
-  try { writeFileSync(`${METRICS_FILE}.tmp`, JSON.stringify({ days: usage })); renameSync(`${METRICS_FILE}.tmp`, METRICS_FILE); }
-  catch (error) { console.log(`metrics: not saved (${error.message})`); }
+  try {
+    writeFileSync(`${METRICS_FILE}.tmp`, JSON.stringify({ days: usage })); renameSync(`${METRICS_FILE}.tmp`, METRICS_FILE);
+    usageDirty = false;     // only after the file is really written; a failed write is retried
+  } catch (error) { console.log(`metrics: not saved, will retry (${error.message})`); }
 }
 if (METRICS_FILE) {
   setInterval(saveUsage, 60_000).unref();
@@ -382,20 +383,25 @@ const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; ch
 const hits = new Map();         // ip key -> [windowStart, count]
 const listenerIPs = new Map();
 
-function limited(key, now, event) {
+// Every request counts against its address before its body is read, broken ones too; the event
+// allowance is checked once the body says whether it carries an event key.
+function hit(key, now) {
   const h = hits.get(key) || [now, 0];
   if (now - h[0] > 1000) { h[0] = now; h[1] = 0; }
   h[1]++;
   hits.set(key, h);
   if (hits.size > 50_000) hits.clear();
-  return h[1] > (event ? EVENT_PER_IP : 8);
+  return h[1];
 }
+const overLimit = (count, event) => count > (event ? EVENT_PER_IP : 8);
 
 // Small JSON objects only: over 2 KiB, unreadable or not an object is answered here and gives null.
 async function readJson(req, res, empty) {
-  let raw = "";
-  try { for await (const chunk of req) { raw += chunk; if (Buffer.byteLength(raw) > 2048) { json(res, 413, { error: "too big" }); return null; } } }
+  const chunks = [];
+  let size = 0;     // real bytes: a character split across two chunks must not count twice
+  try { for await (const chunk of req) { size += chunk.length; if (size > 2048) { json(res, 413, { error: "too big" }); return null; } chunks.push(chunk); } }
   catch { json(res, 400, { error: "body" }); return null; }
+  const raw = Buffer.concat(chunks).toString("utf8");
   let body;
   try { body = JSON.parse(raw || empty); } catch { json(res, 400, { error: "json" }); return null; }
   if (!body || typeof body !== "object" || Array.isArray(body)) { json(res, 400, { error: "object" }); return null; }
@@ -422,10 +428,12 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && ["/api/pair", "/api/me", "/api/unpair"].includes(url.pathname)) {
     const origin = req.headers.origin;
     if (origin && origin !== `${TRUST_PROXY ? "https" : "http"}://${req.headers.host}` && origin !== `http://${req.headers.host}`) return json(res, 403, { error: "origin" });
+    const seen = hit(key, now);
+    if (overLimit(seen, true)) return json(res, 429, { error: "slow down" });
     const body = await readJson(req, res, "{}");
     if (!body) return;
     const event = isEvent(body.event);
-    if (limited(key, now, event)) return json(res, 429, { error: "slow down" });
+    if (overLimit(seen, event)) return json(res, 429, { error: "slow down" });
     for (const [token, pair] of pairs) if (now - pair.created > PAIR_TTL) pairs.delete(token);
     if (url.pathname === "/api/pair") {
       if (pairs.size >= 5000) return json(res, 503, { error: "pair capacity" });
@@ -445,10 +453,12 @@ const server = http.createServer(async (req, res) => {
       section: connected ? pair.section : null, seat: connected ? pair.seat : null, expires: pair.created + PAIR_TTL });
   }
   if (req.method === "POST" && url.pathname === "/api/play") {
+    const seen = hit(key, now);
+    if (overLimit(seen, true)) return json(res, 429, { error: "slow down" });
     const body = await readJson(req, res, "");
     if (!body) return;
     const event = isEvent(body.event);
-    if (limited(key, now, event)) return json(res, 429, { error: "slow down" });
+    if (overLimit(seen, event)) return json(res, 429, { error: "slow down" });
     if (typeof body.id !== "string" || !/^[a-f0-9]{16,64}$/.test(body.id)) return json(res, 400, { error: "id" });
     if (body.simulation === true && !ALLOW_SIMULATION) return json(res, 403, { error: "simulation disabled" });
     if (body.pair && (body.simulation || players.get(body.id)?.simulation)) return json(res, 403, { error: "simulation cannot pair" });
@@ -475,9 +485,9 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (req.method === "POST" && url.pathname === "/api/metric") {
+    if (overLimit(hit(key, now), false)) return json(res, 429, { error: "slow down" });
     const body = await readJson(req, res, "");
     if (!body) return;
-    if (limited(key, now)) return json(res, 429, { error: "slow down" });
     if (!METRIC_NAMES.has(body.name)) return json(res, 400, { error: "name" });
     count(body.name, key, now);
     res.writeHead(204, { "cache-control": "no-store" });

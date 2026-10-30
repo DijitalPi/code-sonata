@@ -420,3 +420,13 @@ Disk boşaldıktan sonra (6,8 GB) kayıttan devam. MCP tarayıcısı disk dolunc
 - **80 Bütünsel doğrulama** (10:53–10:56). 25/25 Node, 40/40 Python, sözdizimi, `git diff --check`, örnek sağlama toplamları. README, AGENTS, OPERATIONS (yayın ayarları tablosu + Traefik erişim kaydı ve compress koşulu), VALIDATION (yayın hazırlığı kabulü) güncellendi. Bağımsız denetim notu: `docs/CODEX-REVIEW.md`, **denetim bekliyor**. Docker çalışmadığı için çok aşamalı build denenmedi.
 Saat düzeltmesi: sohbette 77 için "10:47–10:58" denmişti; doğrusu dosya zamanlarına göre 10:45–10:48.
 Ek bütçe: 61–80 kullanıldı. Açık: Codex denetimi, gerçek iPhone/Safari, Docker build, okuyucunun dışarıya dağıtımı, gizlilik metni hukuki onayı, VPS/DNS yayını.
+
+## Bağımsız denetim ve düzeltmeler (2026-10-11, ek bütçe dışında)
+Codex `codex exec --sandbox workspace-write` ile denetledi, yalnız `docs/CODEX-REVIEW-RESULT.md`'yi yazdı (sandbox port açmayı engellediği için API testlerini çalıştıramadığını açıkça yazdı; şef taşımasını 84.000 tick'te eskisiyle bire bir aynı buldu). 6 bulgunun 6'sı Claude tarafından kodda doğrulandı ve düzeltildi (11:34–11:39):
+1. **P2 demo notası gerçek ortak an etiketiyle** → her duyulan nota kaynağını taşır (`live/test/demo`), `captureCommon()` pencerede tek bir demo/test notası varsa etiketi korur. Test: test-moment "keeps that label".
+2. **P2 bozuk/büyük gövde hız sınırını atlıyor** → her istek gövde okunmadan sayılır (`hit`), etkinlik payı gövdeden sonra. Test: test-api "broken and oversized bodies".
+3. **P2 demo sırasında `/api/me` sürüyor** → `setDemoPlaying()` ile durur. Ölçüm (headless Chrome, fetch sayacı): demodan önce 4, demo sırasında 0, çıkıştan sonra 2.
+4. **P2 sayaç yazımı başarısız olunca yeniden deneme yok** → `usageDirty` yalnız başarılı yazımdan sonra temizlenir. Kod okumasıyla; otomatik test yok.
+5. **P3 bölünmüş UTF-8 gövde 413** → gerçek bayt sayılır, gövde bir kez çözülür. Test: test-api "judged by its bytes" (ilk sürümü kusuru yakalamadı: 2040 baytta bölünme şişmesi sınırı aşmıyordu; 2046 ile kırmızı görüldü).
+6. **P3 gizlilik metni tekil sayımı söylemiyor** → metin güncellendi (tuzlu özet günlük tekil sayım için de kullanılır; demo sırasında eşleştirme sorguları da durur).
+Testler: 28/28 Node, 40/40 Python. Düzeltmelerin ikinci bir Codex denetimi yapılmadı.

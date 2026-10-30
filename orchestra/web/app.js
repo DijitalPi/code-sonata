@@ -1,4 +1,4 @@
-import { receiveFrame, ownSeat, ownPulseAt, motionPaused, isPersonal, stopPersonalAudio, togglePersonalAudio, metric, newAudioContext } from './experience.js';
+import { receiveFrame, ownSeat, ownPulseAt, motionPaused, isPersonal, stopPersonalAudio, togglePersonalAudio, metric, newAudioContext, setDemoPlaying } from './experience.js';
 import { eventKey } from './moment.js';
 import { startDemo } from './demo.js';
 // Agent Orchestra listener: draws the hall and plays the conductor's notes in sync.
@@ -648,7 +648,7 @@ function resetHall() {
 async function enterDemo() {
   if (stopDemo) return;
   stopPersonalAudio(); $("mode").value = "common"; $("mode-status").textContent = "";
-  stream?.close(); stream = null;
+  stream?.close(); stream = null; setDemoPlaying(true);
   resetHall();
   document.body.classList.add("is-demo"); $("demo-banner").hidden = false;
   stopDemo = startDemo({ onFrame: applyFrame });
@@ -662,7 +662,7 @@ async function enterDemo() {
 }
 function leaveDemo() {
   if (!stopDemo) return;
-  stopDemo(); stopDemo = null;
+  stopDemo(); stopDemo = null; setDemoPlaying(false);
   document.body.classList.remove("is-demo"); $("demo-banner").hidden = true;
   resetHall(); connect();
   $("loading").textContent = "Canlı salona dönüldü.";

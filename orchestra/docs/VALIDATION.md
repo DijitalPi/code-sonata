@@ -40,6 +40,8 @@ Kendi çalışma sesini keşfet → özel komutla ortak orkestraya katıl → ge
 | Paylaşım görseli | Sesin kendi notaları porte üstünde, olmayan türe nota yok (test-moment, `evidence/release-share-image.jpg`) | |
 | Metin ve atıf | Linux desteği, gizlilik görünümü, CC BY 3.0 atfı, görev numaraları ekran okuyucuda "." okumuyor (AX ağacı) | Gizlilik metni hukuki onay bekliyor |
 
+**Bağımsız denetim (Codex, 2026-10-11):** 6 bulgu (4 P2, 2 P3), hepsi doğrulandı ve düzeltildi; kayıt WORK-LOG "Bağımsız denetim ve düzeltmeler", ham rapor `docs/CODEX-REVIEW-RESULT.md`. Düzeltmeler ikinci kez denetlenmedi.
+
 ## Test sonuçları
 
 - `python3 -m unittest -v`: **39/39** geçti; JSONL/yerel motor regresyonu ve ağ payload mahremiyet testleri. `evidence/final-python-tests.log` (38/38 anı; 39. test döngü 61'de eklendi).

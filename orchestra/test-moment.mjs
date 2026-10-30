@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { personalNotes, liveNotes, deltaActivity, wavBytes, publicInvite, eventKey, momentLayout } from './web/moment.js';
+import { personalNotes, liveNotes, deltaActivity, wavBytes, publicInvite, eventKey, momentLayout, captureCommon } from './web/moment.js';
 import { SONGS, PLANS, METERS } from './web/music.mjs';
 test('personal output requires activity and has bounded harmonious notes', () => {
   assert.deepEqual(personalNotes({}), []);
@@ -57,4 +57,15 @@ test('the share image draws exactly the notes the sound plays, inside the staff'
   assert.deepEqual(momentLayout([], box), []);
   // A kind with no activity adds no notes: no "read" pitches (81, 84, 88) appear.
   assert.equal(notes.some((n) => [81, 84, 88].includes(n[1])), false);
+});
+test('a shared-hall moment that contains any demo or test note keeps that label', () => {
+  const t = 1_700_000_000_000;
+  // Demo notes are scheduled ahead of time, so they stay in the 12 s window after the demo ends.
+  const heard = [{ at: t - 11_000, note: [69, 58, .5, 0], source: 'demo' }, { at: t - 2000, note: [72, 58, .5, 0], source: 'live' }];
+  const moment = captureCommon(heard, t);
+  assert.equal(moment.label, 'DEMO');
+  assert.equal(moment.notes.length, 2);
+  assert.deepEqual(moment.notes[0], [1000, 69, 58, .5, 0]);
+  assert.equal(captureCommon([{ at: t - 1000, note: [60, 58, .5, 0], source: 'live' }], t).label, '');
+  assert.equal(captureCommon([{ at: t - 13_000, note: [60, 58, .5, 0], source: 'demo' }], t).notes.length, 0);
 });
