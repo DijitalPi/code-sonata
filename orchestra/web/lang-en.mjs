@@ -110,7 +110,7 @@ export const EN = {
   'Görünür bilgi: “{own}”, {b}, {c}DijitalPi imzası. Makine kimliği, anahtar, kod veya prompt yok.': 'Visible: “{own}”, {b}, {c}DijitalPi signature. No machine id, key, code or prompt.',
   'Görünür bilgi: “{own}”, {b}, {c}DijitalPi imzası. Özel kimlik, anahtar, kod veya prompt yok.': 'Visible: “{own}”, {b}, {c}DijitalPi signature. No private id, key, code or prompt.',
   'kişisel faaliyet yorumu': 'a reading of your own activity', 'demo konserinden simüle an': 'a simulated moment from the demo concert',
-  'simülasyon içeren ortak test anı': 'a shared test moment with simulation', 'anonim ortak an': 'an anonymous shared moment', 'faaliyet sayısı, ': 'activity count, ',
+  'simülasyon içeren ortak test anı': 'a shared test moment with simulation', 'anonim ortak an': 'an anonymous shared moment', 'faaliyet sayısı,': 'activity count,',
   'Anın hazır. Ses salondaki enstrüman örnekleriyle üretildi.': 'Your moment is ready. The sound uses the hall’s instrument samples.',
   'Anın hazır. Ses sade bir sentez yorumudur; salondaki örnekler kullanılmadı.': 'Your moment is ready. The sound is a plain synthesis; the hall’s samples were not used.',
   'An oluşturulamadı. Yeniden dene.': 'The moment could not be made. Try again.', 'Tarayıcıdaki an silindi. Yeni bir an oluşturabilirsin.': 'The moment was deleted from this browser. You can make a new one.',

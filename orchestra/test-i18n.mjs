@@ -64,6 +64,12 @@ test('the Turkish text keeps it too: no long dash in what the page or its code w
   assert.deepEqual(found, []);
 });
 
+test('an empty moment title falls back to the suggestion in the chosen language, since it is drawn and shown as is', async () => {
+  const source = await web('experience.js');
+  assert.ok(!/\|\|\s*'Bugünkü çalışmanın sesi'/.test(source));
+  assert.equal(source.match(/\|\|\s*t\('Bugünkü çalışmanın sesi'\)/g)?.length, 2);
+});
+
 // ---------- the page switching language ----------
 const page = async () => {
   const { install, add } = await import('./fake-dom.mjs');
@@ -72,6 +78,7 @@ const page = async () => {
   add(doc.head, 'title', {}, html.match(/<title>([^<]+)<\/title>/)[1]);
   for (const m of html.matchAll(/<meta (name|property)="((?:og|twitter):(?:title|description)|description)" content="([^"]+)">/g)) add(doc.head, 'meta', { [m[1]]: m[2], content: m[3] });
   add(doc.body, 'p', {}, 'Koltuk al');
+  add(doc.body, 'input', { id: 'moment-title-input' }).value = 'Bugünkü çalışmanın sesi';
   return { doc, i18n: await import('./web/i18n.js') };
 };
 const loaded = page();
@@ -92,5 +99,26 @@ test("someone's own title inside a sentence is shown as they wrote it", async ()
   i18n.setLang('en');
   assert.equal(i18n.t('Görünür bilgi: “Zafer”, anonim ortak an, DijitalPi imzası. Özel kimlik, anahtar, kod veya prompt yok.'),
     'Visible: “Zafer”, an anonymous shared moment, DijitalPi signature. No private id, key, code or prompt.');
+  // A title that itself looks like the sentence's separators is still kept whole.
+  assert.equal(i18n.t('Görünür bilgi: “Zafer”, anonim ortak an, “Zafer”, kişisel faaliyet yorumu, faaliyet sayısı, DijitalPi imzası. Özel kimlik, anahtar, kod veya prompt yok.'),
+    'Visible: “Zafer”, anonim ortak an, “Zafer”, a reading of your own activity, activity count, DijitalPi signature. No private id, key, code or prompt.');
+  i18n.setLang('tr');
+});
+
+test('a dictionary key has no space at its ends, since the text is trimmed before it is looked up', () => {
+  assert.deepEqual(Object.keys(EN).filter((key) => key !== key.trim()), []);
+});
+
+test('the suggested moment title follows the language until the listener types one, even the same words', async () => {
+  const { doc, i18n } = await loaded;
+  const input = doc.getElementById('moment-title-input');
+  i18n.setLang('en');
+  assert.equal(input.value, EN['Bugünkü çalışmanın sesi']);
+  i18n.setLang('tr');
+  assert.equal(input.value, 'Bugünkü çalışmanın sesi');
+  input.value = 'Bugünkü çalışmanın sesi';
+  input.dispatchEvent(new Event('input'));
+  i18n.setLang('en');
+  assert.equal(input.value, 'Bugünkü çalışmanın sesi');
   i18n.setLang('tr');
 });

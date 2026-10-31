@@ -243,7 +243,7 @@ $('create-moment').onclick = async () => {
       if (current !== revision) return;
     }
     bytes ||= wavBytes(notes);
-    const wav = new Blob([bytes], { type: 'audio/wav' }), title = (simulated ? `${label} · ` : '') + ($('moment-title-input').value.trim() || 'Bugünkü çalışmanın sesi');
+    const wav = new Blob([bytes], { type: 'audio/wav' }), title = (simulated ? `${label} · ` : '') + ($('moment-title-input').value.trim() || t('Bugünkü çalışmanın sesi'));
     const total = Object.values(counts).reduce((a, b) => a + b, 0);
     await drawMoment(title, notes, { personal, showCount: $('show-count').checked, total, label });
     const png = await new Promise(resolve => $('moment-canvas').toBlob(resolve, 'image/png'));
@@ -265,7 +265,7 @@ let previewRevision = 0;
 async function refreshVisibleInfo() {
   if (!moment || recorder) return;
   const active = moment, current = ++previewRevision;
-  const title = (active.simulated ? `${active.label} · ` : '') + ($('moment-title-input').value.trim() || 'Bugünkü çalışmanın sesi');
+  const title = (active.simulated ? `${active.label} · ` : '') + ($('moment-title-input').value.trim() || t('Bugünkü çalışmanın sesi'));
   await drawMoment(title, active.notes, { personal: active.personal, showCount: $('show-count').checked, total: active.total, label: active.simulated ? active.label : '' });
   const png = await new Promise(resolve => $('moment-canvas').toBlob(resolve, 'image/png'));
   if (!png || current !== previewRevision || moment !== active) return;

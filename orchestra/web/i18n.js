@@ -23,7 +23,9 @@ function table(code) {
   for (const [key, value] of Object.entries(DICTS[code] || {})) {
     if (!/\{\w+\}/.test(key)) { exact.set(key, value); continue; }
     const fixed = key.replace(/\{\w+\}/g, '').length;
-    const source = key.split(/(\{\w+\})/).map((part) => /^\{\w+\}$/.test(part) ? `(?<${part.slice(1, -1)}>[\\s\\S]*?)` : part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('');
+    // {own} takes as much as it can: someone's title may itself contain the sentence's separators.
+    const group = (name) => `(?<${name}>[\\s\\S]*${name === 'own' ? '' : '?'})`;
+    const source = key.split(/(\{\w+\})/).map((part) => /^\{\w+\}$/.test(part) ? group(part.slice(1, -1)) : part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('');
     patterns.push({ re: new RegExp(`^${source}$`), value, fixed });
   }
   patterns.sort((a, b) => b.fixed - a.fixed);
@@ -89,13 +91,15 @@ function walk(root) {
 const turkish = (text) => Object.keys(EN).find((key) => EN[key] === text) ?? text;
 const SHARED = 'meta[name="description"], meta[property="og:title"], meta[property="og:description"], meta[name="twitter:title"], meta[name="twitter:description"]';
 const head = { title: turkish(document.title), metas: [...document.querySelectorAll(SHARED)].map((meta) => [meta, turkish(meta.content)]) };
+// The moment's title starts as a suggestion; follow the language until the listener types their own.
+const titleInput = document.getElementById('moment-title-input');
+let typedTitle = false;
+titleInput?.addEventListener('input', () => { typedTitle = true; });
 function apply() {
   document.documentElement.lang = lang;
   document.title = translate(head.title);
   for (const [meta, text] of head.metas) if (text) meta.content = translate(text);
-  // The moment's title starts as a suggestion; follow the language until the listener types their own.
-  const input = document.getElementById('moment-title-input');
-  if (input && [EN['Bugünkü çalışmanın sesi'], 'Bugünkü çalışmanın sesi'].includes(input.value)) input.value = translate('Bugünkü çalışmanın sesi');
+  if (titleInput && !typedTitle && [EN['Bugünkü çalışmanın sesi'], 'Bugünkü çalışmanın sesi'].includes(titleInput.value)) titleInput.value = translate('Bugünkü çalışmanın sesi');
   walk(document.body);
   for (const control of document.querySelectorAll('[data-lang]')) {
     if (control.tagName === 'SELECT') control.value = lang;
