@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PLAN, TIERS, seat, tierOf, validBlock, blockPrice, blockSeats, taken, canPlace, blockArc, seatAt, noteAngle, litBlocks, cleanSeats, SEAT_LIMITS } from './web/seats.mjs';
+import { PLAN, TIERS, seat, tierOf, validBlock, blockPrice, blockSeats, taken, canPlace, blockArc, seatAt, noteAngle, litBlocks, cleanSeats, cleanHolder, SEAT_LIMITS } from './web/seats.mjs';
 
 test('the amphitheatre holds about ten thousand seats, each with one id', () => {
   assert.ok(PLAN.count >= 9500 && PLAN.count <= 10500, `count ${PLAN.count}`);
@@ -99,4 +99,11 @@ test('only well-formed holders with a local image and an http link are shown', (
   assert.equal(out[1].image, null);
   assert.deepEqual(cleanSeats(null), []);
   assert.deepEqual(cleanSeats({ seats: 'no' }), []);
+});
+
+test('a holder is a trimmed name of up to 40 characters and an http or https link', () => {
+  assert.deepEqual(cleanHolder({ name: '  Acme ', link: 'https://a.example' }), { name: 'Acme', link: 'https://a.example/' });
+  for (const bad of [{ name: ' ', link: 'https://a.example' }, { name: 'x'.repeat(41), link: 'https://a.example' },
+    { name: 'A', link: 'javascript:alert(1)' }, { name: 'A', link: `https://a.example/${'x'.repeat(290)}` }, { name: 'A', link: 3 },
+    { name: 7, link: 'https://a.example' }, null]) assert.equal(cleanHolder(bad), null, JSON.stringify(bad));
 });

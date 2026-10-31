@@ -74,21 +74,26 @@ export function litBlocks(blocks, angle, spread = 3) {
 // Holders as the server publishes them: anything malformed, off the plan, on a sold seat, with a remote image
 // (the page loads images from this site only) or a link that is not a web address is left out.
 const IMAGE = /^\/seat-images\/[a-z0-9-]{1,40}\.(webp|png|jpe?g)$/;
+// What a holder shows: a name of up to 40 characters and a web address, or null.
+export function cleanHolder(h) {
+  const name = typeof h?.name === 'string' ? h.name.trim() : '';
+  if (!name || name.length > 40) return null;
+  let link = null;
+  try { link = typeof h.link === 'string' && h.link.length <= 300 ? new URL(h.link) : null; } catch { link = null; }
+  return link && ['http:', 'https:'].includes(link.protocol) ? { name, link: link.href } : null;
+}
 export function cleanSeats(data) {
   const out = [], used = new Set(), ids = new Set();
   for (const s of Array.isArray(data?.seats) ? data.seats : []) {
     if (!s || typeof s !== 'object' || typeof s.id !== 'string' || !/^[a-z0-9-]{1,32}$/.test(s.id) || ids.has(s.id)) continue;
     const block = { ring: s.ring, col: s.col, width: s.width, depth: s.depth };
     if (!canPlace(block, used)) continue;
-    const name = typeof s.name === 'string' ? s.name.trim() : '';
-    if (!name || name.length > 40) continue;
-    let link = null;
-    try { link = typeof s.link === 'string' && s.link.length <= 300 ? new URL(s.link) : null; } catch { link = null; }
-    if (!link || !['http:', 'https:'].includes(link.protocol)) continue;
+    const holder = cleanHolder(s);
+    if (!holder) continue;
     if (s.image != null && !(typeof s.image === 'string' && IMAGE.test(s.image))) continue;
     for (const id of blockSeats(block)) used.add(id);
     ids.add(s.id);
-    out.push({ id: s.id, ...block, name, link: link.href, image: s.image ?? null });
+    out.push({ id: s.id, ...block, ...holder, image: s.image ?? null });
   }
   return out;
 }
