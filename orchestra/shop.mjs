@@ -5,7 +5,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createBook, hold, setSession, drop, paid, expire, sweep, approve, reject, remove, liveSeats, reserved, summary, buyerState } from "./orders.mjs";
+import { createBook, hold, setSession, drop, paid, expire, sweep, approve, reject, remove, startRefund, stopRefund, liveSeats, reserved, summary, buyerState } from "./orders.mjs";
 import { createStripe, verifySignature } from "./stripe.mjs";
 import { parseKeys, whoHasKey, sessionSecret, makeCookie, readCookie, SESSION_MS } from "./admin.mjs";
 import { webpSize } from "./webp.mjs";
@@ -114,7 +114,9 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
       commit(() => drop(book, id, now)); forget(pending(id));
       return send(res, 502, { error: "stripe" });
     }
-    commit(() => setSession(book, id, session.id), () => true);
+    // The page is open: the buyer gets it even if its id cannot be written now (the payment event carries it).
+    setSession(book, id, session.id);
+    try { commit(() => true); } catch (error) { log(`checkout: session id not saved yet (${error.message})`); }
     return send(res, 200, { id, url: session.url });
   }
 
@@ -164,6 +166,7 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     return send(res, 200, { name }, { "set-cookie": cookie(makeCookie(name, secret, Date.now()), SESSION_MS / 1000) });
   }
 
+  const withRefund = (order, refunded) => { if (!order.error && refunded) order.refund = refunded.id; return order; };
   // One decision per order at a time: a refund is awaited, and nothing else may move the order meanwhile.
   async function decide(req, res, id, action, by, now) {
     if (deciding.has(id)) return send(res, 409, { error: "busy" });
@@ -177,22 +180,25 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     const reason = typeof data.reason === "string" ? data.reason : "";
     const allowed = { approve: ["paid"], reject: ["paid", "problem"], remove: ["live"] }[action];
     if (!order || !allowed.includes(order.state)) return send(res, 409, { error: "state" });
-    const refund = action === "reject" || (action === "remove" && data.refund === true);
+    const refund = action === "reject" || (action === "remove" && (data.refund === true || order.refunding));
+    let refunded = null;
     if (refund) {
       if (!order.payment) return send(res, 409, { error: "payment" });
-      try { await stripe.refund(order.payment, `refund-${order.id}`); }
-      catch (error) { log(`refund: ${error.message}`); return send(res, 502, { error: "stripe" }); }
+      commit(() => startRefund(book, id));
+      try { refunded = await stripe.refund(order.payment, `refund-${order.id}`); }
+      catch (error) { log(`refund: ${error.message}`); commit(() => stopRefund(book, id)); return send(res, 502, { error: "stripe" }); }
     }
     let done;
     if (action === "approve") {
+      if (order.refunding) return send(res, 409, { error: "refunding" });
       // The logo goes public with the order, or the order waits.
       try { if (!existsSync(shown(id))) renameSync(pending(id), shown(id)); }
       catch (error) { log(`approve: logo not moved (${error.message})`); return send(res, 409, { error: "image" }); }
       const back = () => { try { renameSync(shown(id), pending(id)); } catch { /* left public; the order is not live */ } };
       try { done = commit(() => approve(book, id, by, now, hand())); } catch (error) { back(); throw error; }
       if (done.error) back();
-    } else if (action === "reject") { done = commit(() => reject(book, id, by, reason, now)); if (!done.error) forget(pending(id)); }
-    else { done = commit(() => remove(book, id, by, reason, refund, now)); if (!done.error) forget(shown(id)); }
+    } else if (action === "reject") { done = commit(() => withRefund(reject(book, id, by, reason, now), refunded)); if (!done.error) forget(pending(id)); }
+    else { done = commit(() => withRefund(remove(book, id, by, reason, refund, now), refunded)); if (!done.error) forget(shown(id)); }
     if (done.error) return send(res, 409, { error: done.error });
     return send(res, 200, { order: forPanel(find(id)) });
   }

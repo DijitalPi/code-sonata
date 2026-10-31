@@ -16,12 +16,12 @@ const WEBHOOK = 'whsec_test_shop', SELIM = 's'.repeat(30), OZER = 'z'.repeat(30)
 
 // Fake Stripe: records every call, answers a session or a refund, or fails when told to.
 const stripeCalls = [];
-let stripeFails = false, refundWait = null;
+let stripeFails = false, pause = null;   // pause: { path, until } holds Stripe's answer to that call
 const stripe = http.createServer(async (req, res) => {
   let body = ''; for await (const chunk of req) body += chunk;
   stripeCalls.push({ path: req.url, headers: req.headers, body: new URLSearchParams(body) });
   if (stripeFails) { res.writeHead(500); return res.end('{"error":{"message":"down"}}'); }
-  if (req.url === '/v1/refunds' && refundWait) await refundWait;
+  if (pause && req.url === pause.path) await pause.until;
   const n = stripeCalls.length;
   res.writeHead(200, { 'content-type': 'application/json' });
   res.end(JSON.stringify(req.url === '/v1/refunds' ? { id: `re_${n}` } : { id: `cs_${n}`, url: `https://checkout.stripe.test/c/cs_${n}` }));
@@ -262,14 +262,14 @@ test('an order is decided one step at a time: approving while its refund is unde
   const { cookie } = await login();
   const d = await (await buy({ block: block(170), name: 'Epsilon' })).json();
   await completed(d.id, blockPrice(block(170)) * 100);
-  let go; refundWait = new Promise((resolve) => { go = resolve; });
+  let go; pause = { path: '/v1/refunds', until: new Promise((resolve) => { go = resolve; }) };
   try {
     const rejecting = panel(`orders/${d.id}/reject`, { cookie, method: 'POST', body: {} });
     while (!stripeCalls.some((c) => c.path === '/v1/refunds' && c.headers['idempotency-key'] === `refund-${d.id}`)) await new Promise((r) => setTimeout(r, 5));
     assert.equal((await panel(`orders/${d.id}/approve`, { cookie, method: 'POST' })).status, 409);
     go();
     assert.equal((await rejecting).status, 200);
-  } finally { refundWait = null; go?.(); }
+  } finally { pause = null; go?.(); }
   assert.deepEqual(await (await fetch(`${base}/api/seats/order/${d.id}`)).json(), { state: 'refunded' });
   assert.ok(!(await seats()).seats.some((s) => s.id === d.id));
 });
@@ -299,6 +299,45 @@ test('a change the server cannot write is undone, the server keeps running, and 
   assert.equal(JSON.parse(disk).orders.find((o) => o.id === id).state, 'paid');
   assert.equal(slackPosts.length, posts + 1);
   assert.ok(!disk.includes('ipKey'), 'the address digest stays in memory');
+});
+
+// Holds Stripe's answer to `path` until the order file cannot be written, then lets it through.
+async function failWriteDuring(path, request) {
+  let go; pause = { path, until: new Promise((resolve) => { go = resolve; }) };
+  const tmp = `${env.ORDERS_FILE}.tmp`, before = stripeCalls.length;
+  try {
+    const pending = request();
+    while (!stripeCalls.slice(before).some((c) => c.path === path)) await new Promise((r) => setTimeout(r, 5));
+    await mkdir(tmp);
+    go();
+    return await pending;
+  } finally { pause = null; go?.(); }
+}
+
+test('a refund Stripe made is never forgotten: a write that fails after it keeps the order from being approved', async () => {
+  const { cookie } = await login(SELIM, '10.9.9.11');
+  const f = await (await buy({ block: block(190), name: 'Eta' })).json();
+  await completed(f.id, blockPrice(block(190)) * 100);
+  try {
+    const res = await failWriteDuring('/v1/refunds', () => panel(`orders/${f.id}/reject`, { cookie, method: 'POST', body: {} }));
+    assert.equal(res.status, 500);
+    assert.equal(JSON.parse(await readFile(env.ORDERS_FILE, 'utf8')).orders.find((o) => o.id === f.id).refunding, true, 'on disk before Stripe was asked');
+    const approve = await panel(`orders/${f.id}/approve`, { cookie, method: 'POST' });
+    assert.deepEqual([approve.status, (await approve.json()).error], [409, 'refunding']);
+  } finally { await rm(`${env.ORDERS_FILE}.tmp`, { recursive: true, force: true }); }
+  const refunds = stripeCalls.filter((c) => c.path === '/v1/refunds' && c.headers['idempotency-key'] === `refund-${f.id}`).length;
+  assert.equal((await panel(`orders/${f.id}/reject`, { cookie, method: 'POST', body: {} })).status, 200, 'rejecting again finishes it');
+  assert.equal(stripeCalls.filter((c) => c.path === '/v1/refunds' && c.headers['idempotency-key'] === `refund-${f.id}`).length, refunds + 1, 'with the same key: Stripe refunds once');
+  const saved = JSON.parse(await readFile(env.ORDERS_FILE, 'utf8')).orders.find((o) => o.id === f.id);
+  assert.deepEqual([saved.state, saved.refunded, saved.refunding, saved.refund], ['refunded', true, false, `re_${stripeCalls.length}`]);
+});
+
+test('a Stripe page that opened is handed to the buyer even if its id could not be written yet', async () => {
+  try {
+    const res = await failWriteDuring('/v1/checkout/sessions', () => buy({ block: block(195, 1, 1) }));
+    assert.equal(res.status, 200);
+    assert.match((await res.json()).url, /^https:\/\/checkout\.stripe\.test\//);
+  } finally { await rm(`${env.ORDERS_FILE}.tmp`, { recursive: true, force: true }); }
 });
 
 test('payment opens only with someone to approve it, and stays shut on an order file it cannot trust', async () => {

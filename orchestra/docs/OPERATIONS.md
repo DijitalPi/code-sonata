@@ -33,7 +33,7 @@ Sunucu sınırları: toplam 1000 dinleyici, adres başına 32 (IPv6'da /64 bir a
 - PNG/WAV/video tarayıcıda üretilir, sunucuya yüklenmez.
 - Cihazdaki isteğe bağlı sayaçlar arayüzdeki düğmeyle silinir.
 - Ses motoru, ses örnekleri ve yazı tipleri sitenin kendisinden gelir; tarayıcıdan başka siteye istek gitmez.
-- Koltuk siparişi `ORDERS_FILE`'da durur: ad, link, blok, tutar, Stripe oturum/ödeme kimliği ve Stripe'tan gelen e-posta. Kart bilgisi sunucuya hiç gelmez. Bekleme sınırı için tuzlu adres özeti yalnız bellekte ve sipariş beklerken tutulur, dosyaya yazılmaz. Bekleyen logo herkese kapalı `SEATS_DIR/pending/`'de durur; reddedilince silinir. Süresi dolan siparişin logosu 24 saat, kaydı 4 gün tutulur (Stripe bir olayı 3 gün boyunca yeniden gönderir; geç gelen ödeme kaybolmaz).
+- Koltuk siparişi `ORDERS_FILE`'da durur: ad, link, blok, tutar, Stripe oturum/ödeme kimliği ve Stripe'tan gelen e-posta. Kart bilgisi sunucuya hiç gelmez. Bekleme sınırı için tuzlu adres özeti yalnız bellekte ve sipariş beklerken tutulur, dosyaya yazılmaz. Bekleyen logo herkese kapalı `SEATS_DIR/pending/`'de durur; reddedilince silinir. Süresi dolan siparişin logosu ödeme süresinin bitiminden itibaren 24 saat, kaydı 4 gün tutulur (Stripe bir olayı 3 gün boyunca yeniden gönderir; geç gelen ödeme kaybolmaz). 24 saatten geç gelen ödemenin logosu kalmamıştır: onaylanamaz, panelden iade edilir.
 
 ## Docker
 
@@ -74,10 +74,10 @@ Etkinlik anahtarı olmadan da bir ofis ağı çalışır: makine raporları ayr�
 
 ## Koltuk ödemesi (Stripe)
 
-Alıcı yeri seçer, logo ve link verir, Stripe Checkout'ta öder; koltuk elle onaylanınca salonda görünür, reddedilirse ödeme tamamen iade edilir. Defterdeki her değişiklik diske yazıldığında geçerli olur: yazılamazsa geri alınır, istek 500 döner ve Stripe olayı yeniden gönderir. Fiyatı sunucu belirler, ödeme sayfası 31 dakika açık kalır (Stripe en az 30 ister), süresi dolan yer boşalır.
+Alıcı yeri seçer, logo ve link verir, Stripe Checkout'ta öder; koltuk elle onaylanınca salonda görünür, reddedilirse ödeme tamamen iade edilir. Defterdeki her değişiklik diske yazıldığında geçerli olur: yazılamazsa geri alınır ve istek 500 döner; Stripe olayı kendisi yeniden gönderir, panel işlemi elle yeniden denenir. İade, Stripe'a sorulmadan önce siparişe işaretlenir: sonrası yazılamazsa sipariş onaylanamaz, Reddet tekrarlanınca aynı iade aynı anahtarla tamamlanır (Stripe ikinci kez iade etmez). Fiyatı sunucu belirler, ödeme sayfası 31 dakika açık kalır (Stripe en az 30 ister), süresi dolan yer boşalır.
 
 1. Stripe panelinde kısıtlı anahtar: Checkout Sessions yaz, Charges and Refunds yaz, Payment Intents oku. Başka izin gerekmez.
-2. Webhook uç noktası `https://alan-adin/api/stripe`, olaylar `checkout.session.completed` ve `checkout.session.expired`. İmza sırrı `STRIPE_WEBHOOK_SECRET`. Aynı Stripe hesabındaki başka ürünlerin oturumları da gelir; sipariş kimliği (`o-…`) taşımayanlar yok sayılır. Kimliği taşıyan ama defterde olmayan bir ödeme Slack'e yazılır.
+2. Webhook uç noktası `https://alan-adin/api/stripe`, olaylar `checkout.session.completed` ve `checkout.session.expired`. İmza sırrı `STRIPE_WEBHOOK_SECRET`. Aynı Stripe hesabındaki başka ürünlerin oturumları da gelir; sipariş kimliği (`o-…`) taşımayanlar yok sayılır. Kimliği taşıyan ama defterde olmayan bir ödeme sunucu günlüğüne, `SLACK_WEBHOOK_URL` varsa Slack'e de yazılır.
 3. `PUBLIC_URL` dönüş adresini belirler; yayında şart.
 4. Stripe sayfası tutarı alıcının para biriminde gösterebilir (Adaptive Pricing); tahsilat ve iade yine USD tutarı üzerinden yapılır.
 5. Yerelde test modunda dene: `stripe listen --forward-to localhost:4480/api/stripe --events checkout.session.completed,checkout.session.expired`, imza sırrı `stripe listen --print-secret`. Kart `4242 4242 4242 4242`.

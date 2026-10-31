@@ -148,3 +148,12 @@ test('reading the terms keeps the chosen place', async () => {
   await $('seat-pay').onclick();
   assert.equal(calls[0]?.url, '/api/seats/checkout', $('seat-pay-status').textContent);
 });
+
+test('a cancel that could not reach Stripe says only what the order shows', async () => {
+  answer = (url) => (url.endsWith('/cancel') ? { status: 502, body: { error: 'stripe' } } : { status: 200, body: { state: 'paid' } });
+  await followOrder('o-7', { cancelled: true, wait: 0 });
+  assert.equal($('seat-status').textContent, 'Ödemen alındı. Koltuğun onay bekliyor; onaylanınca salonda görünecek.');
+  answer = (url) => (url.endsWith('/cancel') ? { status: 502, body: { error: 'stripe' } } : { status: 200, body: { state: 'held' } });
+  await followOrder('o-8', { cancelled: true, wait: 0 });
+  assert.equal($('seat-status').textContent, 'Ödemen bize ulaşmadı. Ayırdığın yer en geç bir saat içinde bırakılacak.');
+});

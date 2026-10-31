@@ -79,6 +79,16 @@ test('a refund names the payment and carries an idempotency key, so a second cli
   assert.deepEqual(Object.fromEntries(calls[0].body), { payment_intent: 'pi_1' });
 });
 
+test('a refund Stripe answers as failed or canceled is an error, not a refund; the refund id comes back', async () => {
+  for (const status of ['failed', 'canceled']) {
+    const { fetch } = recorder({ id: 're_1', status });
+    await assert.rejects(createStripe({ key: 'sk', base: 'https://stripe.test', fetch }).refund('pi_1', 'k'), new RegExp(status));
+  }
+  await assert.rejects(createStripe({ key: 'sk', base: 'https://stripe.test', fetch: recorder({}).fetch }).refund('pi_1', 'k'));
+  const { fetch } = recorder({ id: 're_2', status: 'pending', amount: 300 });
+  assert.deepEqual(await createStripe({ key: 'sk', base: 'https://stripe.test', fetch }).refund('pi_1', 'k'), { id: 're_2', status: 'pending' });
+});
+
 test('ending a session asks Stripe to expire it, so it can no longer be paid', async () => {
   const { calls, fetch } = recorder({ id: 'cs_1', status: 'expired' });
   await createStripe({ key: 'sk_test_x', base: 'https://stripe.test', fetch }).expire('cs_1');

@@ -36,7 +36,12 @@ export function createStripe({ key, base = "https://api.stripe.com", fetch = glo
       if (typeof data.id !== "string" || typeof data.url !== "string") throw new Error("stripe: no session in the answer");
       return { id: data.id, url: data.url };
     },
-    refund: (paymentIntent, idempotencyKey) => call("/v1/refunds", { payment_intent: paymentIntent }, { "idempotency-key": idempotencyKey }),
+    // A refund Stripe answers as failed or canceled did not happen; pending (some banks) is on its way.
+    async refund(paymentIntent, idempotencyKey) {
+      const data = await call("/v1/refunds", { payment_intent: paymentIntent }, { "idempotency-key": idempotencyKey });
+      if (typeof data.id !== "string" || ["failed", "canceled"].includes(data.status)) throw new Error(`stripe refund: ${data.status || "no refund in the answer"}`);
+      return { id: data.id, status: data.status };
+    },
     // A buyer who came back without paying: the page closes, so the seats can go to someone else.
     expire: (session) => call(`/v1/checkout/sessions/${encodeURIComponent(session)}/expire`, {}),
   };

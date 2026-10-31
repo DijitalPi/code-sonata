@@ -48,7 +48,8 @@ export function hold(book, { id, block, name, link, ipKey, now }, hand = []) {
   if (held.length >= HELD_TOTAL) return { error: "full" };
   if (!canPlace(b, used(book, hand))) return { error: "taken" };
   const order = { id, state: "held", ...b, ...holder, amount: blockPrice(b) * 100, currency: "usd", email: null, session: null,
-    payment: null, ipKey, created: now, heldUntil: now + HOLD_MS, paidAt: null, decidedAt: null, decidedBy: null, reason: null, refunded: false };
+    payment: null, ipKey, created: now, heldUntil: now + HOLD_MS, paidAt: null, decidedAt: null, decidedBy: null, reason: null, refunded: false,
+    refunding: false, refund: null };
   book.orders.push(order);
   note(book, order, "held", null, now);
   return { order };
@@ -103,13 +104,28 @@ export function sweep(book, now) {
 function decide(book, id, from, to, by, reason, now) {
   const order = find(book, id);
   if (!order || !from.includes(order.state)) return { error: "state" };
-  Object.assign(order, { state: to, decidedBy: by, decidedAt: now, reason: short(reason) ?? order.reason });
+  Object.assign(order, { state: to, decidedBy: by, decidedAt: now, reason: short(reason) ?? order.reason, refunding: false });
   note(book, order, to, by, now);
   return order;
 }
+// A refund is marked (and written) before Stripe is asked: if what follows is lost, the order is never approved
+// and rejecting it again finishes the same refund.
+export function startRefund(book, id) {
+  const order = find(book, id);
+  if (!order || !["paid", "problem", "live"].includes(order.state)) return { error: "state" };
+  order.refunding = true;
+  return order;
+}
+export function stopRefund(book, id) {
+  const order = find(book, id);
+  if (order) order.refunding = false;
+  return order;
+}
+
 // Seats added by hand since the payment would hide the block: the order waits until that is sorted out.
 export function approve(book, id, by, now, hand = []) {
   const order = find(book, id);
+  if (order?.refunding) return { error: "refunding" };
   if (order?.state === "paid" && !canPlace(blockOf(order), used(book, hand, order))) return { error: "taken" };
   return decide(book, id, ["paid"], "live", by, null, now);
 }

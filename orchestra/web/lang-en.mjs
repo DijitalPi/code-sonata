@@ -210,7 +210,7 @@ export const EN = {
   'Resim kabul edilmedi. Başka bir resim dene.': 'The image was not accepted. Try another one.',
   'Ödeme sayfası açılamadı. Birazdan yeniden dene.': 'The payment page could not be opened. Try again shortly.',
   'Ödeme yapılmadı. Ayırdığın yer bırakıldı.': 'No payment was made. The place you held is free again.',
-  'Ödeme yapılmadı. Ayırdığın yer en geç yarım saat içinde bırakılacak.': 'No payment was made. The place you held will be freed within half an hour.',
+  'Ödemen bize ulaşmadı. Ayırdığın yer en geç bir saat içinde bırakılacak.': 'Your payment has not reached us. The place you held will be freed within an hour.',
   'Ödemen kontrol ediliyor…': 'Checking your payment…',
   'Ödemen alındı. Koltuğun onay bekliyor; onaylanınca salonda görünecek.': 'Payment received. Your seat is waiting for approval and will show in the hall once approved.',
   'Koltuğun salonda. Teşekkürler!': 'Your seat is in the hall. Thank you!',

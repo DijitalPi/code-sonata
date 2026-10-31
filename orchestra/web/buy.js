@@ -35,8 +35,12 @@ export async function followOrder(id, { cancelled = false, wait = 3000, tries = 
   if (cancelled) {
     const res = await fetch(`/api/seats/order/${id}/cancel`, { method: 'POST' }).catch(() => null);
     if (res?.ok) return say('Ödeme yapılmadı. Ayırdığın yer bırakıldı.');
-    if (res?.status !== 409) return say('Ödeme yapılmadı. Ayırdığın yer en geç yarım saat içinde bırakılacak.');
-    // The order is no longer held (paid in another tab, or already let go): say what it is now.
+    // 409: no longer held (paid in another tab, or already let go). Otherwise Stripe or the server could not be
+    // reached: say only what the order shows now; a hold is let go 41 minutes after it began at the latest.
+    if (res?.status !== 409) {
+      const now = await fetch(`/api/seats/order/${id}`, { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      if (!now || now.state === 'held') return say('Ödemen bize ulaşmadı. Ayırdığın yer en geç bir saat içinde bırakılacak.');
+    }
   }
   say('Ödemen kontrol ediliyor…');
   const done = { paid: 'Ödemen alındı. Koltuğun onay bekliyor; onaylanınca salonda görünecek.', live: 'Koltuğun salonda. Teşekkürler!',

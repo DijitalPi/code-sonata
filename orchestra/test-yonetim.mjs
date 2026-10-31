@@ -91,7 +91,8 @@ test('a refused approval says why: no logo, seats added by hand, or another step
   await go('#bekleyen');
   refuse = 409;
   try {
-    for (const [why, said] of [['image', /Logosu bulunamadı/], ['taken', /elle koltuk eklenmiş/], ['busy', /başka bir işlem sürüyor/], ['state', /artık o durumda değil/]]) {
+    for (const [why, said] of [['image', /Logosu bulunamadı/], ['taken', /elle koltuk eklenmiş/], ['busy', /başka bir işlem sürüyor/],
+      ['refunding', /iadesi başlamış.*Reddet/], ['state', /artık o durumda değil/]]) {
       refusal = why;
       await button('Onayla').onclick(); await settle();
       assert.match(text(), said, why);
@@ -121,4 +122,14 @@ test('a session that runs out goes back to the key', async () => {
   button('Yenile')?.onclick(); await settle();
   const form = root.querySelector('form');
   assert.ok(!form.closest('[hidden]'));
+});
+
+test('an order whose refund was started says so on its card', async () => {
+  STATE.orders[0].refunding = true;
+  try {
+    const form = root.querySelector('form');
+    root.querySelector('input').value = KEY; await form.onsubmit({ preventDefault() {} }); await settle();
+    await go('#bekleyen');
+    assert.match(text(), /İadesi başladı, kaydı tamamlanmadı\. Reddet ile bitir\./);
+  } finally { STATE.orders[0].refunding = false; }
 });

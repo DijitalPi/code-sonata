@@ -78,6 +78,7 @@ async function act(order, action, body, done) {
     : why === 'image' ? 'Logosu bulunamadı, onaylanamaz. Reddedip iade edebilirsin.'
     : why === 'taken' ? 'Bu yere sonradan elle koltuk eklenmiş. Önce onu kaldır ya da siparişi reddedip iade et.'
     : why === 'busy' ? 'Bu sipariş için başka bir işlem sürüyor. Biraz sonra yeniden dene.'
+    : why === 'refunding' ? 'Bu siparişin iadesi başlamış, onaylanamaz. Reddet ile iadeyi tamamla.'
     : res?.status === 409 ? 'Bu sipariş artık o durumda değil. Liste yenilendi.' : 'Bir sorun oldu. Yeniden dene.');
   await load();
 }
@@ -139,6 +140,7 @@ function waiting() {
         o.email && el('p', {}, el('a', { href: `mailto:${o.email}` }, o.email)),
         el('p', { className: 'dim' }, `Ödendi: ${when(o.paidAt)}`), stripe,
         o.state === 'problem' && el('p', { className: 'warn' }, `${PROBLEM[o.reason] || 'Sorunlu'}; iade edilmeli.`),
+        o.refunding && el('p', { className: 'warn' }, 'İadesi başladı, kaydı tamamlanmadı. Reddet ile bitir.'),
         el('div', { className: 'row' },
           o.state === 'paid' && el('button', { type: 'button', onclick: () => act(o, 'approve', null, `Onaylandı: ${o.name} salonda.`) }, 'Onayla'),
           el('button', { type: 'button', className: 'quiet', onclick: () => { ask.hidden = false; reason.focus?.(); } }, 'Reddet')),
