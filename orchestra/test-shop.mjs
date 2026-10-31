@@ -101,10 +101,16 @@ test('checkout holds the block and opens a Stripe page for the price the server 
   assert.equal(call.path, '/v1/checkout/sessions');
   assert.equal(call.body.get('line_items[0][price_data][unit_amount]'), String(blockPrice(block(0)) * 100));
   assert.equal(call.body.get('success_url'), `https://orchestra.example.test/?siparis=${id}`);
+  assert.match(call.body.get('line_items[0][price_data][product_data][name]'), /^Agent Orchestra · \S.* · 6 seats$/);
   assert.deepEqual((await seats()).reserved, [block(0)]);
   assert.deepEqual(await (await fetch(`${base}/api/seats/order/${id}`)).json(), { state: 'held' });
   assert.ok((await stat(join(dir, 'pending', `${id}.webp`))).size > 0);
   assert.equal((await fetch(`${base}/seat-images/pending/${id}.webp`)).status, 404, 'a waiting logo is not public');
+});
+
+test('one seat is named "1 seat" on the Stripe page', async () => {
+  assert.equal((await buy({ block: block(30, 1, 1) })).status, 200);
+  assert.match(stripeCalls.at(-1).body.get('line_items[0][price_data][product_data][name]'), / · 1 seat$/);
 });
 
 test('checkout refuses taken seats, a bad logo, missing terms, other sites and too many tries', async () => {

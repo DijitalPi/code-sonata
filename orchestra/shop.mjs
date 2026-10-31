@@ -60,7 +60,7 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     writeFileSync(`${ordersFile}.tmp`, JSON.stringify(book));
     renameSync(`${ordersFile}.tmp`, ordersFile);
   }
-  const label = (o) => `${EN[tierOf(o.ring).label] || tierOf(o.ring).label} · ${o.width * o.depth} seats`;
+  const label = (o) => { const n = o.width * o.depth; return `${EN[tierOf(o.ring).label] || tierOf(o.ring).label} · ${n} seat${n === 1 ? "" : "s"}`; };
   async function tell(text) {
     if (!env.SLACK_WEBHOOK_URL) return;
     try {
