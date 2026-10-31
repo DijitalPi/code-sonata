@@ -1,11 +1,16 @@
 import { receiveFrame, ownSeat, ownPulseAt, motionPaused, isPersonal, stopPersonalAudio, togglePersonalAudio, metric, newAudioContext, layerName, setDemoPlaying } from './experience.js';
 import { eventKey } from './moment.js';
 import { startDemo } from './demo.js';
+import { createAmfi, demoHolders } from './amfi.js';
+import { setupBuying, listHolders } from './buy.js';
+import { PLAN, tierOf } from './seats.mjs';
 import { SECTIONS, SOUNDFONT, loadInstrument, voiceOfSection, hall, masterChain, drumKit } from './instruments.js';
 // Agent Orchestra listener: draws the hall and plays the conductor's notes in sync.
 // One warm family under stage light: distinguishable sections, no rainbow.
 const COLORS = { piano: "#f3e9d6", strings: "#e6b45a", choir: "#c9a7d8", cello: "#d9785a", flute: "#8cc9b5", vibraphone: "#93b4d6", horn: "#f0cc7a", harp: "#e8a1a6", accordion: "#d96a5e" };
 const $ = (id) => document.getElementById(id);
+const amfi = createAmfi();   // the seats around the stage (see "seats for sale" below)
+const wide = matchMedia("(min-width: 960px)");
 
 // ---------- state from the server ----------
 let seats = SECTIONS.map(() => []);      // section -> [[sessions, country] or 0]
@@ -192,7 +197,10 @@ function applyFrame(frame) {
     showNow(frame);
   }
   if (frame.notes?.length) { scoreNotes.push(...frame.notes); if (scoreNotes.length > 900) scoreNotes.splice(0, scoreNotes.length - 900); }
-  for (const [at, , , , voice] of frame.notes || []) { const s = sectionOfVoice(voice); if (s >= 0 && sectionHits.length < 400) sectionHits.push([at, s]); }
+  for (const [at, pitch, , , voice] of frame.notes || []) {
+    const s = sectionOfVoice(voice); if (s >= 0 && sectionHits.length < 400) sectionHits.push([at, s]);
+    if (voice !== 10) amfi.note(at, pitch);   // drums have no direction
+  }
   if (frame.players !== undefined) { document.body.classList.toggle("is-climax", Boolean(frame.climax)); }
   if (audio && !isPersonal()) for (const note of frame.notes || []) schedule(note);
 }
@@ -475,7 +483,9 @@ function fit(build, start = 26) {
 function geometry() {
   if (cached && cached.version === version) return cached;
   const cx = width / 2, cy = height - Math.max(104, height * .14);   // the audience needs ~104 px below the stage
-  const R = Math.min(width * .42, height * .6);
+  // The amphitheatre (PLAN.outer radii) fits around the stage; on a narrow phone its far sides may run off
+  // the edges rather than shrink the orchestra below 70 % of its old size.
+  const R = Math.max(Math.min(width * .98 / (2 * PLAN.outer), (cy - 6) / PLAN.outer), Math.min(width * .42, height * .6) * .7);
   const stagePoint = (r, a) => ({ x: cx + Math.sin(rad(a)) * r, y: cy - Math.cos(rad(a)) * r });
   // Each section fills its own region (a lone harpist gets a big chair, violins pack tight).
   // Few people: big flags. A crowd: they shrink to fit.
@@ -505,6 +515,7 @@ function geometry() {
   const chairs = {}, chairSpacing = Math.max(11, R * .055);
   for (const [name, reg] of Object.entries(REGIONS)) chairs[name] = wedgePoints(reg.band[0] * R, reg.band[1] * R, reg.arc[0], reg.arc[1], chairSpacing, stagePoint);
   cached = { version, cx, cy, R, stage, order, chairs };
+  placeHero(cached);
   return cached;
 }
 
@@ -522,6 +533,7 @@ function drawHall(now, dt) {
   const G = geometry();
   const { cx, cy, R } = G;
   g.clearRect(0, 0, width, height);
+  amfi.draw(g, G, { width, height, dpr, heard: Date.now() + offset, dt, still: motionPaused });
   // Stage: a quiet outline only (a full-screen gradient every frame was heavy and loud).
   g.fillStyle = "rgba(244, 234, 216, .025)";
   g.beginPath(); g.moveTo(cx, cy); g.arc(cx, cy, R * 1.05, rad(-182), rad(2)); g.closePath(); g.fill();
@@ -538,8 +550,10 @@ function drawHall(now, dt) {
   }
   // Section names, quietly, at the front edge of each region.
   // Drawn under the musicians, and quieter once a section has players, so flags never sit on text.
-  g.font = "italic 300 14px Fraunces, Georgia, serif"; g.textAlign = "center";
-  for (const [name, reg] of Object.entries(REGIONS)) {
+  g.font = "500 13px 'Instrument Sans', system-ui, sans-serif"; g.textAlign = "center";
+  // While the title sits on the stage (wide screen, before the music) the names would run under it.
+  const titled = wide.matches && !document.body.classList.contains("is-playing") && !document.body.classList.contains("is-demo");
+  for (const [name, reg] of Object.entries(titled ? {} : REGIONS)) {
     if (name === "accordion") continue;        // piano and accordion share one label
     // On a small stage the three names around the podium cannot fit apart: name only the outer rows.
     if (R < 260 && reg.band[0] < .5) continue;
@@ -637,10 +651,10 @@ function drawTeams(G, now) {
     const labelY = top + AUDIENCE_ROWS * step + 9;
     g.font = "600 10px 'Instrument Sans', system-ui, sans-serif"; g.fillStyle = "rgba(243, 233, 214, .9)";
     g.fillText(TEAM_NAMES[team].toLocaleUpperCase("tr"), mx, labelY);
-    g.font = "italic 300 13px Fraunces, Georgia, serif"; g.fillStyle = "rgba(179, 165, 143, .95)";
+    g.font = "400 12.5px 'Instrument Sans', system-ui, sans-serif"; g.fillStyle = "rgba(179, 165, 143, .95)";
     g.fillText(`${count.toLocaleString("tr")} ${team === "listen" ? "dinleyen" : "ajan"}`, mx, labelY + 15);
     if (you && you.team === team) {
-      g.fillStyle = "#e6b45a"; g.font = "italic 400 12px Fraunces, Georgia, serif";
+      g.fillStyle = "#e6b45a"; g.font = "600 12px 'Instrument Sans', system-ui, sans-serif";
       g.fillText("sen buradasın", mx, top - 13);
     }
   });
@@ -750,6 +764,7 @@ async function enterDemo() {
   resetHall();
   document.body.classList.add("is-demo"); $("demo-banner").hidden = false;
   stopDemo = startDemo({ onFrame: applyFrame });
+  amfi.setHolders(demoHolders(), { demo: true });
   metric("demo");
   if (audio?.ctx.state === "running") return;
   $("loading").textContent = "Ses yükleniyor…";
@@ -763,9 +778,78 @@ function leaveDemo() {
   if (!stopDemo) return;
   stopDemo(); stopDemo = null; setDemoPlaying(false);
   document.body.classList.remove("is-demo"); $("demo-banner").hidden = true;
-  resetHall(); connect();
+  resetHall(); connect(); amfi.setHolders(liveHolders);
   $("loading").textContent = "Canlı salona dönüldü.";
 }
 $("demo-concert").onclick = enterDemo;
 $("demo-offer").onclick = enterDemo;
 $("demo-exit").onclick = leaveDemo;
+
+// ---------- seats for sale ----------
+// The amphitheatre around the stage (amfi.js). Real holders come from the server; the demo concert shows
+// generated examples instead, labelled as such, and the real ones return after it.
+let liveHolders = [];
+async function loadHolders() {
+  try {
+    const list = (await (await fetch("/api/seats", { cache: "no-store" })).json()).seats;
+    if (!Array.isArray(list)) return;
+    liveHolders = list;
+    if (!stopDemo) amfi.setHolders(liveHolders);
+    dispatchEvent(new CustomEvent("holders", { detail: liveHolders }));
+  } catch { /* the seats stay as they were */ }
+}
+addEventListener("holders", (event) => listHolders(event.detail));
+loadHolders();
+setInterval(loadHolders, 5 * 60_000);
+setupBuying({ canvas, geometry, amfi });
+
+// The title sits in the middle of the stage on a wide screen, over the orchestra it describes.
+function placeHero(G) {
+  const hero = $("hero");
+  if (hero && wide.matches) hero.style.top = `${Math.round(G.cy - G.R * .7)}px`;
+}
+
+// Pointing at a sold block shows who holds it; a tap does the same on a phone. The card holds the link.
+const card = document.createElement("div");
+card.className = "seat-card"; card.hidden = true; card.setAttribute("role", "status");
+document.querySelector(".stage").append(card);
+let cardFor = null, cardTimer = 0;
+function showCard(holder, x, y) {
+  clearTimeout(cardTimer);
+  if (holder !== cardFor) {
+    cardFor = holder;
+    const size = `${holder.width * holder.depth} koltuk · ${tierOf(holder.ring).label}`;
+    card.replaceChildren();
+    const name = document.createElement("b"); name.textContent = holder.name; card.append(name);
+    if (holder.link) {
+      const a = document.createElement("a"); a.href = holder.link; a.target = "_blank"; a.rel = "sponsored noopener noreferrer";
+      a.textContent = holder.link.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "").slice(0, 48) + " ↗"; card.append(a);
+    }
+    const meta = document.createElement("small"); meta.textContent = amfi.isDemo() ? `Demo örneği, gerçek alıcı değil · ${size}` : size; card.append(meta);
+  }
+  card.hidden = false;
+  const box = card.getBoundingClientRect(), stage = card.parentElement.getBoundingClientRect();
+  card.style.left = `${Math.min(Math.max(8, x + 14), stage.width - box.width - 8)}px`;
+  card.style.top = `${Math.min(Math.max(8, y - box.height - 12), stage.height - box.height - 8)}px`;
+}
+function hideCard(later) {
+  clearTimeout(cardTimer);
+  cardTimer = setTimeout(() => { card.hidden = true; cardFor = null; }, later ? 350 : 0);
+}
+function pointAt(event) {
+  const rect = canvas.getBoundingClientRect(), x = event.clientX - rect.left, y = event.clientY - rect.top;
+  return { x, y, place: amfi.hit(geometry(), x, y) };
+}
+canvas.addEventListener("pointermove", (event) => {
+  if (event.pointerType !== "mouse" || document.body.classList.contains("is-placing")) return;
+  const { x, y, place } = pointAt(event);
+  canvas.style.cursor = place?.holder ? "pointer" : "";
+  if (place?.holder) showCard(place.holder, x, y); else if (cardFor) hideCard(true);
+});
+canvas.addEventListener("pointerleave", () => { if (cardFor) hideCard(true); });
+canvas.addEventListener("click", (event) => {
+  const { x, y, place } = pointAt(event);
+  if (place?.holder) showCard(place.holder, x, y); else hideCard(false);
+});
+card.addEventListener("pointerenter", () => clearTimeout(cardTimer));
+card.addEventListener("pointerleave", () => hideCard(true));

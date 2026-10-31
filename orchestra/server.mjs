@@ -5,12 +5,13 @@
 //   PORT=4480 node orchestra/server.mjs
 import http from "node:http";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { readFileSync, renameSync, writeFileSync } from "node:fs";
+import { readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TITLES } from "./web/music.mjs";
 import { createConductor } from "./web/conductor.mjs";
+import { cleanSeats } from "./web/seats.mjs";
 import { loadGeo, country } from "./geo.mjs";
 
 const PORT = Number(process.env.PORT || 4480);
@@ -472,8 +473,24 @@ if (METRICS_FILE) {
 }
 const sameSecret = (given, secret) => { const a = Buffer.from(given), b = Buffer.from(secret); return a.length === b.length && timingSafeEqual(a, b); };
 
+// ---------- seat holders ----------
+// Sold seats live in SEATS_FILE (JSON, edited by hand until payment exists) and their images in SEATS_DIR.
+// The file is read again within a minute of a change; anything malformed is left out (see web/seats.mjs).
+const SEATS_FILE = process.env.SEATS_FILE || "", SEATS_DIR = process.env.SEATS_DIR || "";
+let seatHolders = [], seatsRead = 0;
+function loadSeats() {
+  if (!SEATS_FILE) return;
+  try {
+    const changed = statSync(SEATS_FILE).mtimeMs;
+    if (changed === seatsRead) return;
+    seatHolders = cleanSeats(JSON.parse(readFileSync(SEATS_FILE, "utf8"))); seatsRead = changed;
+  } catch (error) { console.log(`seats: not read (${error.message})`); }
+}
+loadSeats();
+if (SEATS_FILE) setInterval(loadSeats, 60_000).unref();
+
 // ---------- http ----------
-const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".json": "application/json", ".py": "text/plain; charset=utf-8", ".txt": "text/plain; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2" };
+const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".json": "application/json", ".py": "text/plain; charset=utf-8", ".txt": "text/plain; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2", ".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg": "image/jpeg" };
 const hits = new Map();         // ip key -> [windowStart, count]: pages and pairing
 const polls = new Map(), pollIPs = new Map();   // pairing / ip key -> [windowStart, count]: a page asking for its own view
 const plays = new Map();        // ip key -> [windowStart, count]: machines reporting
@@ -615,6 +632,16 @@ const server = http.createServer({ connectionsCheckingInterval: 1000, requestTim
   // `now`: the hall's clock, so a page can tell how far behind the stream reaches it (see app.js).
   if (["GET", "HEAD"].includes(req.method) && url.pathname === "/api/health") return json(res, 200, { ok: true, players: players.size, listeners: listeners.size, now });
   if (req.method !== "GET" && req.method !== "HEAD") return json(res, 405, { error: "method" });   // HEAD: same headers, no body
+  if (url.pathname === "/api/seats") return json(res, 200, { seats: seatHolders });
+  if (url.pathname.startsWith("/seat-images/")) {
+    const name = url.pathname.slice("/seat-images/".length);
+    try {
+      if (!SEATS_DIR || !/^[a-z0-9-]{1,40}\.(webp|png|jpe?g)$/.test(name)) throw new Error("no such image");
+      const file = await readFile(join(SEATS_DIR, name));
+      res.writeHead(200, { "content-type": TYPES[extname(name)], "cache-control": "public, max-age=86400" });
+      return res.end(file);
+    } catch { res.writeHead(404); return res.end("not found"); }
+  }
   if (url.pathname === "/reader.py") {
     try {
       const file = await readFile(READER);

@@ -288,6 +288,25 @@ try {
     for (let i = 0; i < 12; i++) responses.push((await post('/api/me', { pair }, headers)).status);
     assert.ok(responses.includes(429));
   });
+  await test('seat holders come cleaned from SEATS_FILE, and their images only from SEATS_DIR', async () => {
+    const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = await mkdtemp(join(tmpdir(), 'seats-'));
+    const holder = { id: 'acme', ring: 0, col: 0, width: 2, depth: 2, name: 'Acme', link: 'https://acme.example/', image: '/seat-images/acme.webp' };
+    await writeFile(join(dir, 'seats.json'), JSON.stringify({ seats: [holder, { ...holder, id: 'js', col: 9, link: 'javascript:alert(1)' }, { ...holder, id: 'far', col: 20, image: 'https://cdn.example/x.png' }] }));
+    await writeFile(join(dir, 'acme.webp'), 'RIFF0000WEBP');
+    const p = port + 8, url = `http://127.0.0.1:${p}`, child = await start(p, { SEATS_FILE: join(dir, 'seats.json'), SEATS_DIR: dir });
+    try {
+      assert.deepEqual((await (await fetch(url + '/api/seats')).json()).seats.map((s) => s.id), ['acme']);
+      const image = await fetch(url + '/seat-images/acme.webp');
+      assert.equal(image.status, 200); assert.equal(image.headers.get('content-type'), 'image/webp');
+      assert.equal((await image.text()), 'RIFF0000WEBP');
+      for (const path of ['/seat-images/seats.json', '/seat-images/..%2Fseats.json', '/seat-images/ACME.webp', '/seat-images/x.svg']) assert.equal((await fetch(url + path)).status, 404, path);
+    } finally { child.kill(); await once(child, 'exit'); await rm(dir, { recursive: true }); }
+    assert.deepEqual((await (await fetch(base + '/api/seats')).json()).seats, [], 'no SEATS_FILE: no holders');
+    assert.equal((await fetch(base + '/seat-images/acme.webp')).status, 404, 'no SEATS_DIR: no images');
+  });
   await test('a machine that slept past its seat comes back to its own instrument', async () => {
     const { seats, newcomer, back } = await returning;
     assert.deepEqual(seats, ['piano', 'accordion', 'strings']);

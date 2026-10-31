@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Agent Orchestra · Bugünkü çalışmanın bir sesi var</title>
+<title>Agent Orchestra · Claude ve Codex adımlarından çalan canlı orkestra</title>
 <meta name="description" content="Claude ve Codex oturumlarındaki adımlar canlı bir orkestrada nota olarak çalar. Dinle, kendi ajanını bağla, çalışma anını indir. DijitalPi tarafından geliştirildi.">
-<meta property="og:title" content="Bugünkü çalışmanın bir sesi var · Agent Orchestra">
+<meta property="og:title" content="Agent Orchestra · Claude ve Codex adımlarından çalan canlı orkestra">
 <meta property="og:description" content="Claude ve Codex adımların canlı orkestrada çalar. Dinle, ajanını bağla, anını indir.">
 <meta property="og:type" content="website">
 <meta property="og:image" content="/og.png">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Bugünkü çalışmanın bir sesi var · Agent Orchestra">
+<meta name="twitter:title" content="Agent Orchestra · Claude ve Codex adımlarından çalan canlı orkestra">
 <meta name="twitter:description" content="Claude ve Codex adımların canlı orkestrada çalar. Dinle, ajanını bağla, anını indir.">
 <meta name="twitter:image" content="/og.png">
 <meta name="theme-color" content="#0d0b09">
@@ -23,25 +23,31 @@
 <body>
 <a class="skip" href="#controls">Ses kontrollerine geç</a>
 
-<div class="column">
-  <header class="brand">
-    <a href="#" class="wordmark" data-open="home">Agent <em>Orchestra</em></a>
-    <span class="maker">DijitalPi</span>
-  </header>
+<header class="topbar">
+  <a href="#" class="wordmark" data-open="home">Agent <em>Orchestra</em></a>
+  <nav class="menu" aria-label="Yapabileceklerin">
+    <button class="nav" data-open="join">Ajanını bağla</button>
+    <button class="nav" data-open="moment">Anını indir</button>
+    <button class="nav" data-open="invite">Davet et</button>
+    <button class="nav nav-seat" data-open="seats">Koltuk al</button>
+    <details class="more">
+      <summary><span class="only-wide">Diğer</span><span class="only-narrow">Menü</span></summary>
+      <div class="more-list">
+        <button class="nav only-narrow" data-open="join">Ajanını bağla</button>
+        <button class="nav only-narrow" data-open="moment">Anını indir</button>
+        <button class="nav only-narrow" data-open="invite">Davet et</button>
+        <button class="nav" data-open="holders">Koltuk sahipleri</button>
+        <button class="nav" data-open="league">Ülkelerin nota katkısı</button>
+        <button class="nav" data-open="about">Proje ve iletişim</button>
+        <button class="nav" data-open="privacy">Gizlilik</button>
+      </div>
+    </details>
+  </nav>
+</header>
 
-  <section data-view="home" aria-labelledby="title">
-    <h1 id="title" tabindex="-1">Bugünkü çalışmanın bir <em>sesi var.</em></h1>
-    <p class="lead">Claude ve Codex'te atılan her adım bu salonda bir nota olarak çalar. Dinlemek için kurulum gerekmez.</p>
-    <div class="actions">
-      <button data-team="listen">Orkestrayı dinle</button>
-      <button id="simple-sound" class="quiet">Sade tınıyla dinle</button>
-    </div>
-    <p class="minor"><button id="demo-concert" class="link">Demo konseri: dolu salonu dinle</button><button id="demo" class="link">Örnek kişisel ses</button></p>
-    <p id="loading" role="status">Ses sen başlatınca hemen çalar. Enstrüman örnekleri bu siteden gelir: önce piyano (yaklaşık 2,6 MB), diğerleri sahneye çıktıkça; o zamana kadar sade tınıyla. Sade tını hiçbir şey indirmez.</p>
-  </section>
-
+<aside class="panel" id="panel" hidden aria-label="Seçtiğin iş">
+  <button class="close" data-open="home" aria-label="Paneli kapat">×</button>
   <section data-view="join" hidden aria-labelledby="join-title">
-    <button class="back" data-open="home">‹ Salona dön</button>
     <h2 id="join-title" tabindex="-1">Ajanını bağla</h2>
     <p class="lead">Bilgisayarındaki yerel okuyucu (macOS ve Linux) yeni Claude ve Codex adımlarını sayıya çevirip salona gönderir. Prompt, kod ve dosya yolu gönderilmez.</p>
     <button id="pair">Bağlantı komutumu oluştur</button>
@@ -57,6 +63,7 @@
       <p class="note">Komut sana özel bir anahtar içerir, paylaşma. Anahtar bir saat sonra silinir. Eşleştirmeyi kaldırmak ortak çalmayı durdurmaz; okuyucuyu durdurmak için Terminal'de Ctrl+C.</p>
     </div>
     <p id="personal-status" role="status">Henüz ajan bağlamadın.</p>
+    <button id="demo" class="link">Kendi sesin nasıl duyulur: örneği dinle</button>
     <div id="personal" hidden>
       <p id="seat-label"></p>
       <p class="count"><b id="my-steps">0</b> <span>adım bu bağlantıdan geldi</span></p>
@@ -73,7 +80,6 @@
   </section>
 
   <section data-view="moment" hidden aria-labelledby="moment-title">
-    <button class="back" data-open="home">‹ Salona dön</button>
     <h2 id="moment-title" tabindex="-1">Çalışma anını indir</h2>
     <p class="lead">Son adımlarından 12 saniyelik bir ses, paylaşım görseli ve desteklenen tarayıcıda video oluşur. Dosyalar bu tarayıcıda hazırlanır, sunucuya yüklenmez.</p>
     <label for="moment-title-input">Başlık</label>
@@ -101,7 +107,6 @@
   </section>
 
   <section data-view="invite" hidden aria-labelledby="invite-title">
-    <button class="back" data-open="home">‹ Salona dön</button>
     <h2 id="invite-title" tabindex="-1">Arkadaşını davet et</h2>
     <p class="lead">Aynı anda çalışan herkesin adımı aynı müzikte çalar. Bağlantıyı kopyalayıp gönder.</p>
     <button id="invite">Davet bağlantısını kopyala</button>
@@ -111,7 +116,6 @@
   </section>
 
   <section data-view="league" hidden aria-labelledby="league-title">
-    <button class="back" data-open="home">‹ Salona dön</button>
     <h2 id="league-title" tabindex="-1">Ülkelerin nota katkısı</h2>
     <p class="lead">Son adımların ağırlığı zamanla azalır. Bu bir başarı ya da üretkenlik sıralaması değildir.</p>
     <div class="league">
@@ -122,11 +126,11 @@
   </section>
 
   <section data-view="about" hidden aria-labelledby="about-title">
-    <button class="back" data-open="home">‹ Salona dön</button>
     <h2 id="about-title" tabindex="-1">Proje ve iletişim</h2>
     <p class="lead">Agent Orchestra, DijitalPi'nin deneme projesi. Claude ve Codex'teki adımları anonim sayılara çevirir ve herkesin aynı anda duyduğu müziğe dönüştürür.</p>
     <p>DijitalPi; etkinlik, hackathon ve ekipler için katılımcıların birlikte oluşturduğu canlı dijital deneyimler kurar.</p>
     <a id="contact" class="pill" href="https://dijitalpi.com/iletisim/" target="_blank" rel="noopener noreferrer">DijitalPi ile iletişime geç ↗</a>
+    <p class="note">Salonda her ışık bağlı bir makinedir ve adım gelince yanar. Adım sayısı iş kalitesini ölçmez.</p>
     <p class="note">Geliştirme aşamasında. Kullanıcı araştırması ve genel yayın henüz yapılmadı.</p>
     <h3 class="label">Kaynaklar</h3>
     <p class="note">Ses örnekleri: FluidR3 GM (Frank Wen), <a href="https://github.com/gleitz/midi-js-soundfonts" target="_blank" rel="noopener noreferrer">MIDI.js Soundfonts</a> üzerinden, <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener noreferrer">CC BY 3.0</a>. Ses motoru: <a href="https://github.com/danigb/smplr" target="_blank" rel="noopener noreferrer">smplr</a> (MIT). Yazı tipleri: Fraunces ve Instrument Sans (SIL Open Font License). Eserler kamu malıdır.</p>
@@ -139,14 +143,7 @@
     </details>
   </section>
 
-  <div class="now-block" data-view="home">
-    <p class="label">Şu an salonda</p>
-    <p id="now">İlk adım bekleniyor.</p>
-    <p class="caption">Her ışık bağlı bir makinedir ve adım gelince yanar. Adım sayısı iş kalitesini ölçmez.</p>
-    <button id="demo-offer" class="link" hidden>Dolu bir salonu duymak için demo konserini aç</button>
-  </div>
   <section data-view="privacy" hidden aria-labelledby="privacy-title">
-    <button class="back" data-open="home">‹ Salona dön</button>
     <h2 id="privacy-title" tabindex="-1">Gizlilik ve veriler</h2>
     <p class="lead">Hesap, çerez ve kişisel profil yok. Hangi durumda neyin kullanıldığı:</p>
     <ul class="facts">
@@ -160,17 +157,48 @@
     <p class="note">Soru ve silme talepleri için <a href="https://dijitalpi.com/iletisim/" target="_blank" rel="noopener noreferrer">dijitalpi.com/iletisim</a>.</p>
   </section>
 
-  <nav class="tasks" data-view="home" aria-label="Yapabileceklerin">
-    <button class="task" data-open="join"><span>Ajanımı bağla</span><small>Kendi adımlarını ayrı duy, salondaki koltuğunu gör.</small></button>
-    <button class="task" data-open="moment"><span>Çalışma anımı indir</span><small>Son adımlarından 12 saniyelik ses, görsel ve video oluştur.</small></button>
-    <button class="task" data-open="invite"><span>Arkadaşımı davet et</span><small>Bu sayfanın bağlantısını kopyala.</small></button>
-    <p class="more"><button class="link" data-open="league">Ülkelerin nota katkısı</button><button class="link" data-open="about">Proje ve iletişim</button><button class="link" data-open="privacy">Gizlilik</button></p>
-  </nav>
-</div>
+  <section data-view="seats" hidden aria-labelledby="seats-title">
+    <h2 id="seats-title" tabindex="-1">Koltuk al</h2>
+    <p class="lead">Orkestranın etrafındaki koltuklara logonu ya da profil resmini koy. Üzerine gelen adını ve linkini görür, orkestra o yönde çaldıkça koltuğun parlar.</p>
+    <fieldset class="tiers" id="seat-tiers"><legend>Sıra</legend></fieldset>
+    <div class="size">
+      <label for="seat-width">Yan yana koltuk <input id="seat-width" type="number" min="1" max="12" value="3" inputmode="numeric"></label>
+      <label for="seat-depth">Sıra sayısı <input id="seat-depth" type="number" min="1" max="6" value="2" inputmode="numeric"></label>
+    </div>
+    <p class="price"><b id="seat-price">0 $</b> <span id="seat-count"></span></p>
+    <button id="seat-place">Salonda yer seç</button>
+    <p id="seat-status" role="status">Önce boyutu seç, sonra bloğu salonda boş bir yere yerleştir.</p>
+    <div id="seat-form" hidden>
+      <label for="seat-image">Logo ya da profil resmi (PNG, JPG ya da WebP)</label>
+      <input id="seat-image" type="file" accept="image/png,image/jpeg,image/webp">
+      <label for="seat-name">Görünecek ad</label>
+      <input id="seat-name" maxlength="40" autocomplete="organization">
+      <label for="seat-link">Link (site, Instagram, X…)</label>
+      <input id="seat-link" type="url" maxlength="300" placeholder="https://" autocomplete="url">
+      <canvas id="seat-preview" width="480" height="240" role="img" aria-label="Koltuğunun salondaki önizlemesi"></canvas>
+      <div class="row"><button id="seat-pay">Ödemeye geç</button><button id="seat-again" class="quiet">Yeri değiştir</button></div>
+      <p id="seat-pay-status" role="status"></p>
+      <p class="note">Resim, ad ve link yayından önce elle onaylanır. Link Google için "sponsorlu" işaretlenir. Önizleme bu tarayıcıda hazırlanır, hiçbir şey sunucuya gönderilmez.</p>
+    </div>
+  </section>
+
+  <section data-view="holders" hidden aria-labelledby="holders-title">
+    <h2 id="holders-title" tabindex="-1">Koltuk sahipleri</h2>
+    <p id="holders-lead" class="lead">Henüz satılmış koltuk yok.</p>
+    <ol id="holders" class="holders"></ol>
+  </section>
+</aside>
 
 <main class="stage" aria-label="Canlı orkestra salonu">
   <canvas id="hall" aria-hidden="true"></canvas>
   <div class="demo-banner" id="demo-banner" role="status" hidden><span><b>Demo konseri</b> · 24 simüle makine, gerçek katılımcı değil</span><button id="demo-exit" class="quiet">Canlı salona dön</button></div>
+  <div class="now"><p id="now">İlk adım bekleniyor.</p><button id="demo-offer" class="link" hidden>Dolu salonu demo konserinde dinle</button></div>
+  <div class="hero" id="hero">
+    <h1 id="title" tabindex="-1">Claude ve Codex adımlarından çalan canlı orkestra</h1>
+    <p class="lead">Bağlı makinelerde atılan her adım bu salonda bir nota olarak çalar. Dinlemek için kurulum gerekmez.</p>
+    <div class="actions"><button data-team="listen">Orkestrayı dinle</button></div>
+    <p class="minor"><button id="demo-concert" class="link">Demo konseri</button><button id="simple-sound" class="link">Sade tınıyla dinle</button></p>
+  </div>
   <div class="live">
     <p id="connection" role="status">Salona bağlanıyor…</p>
     <div class="stats">
@@ -182,6 +210,7 @@
   </div>
   <div class="stage-foot">
     <div class="score"><canvas id="score" aria-hidden="true"></canvas><span class="label">Canlı nota</span></div>
+    <p id="loading" role="status"></p>
     <section id="controls" tabindex="-1" class="dock" aria-label="Ses kontrolleri">
       <button id="sound" class="quiet" disabled>Sesi durdur</button>
       <label for="volume">Ses <input id="volume" type="range" min="0" max="100" value="65"></label>

@@ -213,7 +213,7 @@ async function drawMoment(title, notes, { personal, showCount, total, label }) {
   c.globalAlpha = 1;
   c.fillStyle = '#b3a58f'; c.font = '400 20px "Instrument Sans", system-ui, sans-serif';
   c.fillText(personal ? (showCount ? `${total} gerçek adım · adım sayılarından üretilen müzik` : 'Gerçek adımlardan üretilen müzik') : label === 'DEMO' ? 'Demo konserinden 12 saniye · makineler simüle edilmiştir' : label === 'TEST' ? 'Test salonundan 12 saniye · simülasyon içerir' : 'Ortak orkestranın 12 saniyesi · anonim', 64, 534);
-  c.fillStyle = '#f3e9d6'; c.font = 'italic 300 24px Fraunces, Georgia, serif'; c.fillText('Agent Orchestra', 64, 588);
+  c.fillStyle = '#f3e9d6'; c.font = '400 24px Fraunces, Georgia, serif'; c.fillText('Agent Orchestra', 64, 588);
   c.textAlign = 'right'; c.fillStyle = '#b3a58f'; c.font = '400 17px "Instrument Sans", system-ui, sans-serif'; c.fillText('DijitalPi tarafından geliştirildi', 1136, 588); c.textAlign = 'left';
 }
 function revokeMoment() {
