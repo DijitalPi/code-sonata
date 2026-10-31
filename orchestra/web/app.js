@@ -821,9 +821,9 @@ function showCard(holder, x, y) {
     cardFor = holder;
     const size = `${holder.width * holder.depth} koltuk · ${tierOf(holder.ring).label}`;
     card.replaceChildren();
-    const name = document.createElement("b"); name.textContent = holder.name; card.append(name);
+    const name = document.createElement("b"); name.textContent = holder.name; name.translate = amfi.isDemo(); card.append(name);   // demo names are ours; real ones are not translated
     if (holder.link) {
-      const a = document.createElement("a"); a.href = holder.link; a.target = "_blank"; a.rel = "sponsored noopener noreferrer";
+      const a = document.createElement("a"); a.href = holder.link; a.target = "_blank"; a.rel = "sponsored noopener noreferrer"; a.translate = false;
       a.textContent = holder.link.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "").slice(0, 48) + " ↗"; card.append(a);
     }
     const meta = document.createElement("small"); meta.textContent = amfi.isDemo() ? `Demo örneği, gerçek alıcı değil · ${size}` : size; card.append(meta);

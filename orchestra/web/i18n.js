@@ -53,6 +53,7 @@ export const num = (n) => Number(n).toLocaleString(lang === 'tr' ? 'tr-TR' : 'en
 // ---------- the page ----------
 const ATTRS = ['aria-label', 'placeholder', 'title'];
 const seen = new WeakMap();          // node -> { tr, shown } so a language switch can go back to Turkish
+// People's own words (holder names, typed titles) carry translate="no" and are never looked up.
 const skip = (node) => node.parentElement?.closest('script, style, textarea, [translate="no"]');
 
 function textNode(node) {
