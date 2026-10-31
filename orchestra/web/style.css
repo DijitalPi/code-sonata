@@ -27,7 +27,7 @@ a { color: var(--gold); text-underline-offset: 4px; }
 .wordmark { font: 500 24px/1 var(--serif); color: var(--ink); text-decoration: none; letter-spacing: -.01em; white-space: nowrap; }
 .wordmark em, h1 em { font-style: normal; color: var(--gold); }
 .menu { display: flex; align-items: center; gap: 2px; }
-.nav, .more summary { all: unset; box-sizing: border-box; display: block; cursor: pointer; padding: 10px 15px; border-radius: 999px; font-size: 16.5px; font-weight: 500; color: var(--ink); white-space: nowrap; }
+.nav, .more summary { all: unset; box-sizing: border-box; display: block; cursor: pointer; padding: 10px 15px; border-radius: 999px; font-size: 18.5px; font-weight: 600; color: var(--ink); white-space: nowrap; }
 .nav:hover, .more summary:hover, .more[open] summary { color: var(--ink); background: rgba(243, 233, 214, .06); }
 .nav:focus-visible, .more summary:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .nav-seat { margin-left: 8px; color: #1a1208; background: var(--gold); font-weight: 600; }
@@ -177,7 +177,7 @@ body.is-demo #connection { color: var(--gold); }
   body { display: flex; flex-direction: column; }
   .topbar { position: sticky; top: 0; gap: 10px; padding: 0 12px 0 16px; }
   .wordmark { font-size: 20px; }
-  .nav, .more summary { padding: 9px 12px; font-size: 15.5px; }
+  .nav, .more summary { padding: 9px 12px; font-size: 17px; }
   .nav-seat { margin-left: 0; }
   .menu > .nav:not(.nav-seat), .only-wide { display: none !important; }
   .only-narrow { display: block !important; }
@@ -253,6 +253,6 @@ body.is-placing .hero, body.is-placing .now, body.is-placing .live { visibility:
 #seat-image::file-selector-button { margin-right: 12px; padding: 9px 16px; border: 0; border-radius: 999px; background: rgba(243, 233, 214, .1); color: var(--ink); font: 500 14px var(--sans); cursor: pointer; }
 /* Between tablet and wide desktop the menu (longer in English) tightens instead of running off the bar. */
 @media (min-width: 960px) and (max-width: 1120px) {
-  .nav, .more summary { padding: 8px 9px; font-size: 15px; }
+  .nav, .more summary { padding: 8px 9px; font-size: 16.5px; }
   .wordmark { font-size: 21px; }
 }

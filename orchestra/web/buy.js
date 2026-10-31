@@ -1,8 +1,8 @@
 // Buying a seat, up to the payment step: pick a tier and a size, see the price, carry the block to a free
 // place in the hall (mouse, finger or arrow keys), then add an image, a name and a link and see the result.
 // Nothing here talks to the server: payment, upload and approval come in the second part.
-import { PLAN, TIERS, SEAT_LIMITS, tierOf, blockPrice, blockArc, taken, canPlace } from './seats.mjs';
-import { createAmfi } from './amfi.js';
+import { PLAN, TIERS, SEAT_LIMITS, tierOf, blockPrice, taken, canPlace } from './seats.mjs';
+import { createAmfi, closeUp } from './amfi.js';
 import { num } from './i18n.js';
 
 const $ = (id) => document.getElementById(id);
@@ -175,15 +175,8 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
   const previewHall = createAmfi();
   function preview() {
     if (!chosen) return;
-    const c = $('seat-preview'), g = c.getContext('2d'), W = c.width, H = c.height;
-    const arc = blockArc(chosen), rm = (arc.r1 + arc.r2) / 2, am = (arc.a1 + arc.a2) / 2, toRad = Math.PI / 180;
-    // Close enough to read the block, not so close that the empty seats around it turn into big coins.
-    const R = Math.min(22 / PLAN.pitch, (W * .42) / ((arc.a2 - arc.a1) * toRad * rm), (H * .5) / (arc.r2 - arc.r1));
-    const G = { R, cx: W / 2 - Math.sin(am * toRad) * rm * R, cy: H / 2 + Math.cos(am * toRad) * rm * R };
     const mine = { id: 'onizleme', ...chosen, name: $('seat-name').value.trim() || 'Senin adın', link: null, image: null, drawable: image };
-    previewHall.setHolders([...amfi.holders(), mine], { fresh: true });
-    g.fillStyle = '#0b0907'; g.fillRect(0, 0, W, H);
-    previewHall.draw(g, G, { width: W, height: H, dpr: 1, heard: 0, dt: 0, still: true });
+    closeUp($('seat-preview'), previewHall, [...amfi.holders(), mine], chosen);
   }
   $('seat-name').addEventListener('input', preview);
   $('seat-image').addEventListener('change', () => {

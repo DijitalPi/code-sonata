@@ -141,6 +141,18 @@ export function createAmfi() {
   return { setHolders, setReserved, note, draw, hit, setGhost: (g) => { ghost = g; }, holders: () => holders, reserved: () => reserved, isDemo: () => demo };
 }
 
+// A close-up of one block among the hall's others: what a buyer sees before paying, and the panel before approving.
+export function closeUp(canvas, hall, holders, block) {
+  const g = canvas.getContext('2d'), W = canvas.width, H = canvas.height;
+  const arc = blockArc(block), rm = (arc.r1 + arc.r2) / 2, am = (arc.a1 + arc.a2) / 2, toRad = Math.PI / 180;
+  // Close enough to read the block, not so close that the empty seats around it turn into big coins.
+  const R = Math.min(22 / PLAN.pitch, (W * .42) / ((arc.a2 - arc.a1) * toRad * rm), (H * .5) / (arc.r2 - arc.r1));
+  const G = { R, cx: W / 2 - Math.sin(am * toRad) * rm * R, cy: H / 2 + Math.cos(am * toRad) * rm * R };
+  hall.setHolders(holders, { fresh: true });
+  g.fillStyle = '#0b0907'; g.fillRect(0, 0, W, H);
+  hall.draw(g, G, { width: W, height: H, dpr: 1, heard: 0, dt: 0, still: true });
+}
+
 // The demo concert's full house: generated marks, never real names, clearly called examples.
 export function demoHolders(count = 140) {
   let seed = 20261031; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;

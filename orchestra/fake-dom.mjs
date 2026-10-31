@@ -43,7 +43,6 @@ class Element_ extends Node_ {
   nodeType = 1;
   childNodes = [];
   attributes = new Map();
-  hidden = false;
   constructor(tag) {
     super(); this.tagName = tag.toUpperCase();
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(this.tagName)) Object.assign(this, { value: '', checked: false, disabled: false });
@@ -62,6 +61,8 @@ class Element_ extends Node_ {
   get className() { return this.getAttribute('class') || ''; }
   set className(value) { this.setAttribute('class', value); }
   set translate(on) { this.setAttribute('translate', on ? 'yes' : 'no'); }
+  get hidden() { return this.hasAttribute('hidden'); }
+  set hidden(on) { if (on) this.setAttribute('hidden', ''); else this.removeAttribute('hidden'); }
   get content() { return this.getAttribute('content') ?? ''; }
   set content(value) { this.setAttribute('content', value); }
   getAttribute(name) { return this.attributes.has(name) ? this.attributes.get(name) : null; }
@@ -87,6 +88,11 @@ class Element_ extends Node_ {
   click() { const event = new Event('click'); this.onclick?.(event); this.dispatchEvent(event); }
   getContext() { return this.tagName === 'CANVAS' ? nothing : null; }
   getBoundingClientRect() { return { left: 0, top: 0, width: 0, height: 0 }; }
+}
+
+// Properties a real element keeps in its attributes.
+for (const name of ['href', 'src', 'alt', 'type', 'rel', 'target', 'placeholder']) {
+  Object.defineProperty(Element_.prototype, name, { get() { return this.getAttribute(name) ?? ''; }, set(value) { this.setAttribute(name, value); } });
 }
 
 class Document_ extends EventTarget {
