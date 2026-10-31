@@ -187,14 +187,16 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     let refunded = null;
     if (refund) {
       if (!order.payment) return send(res, 409, { error: "payment" });
+      const earlier = Boolean(order.refunding);   // an earlier try whose outcome is not known
       commit(() => startRefund(book, id));
       try { refunded = await stripe.refund(order.payment, `refund-${order.id}`); }
       catch (error) {
         // Only a clear no from Stripe means nothing was refunded. A lost or broken answer (and 409: the same key is
-        // still being worked on) may hide a refund: the mark stays until rejecting again settles it.
+        // still being worked on) may hide a refund: the mark stays until rejecting again settles it. A no to a
+        // retry (429, 401) answers only the retry, not the earlier try, so the mark stays then too.
         const refused = error.refused || (error.status >= 400 && error.status < 500 && error.status !== 409);
-        log(`refund: ${error.message}${refused ? "" : " (outcome unknown, kept as refunding)"}`);
-        if (refused) commit(() => stopRefund(book, id));
+        log(`refund: ${error.message}${refused && !earlier ? "" : " (outcome unknown, kept as refunding)"}`);
+        if (refused && !earlier) commit(() => stopRefund(book, id));
         return send(res, 502, { error: refused ? "stripe" : "unknown" });
       }
     }

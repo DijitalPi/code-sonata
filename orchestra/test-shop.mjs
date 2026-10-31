@@ -266,7 +266,32 @@ test('a refund Stripe refuses leaves the order as it was; one whose answer was l
     assert.equal((await onDisk()).refunding, true, `${lost}: the refund may have been made`);
     assert.equal((await panel(`orders/${c.id}/approve`, { cookie, method: 'POST' })).status, 409);
   }
+  // A retry Stripe refuses says nothing about the earlier try, which may have refunded: the mark stays.
+  for (const refused of [429, 401]) {
+    stripeFails = refused;
+    try { assert.equal((await panel(`orders/${c.id}/reject`, { cookie, method: 'POST', body: {} })).status, 502); }
+    finally { stripeFails = false; }
+    assert.equal((await onDisk()).refunding, true, `${refused} after a lost answer`);
+    assert.equal((await panel(`orders/${c.id}/approve`, { cookie, method: 'POST' })).status, 409);
+  }
   assert.equal((await panel(`orders/${c.id}/reject`, { cookie, method: 'POST', body: {} })).status, 200);
+});
+
+test('a live order whose refund answer was lost is removed only with the refund, even after a refused retry', async () => {
+  const { cookie } = await login(SELIM, '10.9.9.12');
+  const g = await (await buy({ block: block(40), name: 'Eta' })).json();
+  await completed(g.id, blockPrice(block(40)) * 100);
+  assert.equal((await panel(`orders/${g.id}/approve`, { cookie, method: 'POST' })).status, 200);
+  const remove = (refund) => panel(`orders/${g.id}/remove`, { cookie, method: 'POST', body: { refund, reason: 'şikâyet' } });
+  stripeFails = true;
+  try { assert.equal((await remove(true)).status, 502); } finally { stripeFails = false; }
+  stripeFails = 429;
+  try { assert.equal((await remove(false)).status, 502, 'the refund may be owed, so it is tried again'); } finally { stripeFails = false; }
+  const refunds = stripeCalls.filter((c) => c.path === '/v1/refunds').length;
+  assert.equal((await remove(false)).status, 200);
+  assert.equal(stripeCalls.filter((c) => c.path === '/v1/refunds').length, refunds + 1, 'removed with the refund');
+  const saved = JSON.parse(await readFile(env.ORDERS_FILE, 'utf8')).orders.find((o) => o.id === g.id);
+  assert.deepEqual([saved.state, saved.refunded, saved.refunding], ['removed', true, false]);
 });
 
 test('an order is decided one step at a time: approving while its refund is under way is refused', async () => {
