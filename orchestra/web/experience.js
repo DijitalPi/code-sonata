@@ -128,7 +128,7 @@ $('mode').onchange = async () => {
     $('mode-status').textContent = me?.connected ? 'Yeni faaliyetler yalnız kendi motifinde duyulur.' : 'Önce ajanını bağla. Yeni faaliyet geldiğinde kendi sesin çalar.';
     // Unlock on the gesture, so polling can play subsequent activity.
     try { synth ||= newAudioContext(); await synth.resume(); } catch {}
-  } else $('mode-status').textContent = $('mode').value === 'mine' && !ownSeat ? 'Önce ajanını bağla; bağlanınca kendi katmanın öne çıkar.' : 'Ortak ses için Orkestrayı dinle düğmesine bas.';
+  } else $('mode-status').textContent = $('mode').value === 'mine' && !ownSeat ? 'Önce ajanını bağla; bağlanınca kendi katmanın öne çıkar.' : 'Ortak ses için önce dinlemeyi başlat.';
 };
 // The pairing outlives a reload of this tab (it lives an hour on the server: a new one on every reload would use
 // up an office's share of pairings).

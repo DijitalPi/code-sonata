@@ -73,6 +73,9 @@ body.is-playing .hero, body.is-demo .hero { opacity: 0; transform: translate(-50
 #now { font-size: 13px; color: var(--dim); margin: 0; }
 #now strong { color: var(--ink); font: 600 16px/1.35 var(--sans); }
 #demo-offer { font-size: 13px; }
+/* Until the sound starts the hero's one button already offers the demo; on a phone the hero stays in view. */
+body:not(.is-playing) #demo-offer, body.is-playing #listen-live { display: none; }
+@media (max-width: 959px) { #demo-offer { display: none; } }
 body.is-demo .now { display: none; }
 .heat { display: inline-block; width: 96px; height: 2px; margin-left: 10px; vertical-align: middle; background: var(--line); overflow: hidden; }
 .heat i { display: block; height: 100%; background: linear-gradient(90deg, var(--gold), var(--gold-hi)); }
@@ -85,7 +88,7 @@ button:hover, .pill:hover { background: var(--gold-hi); }
 button:active, .pill:active { transform: scale(.97); }
 button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
 /* The main action carries a small play mark; it survives the script rewriting the label. */
-[data-team]::before { content: ""; width: 0; height: 0; border-left: 8px solid currentColor; border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
+#listen::before { content: ""; width: 0; height: 0; border-left: 8px solid currentColor; border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
 .quiet { background: transparent; color: var(--ink); font-weight: 500; box-shadow: inset 0 0 0 1px rgba(243, 233, 214, .28); }
 button.quiet:hover { background: rgba(243, 233, 214, .05); box-shadow: inset 0 0 0 1px var(--ink); }
 :focus-visible, .link:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }

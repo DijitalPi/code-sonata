@@ -1,6 +1,6 @@
 import { receiveFrame, ownSeat, ownPulseAt, motionPaused, isPersonal, stopPersonalAudio, togglePersonalAudio, metric, newAudioContext, layerName, setDemoPlaying } from './experience.js';
 import { eventKey } from './moment.js';
-import { startDemo } from './demo.js';
+import { startDemo, demoFirst } from './demo.js';
 import { createAmfi, demoHolders } from './amfi.js';
 import { setupBuying, listHolders } from './buy.js';
 import { t, getLang } from './i18n.js';
@@ -191,6 +191,7 @@ function applyFrame(frame) {
   if (frame.players !== undefined) {
     info = frame;
     $("demo-offer").hidden = Boolean(frame.demo) || !frame.house;
+    showListen();
     $("connection").textContent = frame.demo ? "Demo konseri · simüle edilmiş makineler" : frame.simulated || frame.simulatedListeners ? `Test salonu · ${frame.simulated} simülasyon makinesi / ${frame.simulatedListeners || 0} test dinleyicisi / ${frame.players - frame.simulated} gerçek makine` : HALL;
     $("claudes").textContent = frame.claudes.toLocaleString();
     $("players").textContent = frame.players.toLocaleString();
@@ -365,33 +366,42 @@ function schedule([at, pitch, velocity, duration, voice]) {
   audio.standIn?.start({ note: pitch, velocity, time, duration });   // until its samples arrive
 }
 
-for (const button of document.querySelectorAll("[data-team]")) {
-  button.addEventListener("click", async () => {
-    leaveDemo();
-    stopPersonalAudio();
-    if (isPersonal()) { $("mode").value = "common"; $("mode-status").textContent = ""; }
-    team = button.dataset.team;
-    try { localStorage.setItem("team", team); } catch {}
-    connect();                            // take a seat in the chosen stand
-    document.querySelectorAll("[data-team]").forEach((b) => { b.disabled = true; });
-    $("simple-sound").disabled = true; $("demo").disabled = true; $("mode").disabled = true; $("sound").disabled = true;
-    $("loading").textContent = "Ses yükleniyor…";
-    try {
-      await startAudio();
-      wanted = true;
-      const running = audio?.ctx.state === "running";
-      $("loading").textContent = running ? playingText() : "Tarayıcı sesi henüz açmadı. Başlatmak için Sesi başlat'a bas.";
-      $("sound").disabled = false; $("sound").textContent = running ? "Sesi durdur" : "Sesi başlat";
-      document.querySelectorAll("[data-team]").forEach(b => { b.disabled = false; b.textContent = "Orkestrayı dinle"; });
-      metric("listen");
-    } catch (error) {
-      document.querySelectorAll("[data-team]").forEach((b) => { b.disabled = false; });
-      if (audio) { await audio.ctx.close(); audio = null; }
-      $("loading").textContent = "Ses başlatılamadı. Tarayıcının ses iznini kontrol edip yeniden dene veya sade tınıyla dinle.";
-    } finally {
-      $("simple-sound").disabled = false; $("demo").disabled = false; $("mode").disabled = false;
-    }
-  });
+// One listen button: the demo concert while no agent works (demoFirst), the live hall otherwise; a small link
+// under it keeps the live hall, with its house pianist, one tap away.
+function showListen() {
+  const demo = demoFirst(info);
+  $("listen").textContent = demo ? "Demo konserini dinle" : "Orkestrayı dinle";
+  $("listen-live").hidden = !demo;
+}
+showListen();
+$("listen").onclick = () => (demoFirst(info) ? enterDemo() : listenLive());
+$("listen-live").onclick = listenLive;
+async function listenLive() {
+  leaveDemo();
+  stopPersonalAudio();
+  if (isPersonal()) { $("mode").value = "common"; $("mode-status").textContent = ""; }
+  team = "listen";
+  try { localStorage.setItem("team", team); } catch {}
+  connect();                            // take a seat in the chosen stand
+  document.querySelectorAll("[data-team]").forEach((b) => { b.disabled = true; });
+  $("simple-sound").disabled = true; $("demo").disabled = true; $("mode").disabled = true; $("sound").disabled = true;
+  $("loading").textContent = "Ses yükleniyor…";
+  try {
+    await startAudio();
+    wanted = true;
+    const running = audio?.ctx.state === "running";
+    $("loading").textContent = running ? playingText() : "Tarayıcı sesi henüz açmadı. Başlatmak için Sesi başlat'a bas.";
+    $("sound").disabled = false; $("sound").textContent = running ? "Sesi durdur" : "Sesi başlat";
+    document.querySelectorAll("[data-team]").forEach((b) => { b.disabled = false; });
+    metric("listen");
+  } catch (error) {
+    document.querySelectorAll("[data-team]").forEach((b) => { b.disabled = false; });
+    if (audio) { await audio.ctx.close(); audio = null; }
+    $("simple-sound").hidden = false;
+    $("loading").textContent = "Ses başlatılamadı. Tarayıcının ses iznini kontrol edip yeniden dene veya sade tınıyla dinle.";
+  } finally {
+    $("simple-sound").disabled = false; $("demo").disabled = false; $("mode").disabled = false;
+  }
 }
 
 // ---------- hall ----------
@@ -782,7 +792,6 @@ function leaveDemo() {
   resetHall(); connect(); amfi.setHolders(liveHolders); amfi.setReserved(liveReserved);
   $("loading").textContent = "Canlı salona dönüldü.";
 }
-$("demo-concert").onclick = enterDemo;
 $("demo-offer").onclick = enterDemo;
 $("demo-exit").onclick = leaveDemo;
 

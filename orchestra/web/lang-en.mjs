@@ -11,7 +11,7 @@ export const EN = {
   'Proje ve iletişim': 'Project and contact', 'Gizlilik': 'Privacy', 'Yapabileceklerin': 'What you can do',
   'Seçtiğin iş': 'Your task', 'Paneli kapat': 'Close the panel', 'Dil': 'Language',
   // over the hall
-  'Orkestrayı dinle': 'Listen to the orchestra', 'Demo konseri': 'Demo concert', 'Sade tınıyla dinle': 'Listen in plain tone',
+  'Orkestrayı dinle': 'Listen to the orchestra', 'Demo konserini dinle': 'Listen to the demo concert', 'Canlı salonu dinle': 'Listen to the live hall', 'Demo konseri': 'Demo concert', 'Sade tınıyla dinle': 'Listen in plain tone',
   'Canlı orkestra salonu': 'Live orchestra hall', 'İlk adım bekleniyor.': 'Waiting for the first step.',
   'Dolu salonu demo konserinde dinle': 'Hear a full hall in the demo concert',
   '· 24 simüle makine, gerçek katılımcı değil': '· 24 simulated machines, not real people', 'Canlı salona dön': 'Back to the live hall',
@@ -86,7 +86,7 @@ export const EN = {
   'Yerel örnek · gerçek katılımcı veya çalışma anı değildir.': 'Local example · not a real participant or work moment.',
   'Yeni faaliyetler yalnız kendi motifinde duyulur.': 'New activity is heard only in your own motif.',
   'Önce ajanını bağla. Yeni faaliyet geldiğinde kendi sesin çalar.': 'Connect your agent first. Your own sound plays when new activity arrives.',
-  'Ortak ses için Orkestrayı dinle düğmesine bas.': 'Press Listen to the orchestra for the shared sound.',
+  'Ortak ses için önce dinlemeyi başlat.': 'Start listening first for the shared sound.',
   // your moment
   'Çalışma anını indir': 'Download your work moment',
   'Son adımlarından 12 saniyelik bir ses, paylaşım görseli ve desteklenen tarayıcıda video oluşur. Dosyalar bu tarayıcıda hazırlanır, sunucuya yüklenmez.': 'Your latest steps become 12 seconds of sound, a share image and, in supported browsers, a video. The files are made in this browser and never uploaded.',

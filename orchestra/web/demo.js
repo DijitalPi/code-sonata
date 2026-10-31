@@ -15,6 +15,9 @@ const PLAN = [
   [6, 'IN', 'codex'], [6, 'IN', 'claude'], [7, 'TR', 'claude'], [7, 'TR', 'codex'],
 ];
 export const DEMO_MACHINES = PLAN.length;
+// The page's one listen button: while no agent works the live hall has only the house pianist, so the
+// button plays this demo instead (a small link keeps the live hall). In the demo it leads back to the live hall.
+export const demoFirst = (frame) => !frame.demo && !frame.working;
 const SECTION_COUNT = 9, HALF_LIFE = 5 * 60_000;
 
 export function startDemo({ onFrame, tickMs = 25, frameMs = 250 }) {
