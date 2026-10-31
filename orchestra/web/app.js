@@ -3,6 +3,7 @@ import { eventKey } from './moment.js';
 import { startDemo } from './demo.js';
 import { createAmfi, demoHolders } from './amfi.js';
 import { setupBuying, listHolders } from './buy.js';
+import { t, getLang } from './i18n.js';
 import { PLAN, tierOf } from './seats.mjs';
 import { SECTIONS, SOUNDFONT, loadInstrument, voiceOfSection, hall, masterChain, drumKit } from './instruments.js';
 // Agent Orchestra listener: draws the hall and plays the conductor's notes in sync.
@@ -16,7 +17,7 @@ const wide = matchMedia("(min-width: 960px)");
 let seats = SECTIONS.map(() => []);      // section -> [[sessions, country] or 0]
 let you = null;                          // {cc, team}
 let leader = null, soloAt = 0, ranks = [];
-const countryName = (() => { try { const d = new Intl.DisplayNames(["tr"], { type: "region" }); return (cc) => d.of(cc) || cc; } catch { return (cc) => cc; } })();
+const countryName = (() => { const names = {}; return (cc) => { try { names[getLang()] ||= new Intl.DisplayNames([getLang()], { type: "region" }); return names[getLang()].of(cc) || cc; } catch { return cc; } }; })();
 const flag = (cc) => (cc && cc.length === 2 ? String.fromCodePoint(...[...cc].map((c) => 0x1f1a5 + c.charCodeAt(0))) : "");
 const glow = new Map();                  // "s:i" -> 0..1
 let info = { bpm: 64, intensity: 0, climax: false, song: "", working: 0 };
@@ -73,7 +74,7 @@ function showLeague(lg) {
   const mine = $("mine");
   if (you && you.cc) {
     const rank = ranks.indexOf(you.cc);
-    mine.textContent = `Ülken: ${flag(you.cc)} ${rank >= 0 ? `#${rank + 1}` : "henüz notası yok"}`;
+    mine.textContent = `Ülken: ${flag(you.cc)} ${rank >= 0 ? "#" + (rank + 1) : "henüz notası yok"}`;
   } else mine.textContent = "";
 }
 
@@ -100,18 +101,18 @@ function showNow(frame) {
   now.replaceChildren();
   if (!frame.working) {
     // Empty hall: the house pianist plays; say so plainly, with when an agent last played.
-    const parts = [frame.house ? "Salon sakin. Salon piyanisti çalıyor; gerçek ajan faaliyeti bekleniyor." : "İlk ajan faaliyeti bekleniyor."];
-    if (frame.lastActive) parts.push(`Son faaliyet ${ago(frame.lastActive)}.`);
-    if (frame.peak) parts.push(`Bugünün zirvesi: ${frame.peak.toLocaleString()} makine.`);
+    const parts = [t(frame.house ? "Salon sakin. Salon piyanisti çalıyor; gerçek ajan faaliyeti bekleniyor." : "İlk ajan faaliyeti bekleniyor.")];
+    if (frame.lastActive) parts.push(t(`Son faaliyet ${ago(frame.lastActive)}.`));
+    if (frame.peak) parts.push(t(`Bugünün zirvesi: ${frame.peak.toLocaleString()} makine.`));
     now.textContent = parts.join(" ");
     return;
   }
   const song = document.createElement("strong");
   song.textContent = frame.song;
-  now.append(frame.demo ? "Demo konseri · " : "Şimdi ", song, ` · ${frame.bpm} BPM`);
+  now.append(frame.demo ? `${t("Demo konseri")} · ` : `${t("Şimdi")} `, song, ` · ${frame.bpm} BPM`);
   if (frame.climax) {
     const climax = document.createElement("strong");
-    climax.textContent = "doruk";
+    climax.textContent = t("doruk");
     now.append(" · ", climax);
   }
   const heat = document.createElement("span"), bar = document.createElement("i");
@@ -121,7 +122,7 @@ function showNow(frame) {
   now.append(heat);
 }
 
-const TEAM_NAMES = { claude: "Claude Code", codex: "Codex", other: "Diğer", listen: "Dinleyiciler" };
+const TEAM_NAMES = { claude: "Claude Code", codex: "Codex", other: "Diğer ajanlar", listen: "Dinleyiciler" };
 const TOOL_NAMES = { claude: "Claude Code", codex: "Codex", other: "other tools" };
 let team = "listen";
 try { team = localStorage.getItem("team") || "listen"; } catch {}
@@ -557,10 +558,10 @@ function drawHall(now, dt) {
     if (name === "accordion") continue;        // piano and accordion share one label
     // On a small stage the three names around the podium cannot fit apart: name only the outer rows.
     if (R < 260 && reg.band[0] < .5) continue;
-    const a = rad(name === "piano" ? 0 : (reg.arc[0] + reg.arc[1]) / 2), r = reg.band[0] * R - 7;
+    const a = rad(name === "piano" ? 0 : (reg.arc[0] + reg.arc[1]) / 2), r = reg.band[0] * R - 7, label = t(reg.label);
     g.fillStyle = (seats[SECTIONS.indexOf(name)] || []).some(Boolean) ? "rgba(230, 180, 90, .3)" : "rgba(230, 180, 90, .62)";
-    if (name === "piano") { g.fillText("solistler", cx, cy - reg.band[1] * R - 9); continue; }
-    g.fillText(reg.label, cx + Math.sin(a) * r, cy - Math.cos(a) * r);
+    if (name === "piano") { g.fillText(t("solistler"), cx, cy - reg.band[1] * R - 9); continue; }
+    g.fillText(label, cx + Math.sin(a) * r, cy - Math.cos(a) * r);
   }
   // Musicians.
   const soloGlow = motionPaused ? 0 : Math.max(0, 1 - (Date.now() + offset - soloAt) / 500);
@@ -602,7 +603,7 @@ function drawHall(now, dt) {
       g.globalAlpha = 1;
       if (ownSeat && ownSeat[0] === s && ownSeat[1] === i) {
         g.strokeStyle = "#f4ead8"; g.lineWidth = 2; g.beginPath(); g.arc(x, y, size * 1.7, 0, Math.PI * 2); g.stroke();
-        g.fillStyle = "#f4ead8"; g.font = "bold 12px system-ui"; g.textAlign = "center"; g.fillText("SEN", x, y - size * 2 - 6);
+        g.fillStyle = "#f4ead8"; g.font = "bold 12px system-ui"; g.textAlign = "center"; g.fillText(t("SEN"), x, y - size * 2 - 6);
       }
     });
   }
@@ -650,12 +651,12 @@ function drawTeams(G, now) {
     }
     const labelY = top + AUDIENCE_ROWS * step + 9;
     g.font = "600 10px 'Instrument Sans', system-ui, sans-serif"; g.fillStyle = "rgba(243, 233, 214, .9)";
-    g.fillText(TEAM_NAMES[team].toLocaleUpperCase("tr"), mx, labelY);
+    g.fillText(t(TEAM_NAMES[team]).toLocaleUpperCase(getLang()), mx, labelY);
     g.font = "400 12.5px 'Instrument Sans', system-ui, sans-serif"; g.fillStyle = "rgba(179, 165, 143, .95)";
-    g.fillText(`${count.toLocaleString("tr")} ${team === "listen" ? "dinleyen" : "ajan"}`, mx, labelY + 15);
+    g.fillText(t(`${count.toLocaleString(getLang())} ${team === "listen" ? "dinleyen" : "ajan"}`), mx, labelY + 15);
     if (you && you.team === team) {
       g.fillStyle = "#e6b45a"; g.font = "600 12px 'Instrument Sans', system-ui, sans-serif";
-      g.fillText("sen buradasın", mx, top - 13);
+      g.fillText(t("sen buradasın"), mx, top - 13);
     }
   });
   g.textBaseline = "alphabetic";

@@ -3,9 +3,10 @@
 // Nothing here talks to the server: payment, upload and approval come in the second part.
 import { PLAN, TIERS, SEAT_LIMITS, tierOf, blockPrice, blockArc, taken, canPlace } from './seats.mjs';
 import { createAmfi } from './amfi.js';
+import { num } from './i18n.js';
 
 const $ = (id) => document.getElementById(id);
-const money = (n) => `${n.toLocaleString('tr')} $`;
+const money = (n) => `${num(n)} $`;
 // A small element builder; `role` is set as an attribute (not every browser reflects it as a property).
 const el = (tag, { role, ...props } = {}, ...children) => {
   const e = Object.assign(document.createElement(tag), props);
@@ -33,7 +34,7 @@ export function setupBuying({ canvas, geometry, amfi }) {
       input.onchange = () => { tier = t; clampSize(); price(); };
       const text = el('span', {},
         el('b', { textContent: `${tr.label} · koltuğu ${money(tr.price)}` }),
-        el('small', { textContent: `${freeIn(t).toLocaleString('tr')} boş koltuk · ${tr.rings[1] - tr.rings[0] + 1} sıra` }));
+        el('small', { textContent: `${num(freeIn(t))} boş koltuk · ${tr.rings[1] - tr.rings[0] + 1} sıra` }));
       box.append(el('label', { className: 'tier' }, input, text));
     });
   }
@@ -179,7 +180,7 @@ export function listHolders(holders) {
   const list = $('holders'); list.replaceChildren();
   const seatsSold = holders.reduce((n, h) => n + h.width * h.depth, 0);
   $('holders-lead').textContent = holders.length
-    ? `${holders.length.toLocaleString('tr')} sahip, ${seatsSold.toLocaleString('tr')} koltuk. ${PLAN.count.toLocaleString('tr')} koltuğun ${(PLAN.count - seatsSold).toLocaleString('tr')} tanesi boş.`
+    ? `${num(holders.length)} sahip, ${num(seatsSold)} koltuk. ${num(PLAN.count)} koltuğun ${num(PLAN.count - seatsSold)} tanesi boş.`
     : 'Henüz satılmış koltuk yok.';
   for (const h of [...holders].sort((a, b) => a.ring - b.ring || b.width * b.depth - a.width * a.depth)) {
     const a = el('a', { href: h.link, target: '_blank', rel: 'sponsored noopener noreferrer', textContent: h.name });

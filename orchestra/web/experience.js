@@ -1,5 +1,6 @@
 import { KINDS, personalNotes, liveNotes, deltaActivity, wavBytes, wavFromChannels, publicInvite, eventKey, momentLayout, captureCommon } from './moment.js';
 import { renderWithSamples } from './instruments.js';
+import { t, num } from './i18n.js';
 const EVENT = eventKey(location.search);
 const $ = id => document.getElementById(id);
 const labels = { edit: 'düzenleme', bash: 'komut', read: 'okuma', think: 'düşünme', done: 'bitiş' };
@@ -175,7 +176,7 @@ async function poll() {
     me = data; ownSeat = data.connected ? [data.section, data.seat] : null; ownPulseAt = data.lastActivity;
     $('personal').hidden = !data.connected;
     $('personal-status').textContent = data.waiting ? 'Okuyucunun bağlanması bekleniyor. Komutu Terminal’de çalıştır.' : !data.connected ? 'Bağlantı kesildi. Okuyucu ve sunucuyu kontrol et; yeniden bağlanınca güncellenir.' : data.steps ? 'Bağlı · kendi faaliyetlerin alınıyor.' : 'Bağlı · ilk yeni faaliyetini bekliyor. Claude/Codex ile çalışmaya başla.';
-    $('my-steps').textContent = data.steps.toLocaleString('tr');
+    $('my-steps').textContent = num(data.steps);
     $('seat-label').textContent = data.connected ? `Senin koltuğun: ${SECTION_NAMES[data.section]} · ${data.seat + 1}. koltuk · ${data.sessions} oturum. Salondaki katmanın: ${LAYERS[data.section]}.` : '';
     $('activity-label').textContent = KINDS.map(k => `${data.activity[k]} ${labels[k]}`).join(' · ');
     if (isPersonal() && personalEnabled && data.connected && Object.values(difference).some(Boolean)) await playSynth(liveNotes(difference));
@@ -195,7 +196,7 @@ async function drawMoment(title, notes, { personal, showCount, total, label }) {
   light.addColorStop(0, '#2b1f10'); light.addColorStop(1, '#0b0907');
   c.fillStyle = light; c.fillRect(0, 0, W, H);
   c.fillStyle = '#e6b45a'; c.font = '600 16px "Instrument Sans", system-ui, sans-serif'; c.letterSpacing = '3px';
-  c.fillText(`${personal ? 'KENDİ ÇALIŞMA ANIM' : label === 'DEMO' ? 'DEMO KONSERİNDEN BİR AN' : 'ORTAK ORKESTRADAN BİR AN'}  ·  AGENT ORCHESTRA`, 64, 84);
+  c.fillText(`${t(personal ? 'KENDİ ÇALIŞMA ANIM' : label === 'DEMO' ? 'DEMO KONSERİNDEN BİR AN' : 'ORTAK ORKESTRADAN BİR AN')}  ·  AGENT ORCHESTRA`, 64, 84);
   c.letterSpacing = '0px';
   c.fillStyle = '#f3e9d6'; c.font = '300 66px Fraunces, Georgia, serif';
   const lines = []; let line = '';
@@ -212,9 +213,9 @@ async function drawMoment(title, notes, { personal, showCount, total, label }) {
   }
   c.globalAlpha = 1;
   c.fillStyle = '#b3a58f'; c.font = '400 20px "Instrument Sans", system-ui, sans-serif';
-  c.fillText(personal ? (showCount ? `${total} gerçek adım · adım sayılarından üretilen müzik` : 'Gerçek adımlardan üretilen müzik') : label === 'DEMO' ? 'Demo konserinden 12 saniye · makineler simüle edilmiştir' : label === 'TEST' ? 'Test salonundan 12 saniye · simülasyon içerir' : 'Ortak orkestranın 12 saniyesi · anonim', 64, 534);
+  c.fillText(t(personal ? (showCount ? `${total} gerçek adım · adım sayılarından üretilen müzik` : 'Gerçek adımlardan üretilen müzik') : label === 'DEMO' ? 'Demo konserinden 12 saniye · makineler simüle edilmiştir' : label === 'TEST' ? 'Test salonundan 12 saniye · simülasyon içerir' : 'Ortak orkestranın 12 saniyesi · anonim'), 64, 534);
   c.fillStyle = '#f3e9d6'; c.font = '400 24px Fraunces, Georgia, serif'; c.fillText('Agent Orchestra', 64, 588);
-  c.textAlign = 'right'; c.fillStyle = '#b3a58f'; c.font = '400 17px "Instrument Sans", system-ui, sans-serif'; c.fillText('DijitalPi tarafından geliştirildi', 1136, 588); c.textAlign = 'left';
+  c.textAlign = 'right'; c.fillStyle = '#b3a58f'; c.font = '400 17px "Instrument Sans", system-ui, sans-serif'; c.fillText(t('DijitalPi tarafından geliştirildi'), 1136, 588); c.textAlign = 'left';
 }
 function revokeMoment() {
   revision++; if (recordingCleanup) recordingCleanup(true);

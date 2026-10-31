@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { TITLES } from "./web/music.mjs";
 import { createConductor } from "./web/conductor.mjs";
 import { cleanSeats } from "./web/seats.mjs";
+import { EN } from "./web/lang-en.mjs";
 import { loadGeo, country } from "./geo.mjs";
 
 const PORT = Number(process.env.PORT || 4480);
@@ -657,9 +658,14 @@ const server = http.createServer({ connectionsCheckingInterval: 1000, requestTim
     const pinned = /^[/\\](vendor|sounds)[/\\]/.test(path);
     const fresh = [".html", ".js", ".mjs", ".json", ".css"].includes(extname(path));
     res.writeHead(200, { "content-type": TYPES[extname(path)] || "application/octet-stream", "cache-control": pinned ? "public, max-age=31536000, immutable" : fresh ? "no-cache" : "public, max-age=3600" });
-    const output = extname(path) === ".html" && PUBLIC_URL ? file.toString()
+    let output = extname(path) === ".html" && PUBLIC_URL ? file.toString()
       .replaceAll('content="/og.png"', `content="${PUBLIC_URL}/og.png"`)
       .replace("</head>", `<meta property="og:url" content="${PUBLIC_URL}/"><link rel="canonical" href="${PUBLIC_URL}/"></head>`) : file;
+    // An English link (?lang=en) gets an English title and preview, so a shared link reads right before any script runs.
+    if (extname(path) === ".html" && url.searchParams.get("lang") === "en") {
+      output = output.toString().replace('<html lang="tr">', '<html lang="en">')
+        .replace(/(<title>|content=")([^<"]+)(<\/title>|")/g, (all, open, text, close) => EN[text] ? open + EN[text] + close : all);
+    }
     res.end(output);
   } catch {
     res.writeHead(404); res.end("not found");
