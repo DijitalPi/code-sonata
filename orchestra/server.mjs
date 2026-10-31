@@ -5,7 +5,7 @@
 //   PORT=4480 node orchestra/server.mjs
 import http from "node:http";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { constants, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -638,7 +638,8 @@ const server = http.createServer({ connectionsCheckingInterval: 1000, requestTim
     const name = url.pathname.slice("/seat-images/".length);
     try {
       if (!SEATS_DIR || !/^[a-z0-9-]{1,40}\.(webp|png|jpe?g)$/.test(name)) throw new Error("no such image");
-      const file = await readFile(join(SEATS_DIR, name));
+      // O_NOFOLLOW: a link placed in SEATS_DIR is not followed out of it.
+      const file = await readFile(join(SEATS_DIR, name), { flag: constants.O_RDONLY | constants.O_NOFOLLOW });
       res.writeHead(200, { "content-type": TYPES[extname(name)], "cache-control": "public, max-age=86400" });
       return res.end(file);
     } catch { res.writeHead(404); return res.end("not found"); }

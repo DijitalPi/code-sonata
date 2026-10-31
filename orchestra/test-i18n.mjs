@@ -50,3 +50,47 @@ test('English keeps every placeholder of its Turkish key and adds none', () => {
 test('the English text keeps the plain-language rules: no long dash in what readers see', () => {
   for (const value of Object.values(EN)) assert.ok(!/[—–]/.test(value), value);
 });
+
+test('the Turkish text keeps it too: no long dash in what the page or its code writes', async () => {
+  const found = [];
+  const html = (await web('index.html')).replace(/<!--[\s\S]*?-->/g, '');
+  if (/[—–]/.test(html)) found.push('index.html');
+  for (const name of ['app.js', 'experience.js', 'buy.js', 'amfi.js', 'video.js', 'views.js', 'i18n.js']) {
+    const source = (await web(name)).replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const m of source.matchAll(/'((?:[^'\\\n]|\\.)*)'|"((?:[^"\\\n]|\\.)*)"|`((?:[^`\\]|\\.)*)`/g)) {
+      if (/[—–]/.test(m[0])) found.push(`${name}: ${m[0]}`);
+    }
+  }
+  assert.deepEqual(found, []);
+});
+
+// ---------- the page switching language ----------
+const page = async () => {
+  const { install, add } = await import('./fake-dom.mjs');
+  const doc = install({ language: 'tr-TR' });
+  const html = await web('index.html');
+  add(doc.head, 'title', {}, html.match(/<title>([^<]+)<\/title>/)[1]);
+  for (const m of html.matchAll(/<meta (name|property)="((?:og|twitter):(?:title|description)|description)" content="([^"]+)">/g)) add(doc.head, 'meta', { [m[1]]: m[2], content: m[3] });
+  add(doc.body, 'p', {}, 'Koltuk al');
+  return { doc, i18n: await import('./web/i18n.js') };
+};
+const loaded = page();
+
+test('switching language changes the title and every description a share preview shows', async () => {
+  const { doc, i18n } = await loaded;
+  const metas = () => doc.querySelectorAll('meta').map((m) => m.getAttribute('content'));
+  const turkish = [doc.title, ...metas()];
+  assert.equal(turkish.length, 6);
+  i18n.setLang('en');
+  assert.deepEqual([doc.title, ...metas()], turkish.map((text) => EN[text]));
+  i18n.setLang('tr');
+  assert.deepEqual([doc.title, ...metas()], turkish);
+});
+
+test("someone's own title inside a sentence is shown as they wrote it", async () => {
+  const { i18n } = await loaded;
+  i18n.setLang('en');
+  assert.equal(i18n.t('Görünür bilgi: “Zafer”, anonim ortak an, DijitalPi imzası. Özel kimlik, anahtar, kod veya prompt yok.'),
+    'Visible: “Zafer”, an anonymous shared moment, DijitalPi signature. No private id, key, code or prompt.');
+  i18n.setLang('tr');
+});

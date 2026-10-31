@@ -144,6 +144,16 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(classify(gemini(thoughts=False, text="All done."), state), ["text", "done"])
         self.assertEqual(classify({"$set": {"lastUpdated": "t"}}, state), [])
 
+    def test_odd_shapes_inside_a_line_are_ignored_not_raised(self):
+        state = Classifier()
+        odd = gemini({"id": "x", "name": "read_file", "result": [{"functionResponse": "unexpected"}]},
+                     {"id": "y", "name": "run_shell_command", "result": [{"functionResponse": {"response": "no"}}]},
+                     {"id": ["list"], "name": "glob", "args": ["x"], "result": "text"})
+        self.assertEqual(classify(odd, state), ["think", "text", "read", "bash", "read"])
+        self.assertEqual(classify(tool("Bash", {"a": 1}, "pytest"), state), ["bash"])
+        self.assertEqual(classify(result(["b1"], "1 failed"), state), ["busy"])
+        self.assertEqual(classify({"type": "response_item", "payload": {"type": "function_call_output", "call_id": {}, "output": "x"}}, state), ["busy"])
+
 
 class WatcherTests(unittest.TestCase):
     def setUp(self):
@@ -247,6 +257,20 @@ class WatcherTests(unittest.TestCase):
         for path, kind in events:
             activity.see(path, kind, 2.0)
         self.assertEqual(activity.tools(), {"gemini": 1})
+
+    def test_a_line_the_parser_chokes_on_is_skipped_and_the_rest_still_heard(self):
+        watcher = AgentWatcher([self.root], rescan=0)
+        watcher.poll(0)
+        self.append(self.log, {"type": "boom"}, claude({"type": "tool_use", "name": "Edit"}))
+        real = Classifier.__call__
+
+        def choke(parser, entry):
+            if entry.get("type") == "boom":
+                raise ValueError("unexpected shape")
+            return real(parser, entry)
+
+        with patch.object(Classifier, "__call__", choke):
+            self.assertEqual(self.kinds(watcher.poll(1)), ["edit"])
 
     def test_results_are_judged_per_session(self):
         watcher = AgentWatcher([self.root], rescan=0)

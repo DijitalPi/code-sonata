@@ -161,7 +161,8 @@ def gemini_result(call):
         return shown[:20000]
     parts = []
     for part in call.get("result") if isinstance(call.get("result"), list) else []:
-        response = ((part or {}).get("functionResponse") or {}).get("response") if isinstance(part, dict) else None
+        reply = part.get("functionResponse") if isinstance(part, dict) else None
+        response = reply.get("response") if isinstance(reply, dict) else None
         if isinstance(response, dict):
             parts += [str(response.get(key)) for key in ("output", "error") if response.get(key)]
     return "\n".join(parts)[:20000]
@@ -179,7 +180,7 @@ class Classifier:
         self.calls = {}
 
     def remember(self, call_id, kind, source=""):
-        if call_id:
+        if call_id and isinstance(call_id, (str, int)):
             command = kind == "bash"
             self.calls[call_id] = (kind, command and bool(SHIP.search(source)), command and runs_tests(source))
             if len(self.calls) > 256:
@@ -187,7 +188,7 @@ class Classifier:
 
     def judge(self, call_id, text, error):
         # A result whose call this reader never saw (it came before the reader started) means nothing.
-        if call_id not in self.calls:
+        if not isinstance(call_id, (str, int)) or call_id not in self.calls:
             return []
         kind, ship, tests = self.calls.pop(call_id)
         if kind != "bash":
@@ -395,9 +396,9 @@ class AgentWatcher:
                     continue
                 try:
                     entry = json.loads(raw)
-                except ValueError:
+                    events.extend((path, kind) for kind in parser(entry))
+                except Exception:  # one line in a shape nobody expected costs that step, not the reader
                     continue
-                events.extend((path, kind) for kind in parser(entry))
         return events
 
 

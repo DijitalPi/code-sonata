@@ -142,7 +142,7 @@ function connect() {
   source.onerror = () => {
     if (stream !== source) return;
     $("connection").textContent = "Bağlantı kesildi · yeniden bağlanıyor…";
-    for (const id of ["claudes", "players", "listeners", "countries"]) $(id).textContent = "—";
+    for (const id of ["claudes", "players", "listeners", "countries"]) $(id).textContent = "-";
     $("now").textContent = "Canlı bilgi alınamıyor. Bağlantı geldiğinde salon güncellenecek.";
     lastNow = ""; offsets.length = 0;
     seats = SECTIONS.map(() => []); teams = { agents: {}, fans: {} }; glow.clear(); version++;

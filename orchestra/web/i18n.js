@@ -38,7 +38,8 @@ function translate(text, depth = 0) {
   if (exact.has(core)) return lead + exact.get(core) + tail;
   for (const { re, value } of patterns) {
     const m = core.match(re);
-    if (m) return lead + value.replace(/\{(\w+)\}/g, (_, name) => translate(m.groups[name] ?? '', depth + 1)) + tail;
+    // {own} holds someone's own words (a typed title): kept as written, never looked up.
+    if (m) return lead + value.replace(/\{(\w+)\}/g, (_, name) => name === 'own' ? m.groups[name] : translate(m.groups[name] ?? '', depth + 1)) + tail;
   }
   return text;
 }
@@ -84,13 +85,14 @@ function walk(root) {
 }
 
 // The server may have sent the head in English already (?lang=en): keep its Turkish original either way.
+// The share preview's texts (og:, twitter:) follow the language with the title and the description.
 const turkish = (text) => Object.keys(EN).find((key) => EN[key] === text) ?? text;
-const head = { title: turkish(document.title), description: turkish(document.querySelector('meta[name="description"]')?.content) };
+const SHARED = 'meta[name="description"], meta[property="og:title"], meta[property="og:description"], meta[name="twitter:title"], meta[name="twitter:description"]';
+const head = { title: turkish(document.title), metas: [...document.querySelectorAll(SHARED)].map((meta) => [meta, turkish(meta.content)]) };
 function apply() {
   document.documentElement.lang = lang;
   document.title = translate(head.title);
-  const description = document.querySelector('meta[name="description"]');
-  if (description && head.description) description.content = translate(head.description);
+  for (const [meta, text] of head.metas) if (text) meta.content = translate(text);
   // The moment's title starts as a suggestion; follow the language until the listener types their own.
   const input = document.getElementById('moment-title-input');
   if (input && [EN['Bugünkü çalışmanın sesi'], 'Bugünkü çalışmanın sesi'].includes(input.value)) input.value = translate('Bugünkü çalışmanın sesi');

@@ -166,10 +166,11 @@ export function setupBuying({ canvas, geometry, amfi }) {
     $('seat-pay-status').textContent = problem || 'Ödeme henüz açık değil. Satış başladığında bu adımda ödeme sayfası açılacak. Seçtiğin yer ayrılmadı, hiçbir bilgi gönderilmedi.';
   };
 
-  // Opening the view shows fresh counts; closing the panel drops the chosen place from the hall.
+  // Any view change ends a placing. Opening the view shows fresh counts; closing the panel drops the chosen place.
   addEventListener('view', (event) => {
+    if (placing) stopPlacing();
     if (event.detail === 'seats') { drawTiers(); clampSize(); price(); }
-    else if (!placing) { chosen = null; amfi.setGhost(null); }
+    else { chosen = null; amfi.setGhost(null); }
   });
   addEventListener('holders', () => { if (!$('panel').hidden) drawTiers(); });
   clampSize(); price();
