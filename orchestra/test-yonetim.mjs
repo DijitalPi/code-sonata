@@ -119,6 +119,21 @@ test('the seats list filters by state, and a live seat comes down with or withou
   assert.deepEqual([calls[0].url, calls[0].body], ['/api/yonetim/orders/o-c/remove', { refund: true, reason: '' }]);
 });
 
+test('a live seat whose refund answer was lost says so, and is finished with Kaldır, refund ticked', async () => {
+  await go('#koltuklar');
+  STATE.orders[2].refunding = true;
+  try {
+    button('Yenile').onclick(); await settle();
+    assert.match(text(), /GammaYayında, iadesi yarım kaldı/);
+    button('Kaldır').onclick(); await settle();
+    const box = root.querySelector('input[type="checkbox"]');
+    assert.deepEqual([box.checked, box.disabled], [true, true], 'the server refunds it anyway');
+    refuse = 502; refusal = 'unknown';
+    await buttons('Kaldır').at(-1).onclick(); await settle();
+    assert.match(text(), /iade yapılmış olabilir\. Kaldır ile yeniden dene/);
+  } finally { refuse = null; refusal = 'x'; STATE.orders[2].refunding = false; }
+});
+
 test('a session that runs out goes back to the key', async () => {
   signedIn = false;
   await go('#genel');

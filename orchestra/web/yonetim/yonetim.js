@@ -75,7 +75,9 @@ async function act(order, action, body, done) {
   if (res?.status === 401) return showLogin();
   const why = res?.status === 409 ? (await res.json().catch(() => ({}))).error : null;
   const lost = res?.status === 502 && (await res.clone().json().catch(() => ({}))).error === 'unknown';
-  say(res?.ok ? done : lost ? 'Stripe\'tan yanıt alınamadı; iade yapılmış olabilir. Reddet ile yeniden dene, aynı iade tamamlanır.'
+  // A refund whose answer was lost is finished by the same step: Reddet for a waiting order, Kaldır for a live one.
+  const again = action === 'remove' ? 'Kaldır' : 'Reddet';
+  say(res?.ok ? done : lost ? `Stripe'tan yanıt alınamadı; iade yapılmış olabilir. ${again} ile yeniden dene, aynı iade tamamlanır.`
     : res?.status === 502 ? 'Stripe iadeyi kabul etmedi. Biraz sonra yeniden dene.'
     : why === 'image' ? 'Logosu bulunamadı, onaylanamaz. Reddedip iade edebilirsin.'
     : why === 'taken' ? 'Bu yere sonradan elle koltuk eklenmiş. Önce onu kaldır ya da siparişi reddedip iade et.'
@@ -155,13 +157,16 @@ function seats() {
   const rows = data.orders.filter(pass).sort((a, b) => b.created - a.created).map((o) => {
     const action = el('td', {});
     if (o.state === 'live') {
-      const refund = el('input', { type: 'checkbox' }), why = el('input', { type: 'text', placeholder: 'Gerekçe', maxLength: 300 });
+      // A refund already started is owed: the server makes it whatever the box says, so the box says so too.
+      const refund = el('input', { type: 'checkbox', checked: Boolean(o.refunding), disabled: Boolean(o.refunding) });
+      const why = el('input', { type: 'text', placeholder: 'Gerekçe', maxLength: 300 });
       const ask = el('div', { className: 'ask', hidden: true }, el('label', { className: 'check' }, refund, 'Ücreti iade et'), why,
         el('div', { className: 'row' }, el('button', { type: 'button', className: 'danger', onclick: () => act(o, 'remove', { refund: refund.checked, reason: why.value.trim() }, `Kaldırıldı: ${o.name}.`) }, 'Kaldır'),
           el('button', { type: 'button', className: 'quiet', onclick: () => { ask.hidden = true; } }, 'Vazgeç')));
       action.append(el('button', { type: 'button', className: 'quiet', onclick: () => { ask.hidden = false; } }, 'Kaldır'), ask);
     }
-    return el('tr', {}, el('td', {}, o.name), el('td', {}, STATE[o.state] + (o.refunded && o.state !== 'refunded' ? ', iade' : '')),
+    const note = o.refunding ? `, iadesi yarım kaldı: ${o.state === 'live' ? 'Kaldır' : 'Reddet'} ile bitir` : o.refunded && o.state !== 'refunded' ? ', iade' : '';
+    return el('tr', {}, el('td', {}, o.name), el('td', {}, STATE[o.state] + note),
       el('td', {}, tierOf(o.ring).label), el('td', {}, String(o.width * o.depth)), el('td', {}, money(o.amount)), el('td', {}, when(o.paidAt || o.created)), action);
   });
   return [
