@@ -80,7 +80,7 @@ td .ask { min-width: 240px; }
 
 /* Phone: the menu becomes tabs on top, cards one column */
 @media (max-width: 760px) {
-  .app { grid-template-columns: minmax(0, 1fr); }
+  .app { grid-template-columns: minmax(0, 1fr); align-content: start; }
   .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 10px; padding: 14px 16px; border-right: 0; border-bottom: 1px solid var(--line); }
   .brand { font-size: 22px; margin: 0; flex: 1 1 auto; }
   .brand span { font-size: 12px; }

@@ -90,6 +90,8 @@ test('rejecting asks for a reason first and refunds only on the second click', a
 test('the seats list filters by state, and a live seat comes down with or without a refund', async () => {
   await go('#koltuklar');
   assert.equal(root.querySelectorAll('tbody tr').length, 4);
+  // On a phone the table scrolls sideways: the state sits beside the name so it is seen without scrolling.
+  assert.deepEqual(root.querySelectorAll('thead th').slice(0, 2).map((th) => th.textContent), ['Ad', 'Durum']);
   button('Yayında').onclick(); await settle();
   const rows = root.querySelectorAll('tbody tr');
   assert.equal(rows.length, 1);

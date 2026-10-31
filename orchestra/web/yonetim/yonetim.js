@@ -153,8 +153,8 @@ function seats() {
           el('button', { type: 'button', className: 'quiet', onclick: () => { ask.hidden = true; } }, 'Vazgeç')));
       action.append(el('button', { type: 'button', className: 'quiet', onclick: () => { ask.hidden = false; } }, 'Kaldır'), ask);
     }
-    return el('tr', {}, el('td', {}, o.name), el('td', {}, tierOf(o.ring).label), el('td', {}, String(o.width * o.depth)),
-      el('td', {}, money(o.amount)), el('td', {}, when(o.paidAt || o.created)), el('td', {}, STATE[o.state] + (o.refunded && o.state !== 'refunded' ? ', iade' : '')), action);
+    return el('tr', {}, el('td', {}, o.name), el('td', {}, STATE[o.state] + (o.refunded && o.state !== 'refunded' ? ', iade' : '')),
+      el('td', {}, tierOf(o.ring).label), el('td', {}, String(o.width * o.depth)), el('td', {}, money(o.amount)), el('td', {}, when(o.paidAt || o.created)), action);
   });
   return [
     el('h2', {}, 'Koltuklar'),
@@ -164,7 +164,7 @@ function seats() {
       return chip;
     })),
     el('div', { className: 'table' }, el('table', {},
-      el('thead', {}, el('tr', {}, ...['Ad', 'Sıra', 'Koltuk', 'Tutar', 'Tarih', 'Durum', ''].map((h) => el('th', {}, h)))),
+      el('thead', {}, el('tr', {}, ...['Ad', 'Durum', 'Sıra', 'Koltuk', 'Tutar', 'Tarih', ''].map((h) => el('th', {}, h)))),
       el('tbody', {}, ...rows))),
     rows.length ? null : el('p', { className: 'dim' }, 'Bu filtrede sipariş yok.'),
   ];
