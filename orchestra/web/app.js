@@ -765,7 +765,7 @@ async function enterDemo() {
   resetHall();
   document.body.classList.add("is-demo"); $("demo-banner").hidden = false;
   stopDemo = startDemo({ onFrame: applyFrame });
-  amfi.setHolders(demoHolders(), { demo: true });
+  amfi.setHolders(demoHolders(), { demo: true }); amfi.setReserved([]);
   metric("demo");
   if (audio?.ctx.state === "running") return;
   $("loading").textContent = "Ses yükleniyor…";
@@ -779,7 +779,7 @@ function leaveDemo() {
   if (!stopDemo) return;
   stopDemo(); stopDemo = null; setDemoPlaying(false);
   document.body.classList.remove("is-demo"); $("demo-banner").hidden = true;
-  resetHall(); connect(); amfi.setHolders(liveHolders);
+  resetHall(); connect(); amfi.setHolders(liveHolders); amfi.setReserved(liveReserved);
   $("loading").textContent = "Canlı salona dönüldü.";
 }
 $("demo-concert").onclick = enterDemo;
@@ -789,19 +789,22 @@ $("demo-exit").onclick = leaveDemo;
 // ---------- seats for sale ----------
 // The amphitheatre around the stage (amfi.js). Real holders come from the server; the demo concert shows
 // generated examples instead, labelled as such, and the real ones return after it.
-let liveHolders = [];
+// Blocks someone is paying for, or waiting to have approved, are taken but nameless.
+let liveHolders = [], liveReserved = [];
 async function loadHolders() {
   try {
-    const list = (await (await fetch("/api/seats", { cache: "no-store" })).json()).seats;
-    if (!Array.isArray(list)) return;
-    liveHolders = list;
-    if (!stopDemo) amfi.setHolders(liveHolders);
+    const data = await (await fetch("/api/seats", { cache: "no-store" })).json();
+    if (!Array.isArray(data.seats)) return;
+    liveHolders = data.seats; liveReserved = Array.isArray(data.reserved) ? data.reserved : [];
+    if (!stopDemo) { amfi.setHolders(liveHolders); amfi.setReserved(liveReserved); }
     dispatchEvent(new CustomEvent("holders", { detail: liveHolders }));
+    dispatchEvent(new CustomEvent("shop", { detail: { checkout: data.checkout === true } }));
   } catch { /* the seats stay as they were */ }
 }
 addEventListener("holders", (event) => listHolders(event.detail));
+addEventListener("seats-stale", loadHolders);
 loadHolders();
-setInterval(loadHolders, 5 * 60_000);
+setInterval(loadHolders, 60_000);
 setupBuying({ canvas, geometry, amfi });
 
 // The title sits in the middle of the stage on a wide screen, over the orchestra it describes.

@@ -15,11 +15,50 @@ const el = (tag, { role, ...props } = {}, ...children) => {
   return e;
 };
 
-export function setupBuying({ canvas, geometry, amfi }) {
+// The logo the server keeps: WebP, longest side 480 px, under 300 KB. Drawing it again also drops its metadata.
+export async function webpLogo(img) {
+  const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height, scale = Math.min(1, 480 / Math.max(w, h));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(w * scale)); c.height = Math.max(1, Math.round(h * scale));
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  for (const quality of [.85, .7, .5]) {
+    const url = c.toDataURL('image/webp', quality);
+    if (!url.startsWith('data:image/webp')) return null;   // a browser that cannot write WebP
+    if (url.length * .75 < 300 * 1024) return url;
+  }
+  return null;
+}
+
+// Back from Stripe (?siparis=…): what became of the order, asked every few seconds until it is decided.
+export async function followOrder(id, { cancelled = false, wait = 3000, tries = 40 } = {}) {
+  const say = (text) => { $('seat-status').textContent = text; };
+  if (cancelled) {
+    const res = await fetch(`/api/seats/order/${id}/cancel`, { method: 'POST' }).catch(() => null);
+    return say(res?.ok || res?.status === 409 ? 'Ödeme yapılmadı. Ayırdığın yer bırakıldı.' : 'Ödeme yapılmadı. Ayırdığın yer en geç yarım saat içinde bırakılacak.');
+  }
+  say('Ödemen kontrol ediliyor…');
+  const done = { paid: 'Ödemen alındı. Koltuğun onay bekliyor; onaylanınca salonda görünecek.', live: 'Koltuğun salonda. Teşekkürler!',
+    refunded: 'Bu sipariş iade edildi.', expired: 'Bu ödemenin süresi doldu. Ayırdığın yer bırakıldı.' };
+  for (let i = 0; i < tries; i++) {
+    try {
+      const res = await fetch(`/api/seats/order/${id}`, { cache: 'no-store' });
+      if (res.status === 404) return say('Bu sipariş bulunamadı.');
+      const { state } = await res.json();
+      if (done[state]) return say(done[state]);
+    } catch { /* asked again below */ }
+    await new Promise((resolve) => setTimeout(resolve, wait));
+  }
+  say('Ödemen henüz bize ulaşmadı. Kartından çekim yapıldıysa birkaç dakika içinde onay bekleyenlere düşer.');
+}
+
+export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (url) => location.assign(url) }) {
   let tier = 0, width = 3, depth = 2, used = new Set(), ghost = null, chosen = null, placing = false, image = null;
+  let checkoutOpen = false, paying = false;
+  addEventListener('shop', (event) => { checkoutOpen = Boolean(event.detail?.checkout); });
 
   // ---------- tier, size and price ----------
-  function sold() { used = taken(amfi.holders()); }
+  // Seats sold, and seats someone is paying for or waiting to have approved, are all taken.
+  function sold() { used = taken([...amfi.holders(), ...(amfi.reserved?.() || [])]); }
   function freeIn(t) {
     const tr = TIERS[t]; let free = tr.seats;
     for (const id of used) { const k = Number(id.slice(1, id.indexOf('c'))); if (k >= tr.rings[0] && k <= tr.rings[1]) free--; }
@@ -158,12 +197,32 @@ export function setupBuying({ canvas, geometry, amfi }) {
     img.onerror = () => { URL.revokeObjectURL(url); $('seat-pay-status').textContent = 'Bu resim açılamadı. Başka bir dosya dene.'; };
     img.src = url;
   });
-  $('seat-pay').onclick = () => {
+  $('seat-pay').onclick = async () => {
+    if (paying) return;
+    const say = (text) => { $('seat-pay-status').textContent = text; };
     const name = $('seat-name').value.trim(), link = $('seat-link').value.trim();
     let url = null; try { url = new URL(link); } catch { url = null; }
     const problem = !chosen ? 'Önce salonda bir yer seç.' : !image ? 'Bir logo ya da profil resmi ekle.' : !name ? 'Görünecek adı yaz.'
-      : !url || !['http:', 'https:'].includes(url.protocol) ? 'Link https:// ile başlayan bir adres olmalı.' : '';
-    $('seat-pay-status').textContent = problem || 'Ödeme henüz açık değil. Satış başladığında bu adımda ödeme sayfası açılacak. Seçtiğin yer ayrılmadı, hiçbir bilgi gönderilmedi.';
+      : !url || !['http:', 'https:'].includes(url.protocol) ? 'Link https:// ile başlayan bir adres olmalı.'
+      : checkoutOpen && !$('seat-terms').checked ? 'Koltuk şartlarını okuyup kutuyu işaretle.' : '';
+    if (problem) return say(problem);
+    if (!checkoutOpen) return say('Ödeme henüz açık değil. Satış başladığında bu adımda ödeme sayfası açılacak. Seçtiğin yer ayrılmadı, hiçbir bilgi gönderilmedi.');
+    paying = true; $('seat-pay').disabled = true;
+    say('Ödeme sayfası hazırlanıyor…');
+    try {
+      const logo = await encode(image);
+      if (!logo) return say('Tarayıcın bu resmi hazırlayamadı. Başka bir tarayıcı dene.');
+      const res = await fetch('/api/seats/checkout', { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ block: { ring: chosen.ring, col: chosen.col, width: chosen.width, depth: chosen.depth }, name, link: url.href, image: logo, terms: true }) });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.url) { say('Ödeme sayfasına gidiliyor…'); return go(data.url); }
+      if (res.status === 409) dispatchEvent(new CustomEvent('seats-stale'));
+      say(res.status === 409 ? 'Bu yer az önce başkası tarafından tutuldu. Başka bir yer seç.'
+        : res.status === 429 ? 'Çok fazla deneme oldu. Birkaç dakika sonra yeniden dene.'
+        : res.status === 400 && data.error === 'image' ? 'Resim kabul edilmedi. Başka bir resim dene.'
+        : 'Ödeme sayfası açılamadı. Birazdan yeniden dene.');
+    } catch { say('Ödeme sayfası açılamadı. Birazdan yeniden dene.'); }
+    finally { paying = false; $('seat-pay').disabled = false; }
   };
 
   // Any view change ends a placing. Opening the view shows fresh counts; closing the panel drops the chosen place.
@@ -174,6 +233,15 @@ export function setupBuying({ canvas, geometry, amfi }) {
   });
   addEventListener('holders', () => { if (!$('panel').hidden) drawTiers(); });
   clampSize(); price();
+
+  // Back from Stripe: open the seat panel on the order's news, and take the order out of the address.
+  const params = new URLSearchParams(location.search), order = params.get('siparis');
+  if (/^o-[0-9a-f]{24}$/.test(order || '')) {
+    document.querySelector('[data-open="seats"]')?.click();
+    followOrder(order, { cancelled: params.has('iptal') });
+    params.delete('siparis'); params.delete('iptal');
+    history.replaceState(null, '', `${location.pathname}${[...params].length ? `?${params}` : ''}${location.hash}`);
+  }
 }
 
 // The holders list in the panel: every sold block as a name and a link, for readers and search engines.

@@ -1,7 +1,7 @@
 // The amphitheatre around the stage: ~10,000 seats on a fixed plan (seats.mjs), sold blocks with their
 // image, and light that follows the music. The seats are drawn once into a layer and reused every frame;
 // a frame only adds the glow of the notes just heard and, while someone picks a place, their block.
-import { PLAN, TIERS, blockArc, seatAt, noteAngle, blockSeats } from './seats.mjs';
+import { PLAN, TIERS, blockArc, seatAt, noteAngle, blockSeats, validBlock } from './seats.mjs';
 
 const rad = (d) => (d * Math.PI) / 180;
 const TIER_DOTS = ['rgba(232, 182, 90, .34)', 'rgba(232, 182, 90, .22)', 'rgba(232, 182, 90, .14)'];
@@ -13,6 +13,7 @@ export function createAmfi() {
   const wedges = [];                 // [angle, strength] of notes heard, fading
   const pending = [];                // [serverTime, angle] of notes still to sound
   let ghost = null;                  // { block, ok } while placing
+  let reserved = [], reservedSeats = new Set();   // blocks someone is paying for or waiting to have approved
 
   function setHolders(list, options = {}) {
     holders = list; demo = Boolean(options.demo); bySeat = new Map(); version++;
@@ -51,13 +52,18 @@ export function createAmfi() {
       for (let k = tier.rings[0]; k <= tier.rings[1]; k++) {
         const ring = PLAN.rings[k];
         for (let col = 0; col < ring.cols; col++) {
-          if (bySeat.has(`r${k}c${col}`)) continue;
+          if (bySeat.has(`r${k}c${col}`) || reservedSeats.has(`r${k}c${col}`)) continue;
           const { x, y } = point(G, ring.r, -90 + (col + .5) * 180 / ring.cols);
           c.moveTo(x + dot, y); c.arc(x, y, dot, 0, Math.PI * 2);
         }
       }
       c.fillStyle = TIER_DOTS[t]; c.fill();
     });
+    // Reserved blocks: taken, nameless, a shade darker than an empty seat until they are approved.
+    for (const b of reserved) {
+      sector(c, G, blockArc(b)); c.fillStyle = '#2a2218'; c.fill();
+      c.strokeStyle = 'rgba(230, 180, 90, .25)'; c.lineWidth = 1; c.stroke();
+    }
     // Sold blocks: a cream card cut to the curve, the image upright and whole inside it, seat seams on top.
     for (const h of holders) {
       const arc = blockArc(h), img = images.get(h.id);
@@ -127,7 +133,12 @@ export function createAmfi() {
     return place && { ...place, holder: bySeat.get(`r${place.k}c${place.c}`) || null };
   }
 
-  return { setHolders, note, draw, hit, setGhost: (g) => { ghost = g; }, holders: () => holders, isDemo: () => demo };
+  function setReserved(blocks) {
+    reserved = (Array.isArray(blocks) ? blocks : []).filter(validBlock);
+    reservedSeats = new Set(reserved.flatMap(blockSeats)); version++;
+  }
+
+  return { setHolders, setReserved, note, draw, hit, setGhost: (g) => { ghost = g; }, holders: () => holders, reserved: () => reserved, isDemo: () => demo };
 }
 
 // The demo concert's full house: generated marks, never real names, clearly called examples.

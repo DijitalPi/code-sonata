@@ -2,6 +2,9 @@
 // selectors (tag, #id, .class, [attr], [attr="v"], descendants, commas), events, and the window globals
 // the modules read. No layout, no drawing. Call install() before importing a module that touches the page.
 
+// A 2D context that draws nothing: every call and property is itself, and it reads as 0 in arithmetic.
+const nothing = new Proxy(function () {}, { get: (_, key) => (key === Symbol.toPrimitive ? () => 0 : nothing), apply: () => nothing, set: () => true });
+
 class Node_ extends EventTarget {
   parentNode = null;
   get parentElement() { return this.parentNode?.nodeType === 1 ? this.parentNode : null; }
@@ -43,6 +46,7 @@ class Element_ extends Node_ {
   hidden = false;
   constructor(tag) {
     super(); this.tagName = tag.toUpperCase();
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(this.tagName)) Object.assign(this, { value: '', checked: false, disabled: false });
     const own = new Set();
     const sync = () => this.attributes.set('class', [...own].join(' '));
     this.classList = {
@@ -80,6 +84,8 @@ class Element_ extends Node_ {
   matches(selector) { return matches(this, selector); }
   closest(selector) { for (let e = this; e; e = e.parentElement) if (matches(e, selector)) return e; return null; }
   focus() { globalThis.document.activeElement = this; }
+  click() { const event = new Event('click'); this.onclick?.(event); this.dispatchEvent(event); }
+  getContext() { return this.tagName === 'CANVAS' ? nothing : null; }
   getBoundingClientRect() { return { left: 0, top: 0, width: 0, height: 0 }; }
 }
 
@@ -119,7 +125,8 @@ export function install({ url = 'http://localhost/', language = 'tr-TR' } = {}) 
   set('navigator', { language });
   set('NodeFilter', { SHOW_ELEMENT: 1, SHOW_TEXT: 4 });
   set('MutationObserver', class { observe() {} disconnect() {} });
-  set('Image', class { set src(value) { this._src = value; } });
+  // An image loads at once, 200 × 100.
+  set('Image', class { naturalWidth = 200; naturalHeight = 100; set src(value) { this._src = value; queueMicrotask(() => this.onload?.()); } get src() { return this._src; } });
   set('addEventListener', win.addEventListener.bind(win));
   set('removeEventListener', win.removeEventListener.bind(win));
   set('dispatchEvent', win.dispatchEvent.bind(win));

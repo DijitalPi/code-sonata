@@ -107,3 +107,11 @@ test('a holder is a trimmed name of up to 40 characters and an http or https lin
     { name: 'A', link: 'javascript:alert(1)' }, { name: 'A', link: `https://a.example/${'x'.repeat(290)}` }, { name: 'A', link: 3 },
     { name: 7, link: 'https://a.example' }, null]) assert.equal(cleanHolder(bad), null, JSON.stringify(bad));
 });
+
+test('the hall keeps the blocks someone is paying for, well-formed ones only', async () => {
+  const { createAmfi } = await import('./web/amfi.js');
+  const hall = createAmfi(), b = { ring: TIERS[0].rings[0], col: 4, width: 2, depth: 1 };
+  assert.deepEqual(hall.reserved(), []);
+  hall.setReserved([b, { ring: -1, col: 0, width: 1, depth: 1 }, null]);
+  assert.deepEqual(hall.reserved(), [b]);
+});
