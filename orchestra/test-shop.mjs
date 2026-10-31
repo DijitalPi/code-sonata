@@ -269,8 +269,10 @@ test('a refund Stripe refuses leaves the order as it was; one whose answer was l
   // A retry Stripe refuses says nothing about the earlier try, which may have refunded: the mark stays.
   for (const refused of [429, 401]) {
     stripeFails = refused;
-    try { assert.equal((await panel(`orders/${c.id}/reject`, { cookie, method: 'POST', body: {} })).status, 502); }
-    finally { stripeFails = false; }
+    try {
+      const res = await panel(`orders/${c.id}/reject`, { cookie, method: 'POST', body: {} });
+      assert.deepEqual([res.status, (await res.json()).error], [502, 'unknown'], 'the earlier try is still unknown');
+    } finally { stripeFails = false; }
     assert.equal((await onDisk()).refunding, true, `${refused} after a lost answer`);
     assert.equal((await panel(`orders/${c.id}/approve`, { cookie, method: 'POST' })).status, 409);
   }

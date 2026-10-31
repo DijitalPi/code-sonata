@@ -197,7 +197,7 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
         const refused = error.refused || (error.status >= 400 && error.status < 500 && error.status !== 409);
         log(`refund: ${error.message}${refused && !earlier ? "" : " (outcome unknown, kept as refunding)"}`);
         if (refused && !earlier) commit(() => stopRefund(book, id));
-        return send(res, 502, { error: refused ? "stripe" : "unknown" });
+        return send(res, 502, { error: refused && !earlier ? "stripe" : "unknown" });
       }
     }
     let done;

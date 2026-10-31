@@ -146,7 +146,8 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
     hint.textContent = touch() ? "Başka bir yere dokun ya da Burayı seç'e bas." : "Tıkla ya da Enter'a bas.";
   }
   // On a phone the hall is drawn wider than the screen while placing (style.css), so a seat is big enough
-  // to tap; it opens with the suggested block in the middle and scrolls sideways from there.
+  // to tap; it opens with the suggested block in the middle and scrolls sideways from there. Keys carry the
+  // view along; a tap does not, so the hall stays still under the finger.
   function showGhost() {
     const stage = canvas.parentElement;
     if (!ghost || !(stage.scrollWidth > stage.clientWidth)) return;
@@ -200,7 +201,7 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
   addEventListener('keydown', (event) => {
     if (!placing || !ghost) return;
     const b = ghost.block, step = { ArrowLeft: [0, -1], ArrowRight: [0, 1], ArrowUp: [1, 0], ArrowDown: [-1, 0] }[event.key];
-    if (step) { event.preventDefault(); setGhost(blockAt(b.ring + step[0], b.col + Math.floor(width / 2) + step[1])); }
+    if (step) { event.preventDefault(); setGhost(blockAt(b.ring + step[0], b.col + Math.floor(width / 2) + step[1])); showGhost(); }
     else if (event.key === 'Enter') { event.preventDefault(); choose(); }
     else if (event.key === 'Escape') { event.preventDefault(); stopPlacing(); $('seats-title').focus(); }
   });

@@ -224,6 +224,9 @@ test('on a phone the hall, wider than the screen while placing, opens at the sug
     const x = 487.5 + Math.sin(a) * (arc.r1 + arc.r2) / 2 * 266;
     assert.ok(stage.scrollLeft > 0);
     assert.ok(Math.abs(stage.scrollLeft + 195 - x) < 1, 'the block is in the middle of the screen');
+    for (let i = 0; i < 30; i++) key('ArrowRight');
+    const moved = blockArc(ghosts.at(-1).block), m = (moved.a1 + moved.a2) / 2 * Math.PI / 180;
+    assert.ok(Math.abs(stage.scrollLeft + 195 - (487.5 + Math.sin(m) * (moved.r1 + moved.r2) / 2 * 266)) < 1, 'keys carry the view along');
   } finally { key('Escape'); hallGeometry = {}; Object.assign(stage, { clientWidth: 0, scrollWidth: 0, scrollLeft: 0 }); }
 });
 
