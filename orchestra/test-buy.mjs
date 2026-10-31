@@ -23,7 +23,7 @@ globalThis.fetch = async (url, init = {}) => {
   const { status, body } = answer(url, init);
   return new Response(JSON.stringify(body), { status });
 };
-const { setupBuying, followOrder } = await import('./web/buy.js');
+const { setupBuying, followOrder, backFromStripe } = await import('./web/buy.js');
 let hallGeometry = {};
 setupBuying({ canvas, geometry: () => hallGeometry, amfi, encode: async (img) => { logos.push(img); return 'data:image/webp;base64,UklGRg=='; }, go: (url) => went.push(url) });
 
@@ -160,6 +160,21 @@ test('a cancel that could not reach Stripe says only what the order shows', asyn
   answer = () => ({ status: 503, body: {} });
   await followOrder('o-9', { cancelled: true, wait: 0 });
   assert.equal($('seat-status').textContent, 'Ödemenin durumu şu an doğrulanamadı. Bağlantın gelince bu sayfayı yenile.');
+});
+
+test('back from Stripe with the outcome unknown, the address keeps the order, so reloading asks again', async () => {
+  const id = 'o-0123456789abcdef01234567';
+  history.replaceState(null, '', `/?siparis=${id}&iptal&lang=en`);
+  answer = () => ({ status: 503, body: {} });
+  await backFromStripe();
+  assert.equal($('seat-status').textContent, 'Ödemenin durumu şu an doğrulanamadı. Bağlantın gelince bu sayfayı yenile.');
+  assert.equal(new URLSearchParams(location.search).get('siparis'), id);
+  answer = () => ({ status: 200, body: {} });
+  const before = calls.length;
+  await backFromStripe();                 // the reload
+  assert.equal(calls[before]?.url, `/api/seats/order/${id}/cancel`);
+  assert.equal($('seat-status').textContent, 'Ödeme yapılmadı. Ayırdığın yer bırakıldı.');
+  assert.equal(location.search, '?lang=en', 'known now: the order leaves the address');
 });
 
 test('a buyer starts from one seat and makes the block bigger if they want', async () => {

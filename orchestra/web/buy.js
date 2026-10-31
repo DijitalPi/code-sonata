@@ -30,8 +30,9 @@ export async function webpLogo(img) {
 }
 
 // Back from Stripe (?siparis=…): what became of the order, asked every few seconds until it is decided.
+// Resolves to false while the outcome is not known.
 export async function followOrder(id, { cancelled = false, wait = 3000, tries = 40 } = {}) {
-  const say = (text) => { $('seat-status').textContent = text; };
+  const say = (text, known = true) => { $('seat-status').textContent = text; return known; };
   if (cancelled) {
     const res = await fetch(`/api/seats/order/${id}/cancel`, { method: 'POST' }).catch(() => null);
     if (res?.ok) return say('Ödeme yapılmadı. Ayırdığın yer bırakıldı.');
@@ -39,7 +40,7 @@ export async function followOrder(id, { cancelled = false, wait = 3000, tries = 
     // reached: say only what the order shows now; a hold is let go 41 minutes after it began at the latest.
     if (res?.status !== 409) {
       const now = await fetch(`/api/seats/order/${id}`, { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-      if (!now) return say('Ödemenin durumu şu an doğrulanamadı. Bağlantın gelince bu sayfayı yenile.');
+      if (!now) return say('Ödemenin durumu şu an doğrulanamadı. Bağlantın gelince bu sayfayı yenile.', false);
       if (now.state === 'held') return say('Ödemen bize ulaşmadı. Ulaşmazsa ayırdığın yer en geç bir saat içinde bırakılır.');
     }
   }
@@ -55,7 +56,19 @@ export async function followOrder(id, { cancelled = false, wait = 3000, tries = 
     } catch { /* asked again below */ }
     await new Promise((resolve) => setTimeout(resolve, wait));
   }
-  say('Ödemen henüz bize ulaşmadı. Kartından çekim yapıldıysa birkaç dakika içinde onay bekleyenlere düşer.');
+  return say('Ödemen henüz bize ulaşmadı. Kartından çekim yapıldıysa birkaç dakika içinde onay bekleyenlere düşer.', false);
+}
+
+// Back from Stripe: open the seat panel on the order's news. The order leaves the address once its outcome is
+// known; until then reloading the page asks again, as the messages say.
+export async function backFromStripe() {
+  const order = new URLSearchParams(location.search).get('siparis');
+  if (!/^o-[0-9a-f]{24}$/.test(order || '')) return;
+  document.querySelector('[data-open="seats"]')?.click();
+  if (!(await followOrder(order, { cancelled: new URLSearchParams(location.search).has('iptal') }))) return;
+  const params = new URLSearchParams(location.search);
+  params.delete('siparis'); params.delete('iptal');
+  history.replaceState(null, '', `${location.pathname}${[...params].length ? `?${params}` : ''}${location.hash}`);
 }
 
 export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (url) => location.assign(url) }) {
@@ -248,15 +261,7 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
   });
   addEventListener('holders', () => { if (!$('panel').hidden) drawTiers(); });
   clampSize(); price();
-
-  // Back from Stripe: open the seat panel on the order's news, and take the order out of the address.
-  const params = new URLSearchParams(location.search), order = params.get('siparis');
-  if (/^o-[0-9a-f]{24}$/.test(order || '')) {
-    document.querySelector('[data-open="seats"]')?.click();
-    followOrder(order, { cancelled: params.has('iptal') });
-    params.delete('siparis'); params.delete('iptal');
-    history.replaceState(null, '', `${location.pathname}${[...params].length ? `?${params}` : ''}${location.hash}`);
-  }
+  backFromStripe();
 }
 
 // The holders list in the panel: every sold block as a name and a link, for readers and search engines.
