@@ -132,6 +132,21 @@ test('when Stripe cannot be reached the hold is let go at once', async () => {
   assert.equal((await buy({ block: block(60) })).status, 200, 'the seats are free again');
 });
 
+test('a buyer who comes back without paying lets the seats go at once', async () => {
+  const { id } = await (await buy({ block: block(140) })).json();
+  const cancel = (order, headers = {}) => fetch(`${base}/api/seats/order/${order}/cancel`, { method: 'POST', headers });
+  assert.equal((await cancel(id, { origin: 'https://evil.example' })).status, 403);
+  stripeFails = true;
+  try { assert.equal((await cancel(id)).status, 502, 'Stripe must close the page first'); } finally { stripeFails = false; }
+  assert.ok((await seats()).reserved.some((b) => b.col === 140));
+  assert.equal((await cancel(id)).status, 200);
+  assert.match(stripeCalls.at(-1).path, /^\/v1\/checkout\/sessions\/cs_\d+\/expire$/);
+  assert.ok(!(await seats()).reserved.some((b) => b.col === 140));
+  assert.deepEqual(await (await fetch(`${base}/api/seats/order/${id}`)).json(), { state: 'expired' });
+  assert.equal((await cancel(id)).status, 409, 'only a held order is cancelled');
+  assert.equal((await cancel('o-eeeeeeeeeeeeeeeeeeeeeeee')).status, 404);
+});
+
 test('Stripe events count only with a valid signature; a payment makes the order wait and tells Slack once', async () => {
   const { id } = await (await buy({ block: block(70), name: 'Beta Ltd' })).json();
   const raw = JSON.stringify({ id: 'evt_bad', type: 'checkout.session.completed', data: { object: {} } });

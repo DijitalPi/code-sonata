@@ -79,6 +79,13 @@ test('a refund names the payment and carries an idempotency key, so a second cli
   assert.deepEqual(Object.fromEntries(calls[0].body), { payment_intent: 'pi_1' });
 });
 
+test('ending a session asks Stripe to expire it, so it can no longer be paid', async () => {
+  const { calls, fetch } = recorder({ id: 'cs_1', status: 'expired' });
+  await createStripe({ key: 'sk_test_x', base: 'https://stripe.test', fetch }).expire('cs_1');
+  assert.equal(calls[0].url, 'https://stripe.test/v1/checkout/sessions/cs_1/expire');
+  assert.equal(calls[0].init.method, 'POST');
+});
+
 test('a Stripe error is thrown, not taken for a session', async () => {
   const { fetch } = recorder({ error: { message: 'No such key' } }, 401);
   await assert.rejects(createStripe({ key: 'sk_bad', base: 'https://stripe.test', fetch }).checkout({ order, site: 'https://x', label: 'x' }), /401/);

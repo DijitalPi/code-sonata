@@ -104,6 +104,18 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     }
   }
 
+  // Only the buyer knows the order id (it is in their return address), so knowing it is enough to cancel.
+  async function giveUp(res, id, { foreign, now }) {
+    if (foreign) return send(res, 403, { error: "origin" });
+    const order = book.orders.find((o) => o.id === id);
+    if (!order) return send(res, 404, { error: "order" });
+    if (order.state !== "held") return send(res, 409, { error: "state" });
+    try { if (order.session) await stripe.expire(order.session); }
+    catch (error) { log(`cancel: ${error.message}`); return send(res, 502, { error: "stripe" }); }
+    if (expire(book, id, now)) save();
+    return send(res, 200, { state: "expired" });
+  }
+
   async function stripeEvent(req, res, { now, site }) {
     const raw = await body(req, 64 * 1024);
     if (raw === null || !verifySignature(raw, req.headers["stripe-signature"], env.STRIPE_WEBHOOK_SECRET, Math.floor(now / 1000))) return send(res, 400, { error: "signature" });
@@ -194,6 +206,8 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
         o ? send(res, 200, { state: buyerState(o) }) : send(res, 404, { error: "order" });
         return true;
       }
+      const cancel = p.match(/^\/api\/seats\/order\/(o-[0-9a-f]{24})\/cancel$/);
+      if (cancel && req.method === "POST") { if (!open) send(res, 404, { error: "closed" }); else await giveUp(res, cancel[1], ctx); return true; }
       if (p === "/api/stripe" && req.method === "POST") { if (!open) send(res, 404, { error: "closed" }); else await stripeEvent(req, res, ctx); return true; }
       if (p.startsWith("/api/yonetim/")) { if (!panelOpen) send(res, 404, { error: "not found" }); else await panel(req, res, url, ctx); return true; }
       return false;

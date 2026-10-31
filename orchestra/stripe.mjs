@@ -37,5 +37,7 @@ export function createStripe({ key, base = "https://api.stripe.com", fetch = glo
       return { id: data.id, url: data.url };
     },
     refund: (paymentIntent, idempotencyKey) => call("/v1/refunds", { payment_intent: paymentIntent }, { "idempotency-key": idempotencyKey }),
+    // A buyer who came back without paying: the page closes, so the seats can go to someone else.
+    expire: (session) => call(`/v1/checkout/sessions/${encodeURIComponent(session)}/expire`, {}),
   };
 }
