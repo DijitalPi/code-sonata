@@ -33,7 +33,7 @@ Sunucu sınırları: toplam 1000 dinleyici, adres başına 32 (IPv6'da /64 bir a
 - PNG/WAV/video tarayıcıda üretilir, sunucuya yüklenmez.
 - Cihazdaki isteğe bağlı sayaçlar arayüzdeki düğmeyle silinir.
 - Ses motoru, ses örnekleri ve yazı tipleri sitenin kendisinden gelir; tarayıcıdan başka siteye istek gitmez.
-- Koltuk siparişi `ORDERS_FILE`'da durur: ad, link, blok, tutar, Stripe oturum/ödeme kimliği, Stripe'tan gelen e-posta ve hız sınırının tuzlu adres özeti (IP değil). Kart bilgisi sunucuya hiç gelmez. Bekleyen logo herkese kapalı `SEATS_DIR/pending/`'de durur; reddedilince silinir, süresi dolanınki 24 saat sonra.
+- Koltuk siparişi `ORDERS_FILE`'da durur: ad, link, blok, tutar, Stripe oturum/ödeme kimliği ve Stripe'tan gelen e-posta. Kart bilgisi sunucuya hiç gelmez. Bekleme sınırı için tuzlu adres özeti yalnız bellekte ve sipariş beklerken tutulur, dosyaya yazılmaz. Bekleyen logo herkese kapalı `SEATS_DIR/pending/`'de durur; reddedilince silinir. Süresi dolan siparişin logosu 24 saat, kaydı 4 gün tutulur (Stripe bir olayı 3 gün boyunca yeniden gönderir; geç gelen ödeme kaybolmaz).
 
 ## Docker
 
@@ -66,7 +66,7 @@ Kesinti: sunucu durunca tarayıcı SSE'yi kendisi yeniden dener, vekilin 502'si 
 | `PUBLIC_URL` | Yayında | Mutlak OG ve canonical adres |
 | `HALL=songs` | Gerekirse | Salon akış yerine eski şarkı modunu çalar; varsayılan akış |
 | `SEATS_FILE`, `SEATS_DIR` | Koltuk sahipleri | Elle eklenen koltuklar (JSON) ve logo klasörü; dosya bir dakika içinde yeniden okunur |
-| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `ORDERS_FILE` | Koltuk satışı | Üçü ve `SEATS_DIR` varken "Koltuk al" ödemeye açılır; biri eksikse sayfa ödemenin açık olmadığını söyler. Kısıtlı anahtar yeter (aşağıda) |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `ORDERS_FILE` | Koltuk satışı | Üçü, `SEATS_DIR` ve `ADMIN_KEYS` varken "Koltuk al" ödemeye açılır (onaylayacak kimse yoksa satış açılmaz); biri eksikse ya da sipariş dosyası okunamazsa sayfa ödemenin açık olmadığını söyler. Kısıtlı anahtar yeter (aşağıda) |
 | `ADMIN_KEYS` | Yönetim paneli | `ad:anahtar,ad2:anahtar2`; ad küçük harf, rakam, tire (≤20), anahtar ≥24 karakter. Yoksa `/yonetim/` 404. Onaylar kimin anahtarıyla yapıldıysa o adla kaydedilir |
 | `SLACK_WEBHOOK_URL` | İsteğe bağlı | Ödenen her sipariş için bir Slack mesajı, panele bağlantıyla |
 
@@ -74,10 +74,10 @@ Etkinlik anahtarı olmadan da bir ofis ağı çalışır: makine raporları ayr�
 
 ## Koltuk ödemesi (Stripe)
 
-Alıcı yeri seçer, logo ve link verir, Stripe Checkout'ta öder; koltuk elle onaylanınca salonda görünür, reddedilirse ödeme tamamen iade edilir. Fiyatı sunucu belirler, ödeme sayfası 31 dakika açık kalır (Stripe en az 30 ister), süresi dolan yer boşalır.
+Alıcı yeri seçer, logo ve link verir, Stripe Checkout'ta öder; koltuk elle onaylanınca salonda görünür, reddedilirse ödeme tamamen iade edilir. Defterdeki her değişiklik diske yazıldığında geçerli olur: yazılamazsa geri alınır, istek 500 döner ve Stripe olayı yeniden gönderir. Fiyatı sunucu belirler, ödeme sayfası 31 dakika açık kalır (Stripe en az 30 ister), süresi dolan yer boşalır.
 
 1. Stripe panelinde kısıtlı anahtar: Checkout Sessions yaz, Charges and Refunds yaz, Payment Intents oku. Başka izin gerekmez.
-2. Webhook uç noktası `https://alan-adin/api/stripe`, olaylar `checkout.session.completed` ve `checkout.session.expired`. İmza sırrı `STRIPE_WEBHOOK_SECRET`.
+2. Webhook uç noktası `https://alan-adin/api/stripe`, olaylar `checkout.session.completed` ve `checkout.session.expired`. İmza sırrı `STRIPE_WEBHOOK_SECRET`. Aynı Stripe hesabındaki başka ürünlerin oturumları da gelir; sipariş kimliği (`o-…`) taşımayanlar yok sayılır. Kimliği taşıyan ama defterde olmayan bir ödeme Slack'e yazılır.
 3. `PUBLIC_URL` dönüş adresini belirler; yayında şart.
 4. Stripe sayfası tutarı alıcının para biriminde gösterebilir (Adaptive Pricing); tahsilat ve iade yine USD tutarı üzerinden yapılır.
 5. Yerelde test modunda dene: `stripe listen --forward-to localhost:4480/api/stripe --events checkout.session.completed,checkout.session.expired`, imza sırrı `stripe listen --print-secret`. Kart `4242 4242 4242 4242`.

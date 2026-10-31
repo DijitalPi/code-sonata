@@ -59,6 +59,7 @@ test('a payment of the right amount makes the hold paid, once; a second report c
   assert.deepEqual(pay(book, order), { order, changed: true });
   assert.equal(order.state, 'paid');
   assert.deepEqual([order.email, order.payment, order.paidAt], ['ali@acme.example', 'pi_1', T0 + 60_000]);
+  assert.equal(order.ipKey, null, 'the address digest is only needed while holding');
   assert.deepEqual(pay(book, order), { order, changed: false });
   assert.equal(book.events.filter((e) => e.what === 'paid').length, 1);
   assert.deepEqual(paid(book, { id: 'o-unknown', amount: 1, currency: 'usd', now: T0 }), { order: null, changed: false });
@@ -84,16 +85,22 @@ test('a payment that does not match the order, or comes too late for its seats, 
   assert.equal(slow.state, 'paid', 'late but its seats are still free');
 });
 
-test('a hold runs out only after Stripe could still be paying, and is forgotten a day later', () => {
+test('a hold runs out only after Stripe could still be paying; its logo goes a day later, the order after Stripe stops retrying', () => {
   const book = createBook();
   const { order } = ask(book);
-  assert.deepEqual(sweep(book, T0 + HOLD_MS + GRACE_MS), { expired: [], pruned: [] });
-  assert.deepEqual(sweep(book, T0 + HOLD_MS + GRACE_MS + 1), { expired: [order], pruned: [] });
+  assert.deepEqual(sweep(book, T0 + HOLD_MS + GRACE_MS), { expired: [], pruned: [], stale: [] });
+  assert.deepEqual(sweep(book, T0 + HOLD_MS + GRACE_MS + 1), { expired: [order], pruned: [], stale: [] });
   assert.equal(order.state, 'expired');
+  assert.equal(order.ipKey, null, 'the address digest is only needed while holding');
   assert.deepEqual(reserved(book), []);
   const day = T0 + HOLD_MS + 24 * 3600_000 + 1;
-  assert.deepEqual(sweep(book, day), { expired: [], pruned: [order] });
-  assert.equal(book.orders.length, 0);
+  assert.deepEqual(sweep(book, day), { expired: [], pruned: [], stale: [order] });
+  assert.equal(book.orders.length, 1, 'Stripe retries an event for three days: a late payment still finds its order');
+  const late = ask(book, { block: block(20) }).order;
+  sweep(book, T0 + HOLD_MS + GRACE_MS + 1);
+  assert.equal(pay(book, late, { now: day }).order.state, 'paid');
+  assert.deepEqual(sweep(book, T0 + HOLD_MS + 4 * 24 * 3600_000 + 1), { expired: [], pruned: [order], stale: [] });
+  assert.deepEqual(book.orders, [late]);
   const failed = ask(book).order;
   assert.equal(drop(book, failed.id, T0), failed);
   assert.equal(failed.state, 'expired');
@@ -106,6 +113,9 @@ test('approve, reject and remove move an order only from the state they are mean
   const a = ask(book, { block: block(0) }).order, b = ask(book, { block: block(10) }).order;
   assert.deepEqual(approve(book, a.id, 'selim', T0), { error: 'state' }, 'not paid yet');
   pay(book, a); pay(book, b);
+  assert.deepEqual(approve(book, a.id, 'selim', T0 + 1, [{ id: 'hand', ring: front, col: 2, width: 1, depth: 1, name: 'Hand' }]), { error: 'taken' },
+    'seats added by hand after the payment are not sold twice');
+  assert.equal(a.state, 'paid');
   assert.equal(approve(book, a.id, 'selim', T0 + 1), a);
   assert.deepEqual([a.state, a.decidedBy, a.decidedAt], ['live', 'selim', T0 + 1]);
   assert.equal(reject(book, b.id, 'ozer', '  Logo okunmuyor ', T0 + 2), b);

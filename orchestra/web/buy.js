@@ -34,7 +34,9 @@ export async function followOrder(id, { cancelled = false, wait = 3000, tries = 
   const say = (text) => { $('seat-status').textContent = text; };
   if (cancelled) {
     const res = await fetch(`/api/seats/order/${id}/cancel`, { method: 'POST' }).catch(() => null);
-    return say(res?.ok || res?.status === 409 ? 'Ödeme yapılmadı. Ayırdığın yer bırakıldı.' : 'Ödeme yapılmadı. Ayırdığın yer en geç yarım saat içinde bırakılacak.');
+    if (res?.ok) return say('Ödeme yapılmadı. Ayırdığın yer bırakıldı.');
+    if (res?.status !== 409) return say('Ödeme yapılmadı. Ayırdığın yer en geç yarım saat içinde bırakılacak.');
+    // The order is no longer held (paid in another tab, or already let go): say what it is now.
   }
   say('Ödemen kontrol ediliyor…');
   const done = { paid: 'Ödemen alındı. Koltuğun onay bekliyor; onaylanınca salonda görünecek.', live: 'Koltuğun salonda. Teşekkürler!',
@@ -218,11 +220,12 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
     finally { paying = false; $('seat-pay').disabled = false; }
   };
 
-  // Any view change ends a placing. Opening the view shows fresh counts; closing the panel drops the chosen place.
+  // Any view change ends a placing. Opening the view shows fresh counts; leaving it drops the chosen place, except
+  // for the terms, which are read on the way to paying.
   addEventListener('view', (event) => {
     if (placing) stopPlacing();
     if (event.detail === 'seats') { drawTiers(); clampSize(); price(); }
-    else { chosen = null; amfi.setGhost(null); }
+    else if (event.detail !== 'terms') { chosen = null; amfi.setGhost(null); }
   });
   addEventListener('holders', () => { if (!$('panel').hidden) drawTiers(); });
   clampSize(); price();

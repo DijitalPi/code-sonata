@@ -4,10 +4,11 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import http from 'node:http';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sign } from './stripe.mjs';
+import { createShop } from './shop.mjs';
 import { TIERS, blockPrice } from './web/seats.mjs';
 
 const PORT = 4530, base = `http://127.0.0.1:${PORT}`;
@@ -15,11 +16,12 @@ const WEBHOOK = 'whsec_test_shop', SELIM = 's'.repeat(30), OZER = 'z'.repeat(30)
 
 // Fake Stripe: records every call, answers a session or a refund, or fails when told to.
 const stripeCalls = [];
-let stripeFails = false;
+let stripeFails = false, refundWait = null;
 const stripe = http.createServer(async (req, res) => {
   let body = ''; for await (const chunk of req) body += chunk;
   stripeCalls.push({ path: req.url, headers: req.headers, body: new URLSearchParams(body) });
   if (stripeFails) { res.writeHead(500); return res.end('{"error":{"message":"down"}}'); }
+  if (req.url === '/v1/refunds' && refundWait) await refundWait;
   const n = stripeCalls.length;
   res.writeHead(200, { 'content-type': 'application/json' });
   res.end(JSON.stringify(req.url === '/v1/refunds' ? { id: `re_${n}` } : { id: `cs_${n}`, url: `https://checkout.stripe.test/c/cs_${n}` }));
@@ -73,8 +75,9 @@ const completed = (order, amount, extra = {}) => event('checkout.session.complet
 const panel = (path, { cookie, method = 'GET', body, headers = {} } = {}) => fetch(`${base}/api/yonetim/${path}`, {
   method, headers: { 'x-yonetim': '1', 'content-type': 'application/json', ...(cookie ? { cookie } : {}), ...headers }, body: body && JSON.stringify(body),
 });
-async function login(key = SELIM) {
-  const res = await panel('login', { method: 'POST', body: { key }, headers: { 'x-forwarded-for': '10.9.9.9' } });
+// Five sign-ins a minute per address: tests past the fifth come from another one.
+async function login(key = SELIM, from = '10.9.9.9') {
+  const res = await panel('login', { method: 'POST', body: { key }, headers: { 'x-forwarded-for': from } });
   return { res, cookie: res.headers.get('set-cookie')?.split(';')[0] };
 }
 
@@ -158,7 +161,12 @@ test('Stripe events count only with a valid signature; a payment makes the order
   const raw = JSON.stringify({ id: 'evt_bad', type: 'checkout.session.completed', data: { object: {} } });
   assert.equal((await fetch(`${base}/api/stripe`, { method: 'POST', body: raw })).status, 400, 'no signature');
   assert.equal((await fetch(`${base}/api/stripe`, { method: 'POST', headers: { 'stripe-signature': sign(raw, 'whsec_other', Math.floor(Date.now() / 1000)) }, body: raw })).status, 400);
-  assert.equal((await completed('o-ffffffffffffffffffffffff', 100)).status, 200, 'an order this server never held is ignored');
+  const before = slackPosts.length;
+  assert.equal((await completed('o-ffffffffffffffffffffffff', 100)).status, 200, 'an order this server does not know');
+  assert.equal(slackPosts.length, before + 1, 'money taken for an order not in the book is told, never dropped silently');
+  assert.match(slackPosts.at(-1).text, /o-ffffffffffffffffffffffff/);
+  assert.equal((await completed('cs-not-ours', 100)).status, 200, 'another product on the same Stripe account');
+  assert.equal(slackPosts.length, before + 1);
   assert.equal((await event('checkout.session.completed', {}, Math.floor(Date.now() / 1000) - 600)).status, 400, 'too old');
   const posts = slackPosts.length;
   assert.equal((await completed(id, blockPrice(block(70)) * 100)).status, 200);
@@ -248,6 +256,58 @@ test('a refund Stripe refuses leaves the order as it was', async () => {
   try { assert.equal((await panel(`orders/${c.id}/reject`, { cookie, method: 'POST', body: {} })).status, 502); }
   finally { stripeFails = false; }
   assert.deepEqual(await (await fetch(`${base}/api/seats/order/${c.id}`)).json(), { state: 'paid' });
+});
+
+test('an order is decided one step at a time: approving while its refund is under way is refused', async () => {
+  const { cookie } = await login();
+  const d = await (await buy({ block: block(170), name: 'Epsilon' })).json();
+  await completed(d.id, blockPrice(block(170)) * 100);
+  let go; refundWait = new Promise((resolve) => { go = resolve; });
+  try {
+    const rejecting = panel(`orders/${d.id}/reject`, { cookie, method: 'POST', body: {} });
+    while (!stripeCalls.some((c) => c.path === '/v1/refunds' && c.headers['idempotency-key'] === `refund-${d.id}`)) await new Promise((r) => setTimeout(r, 5));
+    assert.equal((await panel(`orders/${d.id}/approve`, { cookie, method: 'POST' })).status, 409);
+    go();
+    assert.equal((await rejecting).status, 200);
+  } finally { refundWait = null; go?.(); }
+  assert.deepEqual(await (await fetch(`${base}/api/seats/order/${d.id}`)).json(), { state: 'refunded' });
+  assert.ok(!(await seats()).seats.some((s) => s.id === d.id));
+});
+
+test('a paid order whose logo is missing is not approved, and waits', async () => {
+  const { cookie } = await login(SELIM, '10.9.9.10');
+  const e = await (await buy({ block: block(180), name: 'Zeta' })).json();
+  await completed(e.id, blockPrice(block(180)) * 100);
+  await unlink(join(dir, 'pending', `${e.id}.webp`));
+  assert.equal((await panel(`orders/${e.id}/approve`, { cookie, method: 'POST' })).status, 409);
+  assert.deepEqual(await (await fetch(`${base}/api/seats/order/${e.id}`)).json(), { state: 'paid' });
+  assert.equal((await panel(`orders/${e.id}/reject`, { cookie, method: 'POST', body: {} })).status, 200, 'it can still be refunded');
+});
+
+test('a change the server cannot write is undone, the server keeps running, and Stripe\'s retry is written', async () => {
+  const { id } = await (await buy({ block: block(150) })).json();
+  const tmp = `${env.ORDERS_FILE}.tmp`, posts = slackPosts.length;
+  await mkdir(tmp);
+  try {
+    assert.equal((await completed(id, blockPrice(block(150)) * 100)).status, 500);
+    assert.deepEqual(await (await fetch(`${base}/api/seats/order/${id}`)).json(), { state: 'held' });
+    assert.equal((await buy({ block: block(160) })).status, 500);
+    assert.ok(!(await seats()).reserved.some((b) => b.col === 160), 'a hold that is not on disk is not kept');
+  } finally { await rm(tmp, { recursive: true }); }
+  assert.equal((await completed(id, blockPrice(block(150)) * 100)).status, 200);
+  const disk = await readFile(env.ORDERS_FILE, 'utf8');
+  assert.equal(JSON.parse(disk).orders.find((o) => o.id === id).state, 'paid');
+  assert.equal(slackPosts.length, posts + 1);
+  assert.ok(!disk.includes('ipKey'), 'the address digest stays in memory');
+});
+
+test('payment opens only with someone to approve it, and stays shut on an order file it cannot trust', async () => {
+  const pay = { STRIPE_SECRET_KEY: 'sk', STRIPE_WEBHOOK_SECRET: 'whsec', SEATS_DIR: dir, ORDERS_FILE: join(dir, 'other.json') };
+  const quiet = () => {};
+  assert.equal(createShop({ env: pay, log: quiet }).open, false, 'no ADMIN_KEYS');
+  assert.equal(createShop({ env: { ...pay, ADMIN_KEYS: `selim:${SELIM}` }, log: quiet }).open, true);
+  await writeFile(pay.ORDERS_FILE, '{}');
+  assert.equal(createShop({ env: { ...pay, ADMIN_KEYS: `selim:${SELIM}` }, log: quiet }).open, false, 'an order file without its list');
 });
 
 test('orders and holds survive a restart, read back from the file', async () => {

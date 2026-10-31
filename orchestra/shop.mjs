@@ -47,19 +47,33 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
   const stripe = createStripe({ key: env.STRIPE_SECRET_KEY, base: env.STRIPE_API_BASE || undefined, fetch });
   let book = createBook(), readable = true;
   if (ordersFile && existsSync(ordersFile)) {
-    try { book = createBook(JSON.parse(readFileSync(ordersFile, "utf8"))); }
-    catch (error) { readable = false; log(`orders: not read, payment stays closed (${error.message})`); }
+    try {
+      const data = JSON.parse(readFileSync(ordersFile, "utf8"));
+      if (!Array.isArray(data?.orders)) throw new Error("no list of orders");
+      book = createBook(data);
+    } catch (error) { readable = false; log(`orders: not read, payment stays closed (${error.message})`); }
   }
-  const open = Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET && ordersFile && seatsDir && readable);
+  // Payment opens only with someone to approve what is paid.
+  const open = Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET && ordersFile && seatsDir && readable && keys.size > 0);
   const panelOpen = keys.size > 0 && readable && Boolean(ordersFile);
-  const tries = new Map(), logins = new Map();
+  const tries = new Map(), logins = new Map(), deciding = new Set();
   const pending = (id) => join(seatsDir, "pending", `${id}.webp`), shown = (id) => join(seatsDir, `${id}.webp`);
   const forget = (file) => { try { unlinkSync(file); } catch { /* already gone */ } };
 
-  function save() {
-    writeFileSync(`${ordersFile}.tmp`, JSON.stringify(book));
-    renameSync(`${ordersFile}.tmp`, ordersFile);
+  // A change to the book counts once it is on disk: if the file cannot be written it is undone and the error goes
+  // on, so the same request again (Stripe resends an event, the panel is clicked again) finds the order as it was.
+  // The address digest is never written; it only limits holds while the server runs.
+  function commit(change, changed = (result) => Boolean(result) && !result.error) {
+    const before = structuredClone(book);
+    try {
+      const result = change();
+      if (!changed(result)) return result;
+      writeFileSync(`${ordersFile}.tmp`, JSON.stringify(book, (k, v) => (k === "ipKey" ? undefined : v)));
+      renameSync(`${ordersFile}.tmp`, ordersFile);
+      return result;
+    } catch (error) { book = before; throw error; }
   }
+  const find = (id) => book.orders.find((o) => o.id === id);
   const label = (o) => { const n = o.width * o.depth; return `${EN[tierOf(o.ring).label] || tierOf(o.ring).label} · ${n} seat${n === 1 ? "" : "s"}`; };
   async function tell(text) {
     if (!env.SLACK_WEBHOOK_URL) return;
@@ -87,33 +101,32 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     const image = m ? Buffer.from(m[1], "base64") : null, size = image && webpSize(image);
     if (!size || image.length > IMAGE_MAX || size.width > IMAGE_SIDE || size.height > IMAGE_SIDE) return send(res, 400, { error: "image" });
     const id = `o-${randomBytes(12).toString("hex")}`;
-    const held = hold(book, { id, block: data.block, name: data.name, link: data.link, ipKey: key, now }, hand());
-    if (held.error) return send(res, { block: 400, holder: 400, taken: 409, busy: 429, full: 429 }[held.error], { error: held.error });
     mkdirSync(join(seatsDir, "pending"), { recursive: true });
     writeFileSync(pending(id), image);
-    save();
-    try {
-      const session = await stripe.checkout({ order: held.order, site: env.PUBLIC_URL ? new URL(env.PUBLIC_URL).origin : site, label: `Agent Orchestra · ${label(held.order)}` });
-      setSession(book, id, session.id);
-      save();
-      return send(res, 200, { id, url: session.url });
-    } catch (error) {
+    let held;
+    try { held = commit(() => hold(book, { id, block: data.block, name: data.name, link: data.link, ipKey: key, now }, hand())); }
+    catch (error) { forget(pending(id)); throw error; }
+    if (held.error) { forget(pending(id)); return send(res, { block: 400, holder: 400, taken: 409, busy: 429, full: 429 }[held.error], { error: held.error }); }
+    let session;
+    try { session = await stripe.checkout({ order: held.order, site: env.PUBLIC_URL ? new URL(env.PUBLIC_URL).origin : site, label: `Agent Orchestra · ${label(held.order)}` }); }
+    catch (error) {
       log(`checkout: ${error.message}`);
-      drop(book, id, now); forget(pending(id)); save();
+      commit(() => drop(book, id, now)); forget(pending(id));
       return send(res, 502, { error: "stripe" });
     }
+    commit(() => setSession(book, id, session.id), () => true);
+    return send(res, 200, { id, url: session.url });
   }
 
   // Only the buyer knows the order id (it is in their return address), so knowing it is enough to cancel.
   async function giveUp(res, id, { foreign, now }) {
     if (foreign) return send(res, 403, { error: "origin" });
-    const order = book.orders.find((o) => o.id === id);
+    const order = find(id);
     if (!order) return send(res, 404, { error: "order" });
     if (order.state !== "held") return send(res, 409, { error: "state" });
     try { if (order.session) await stripe.expire(order.session); }
     catch (error) { log(`cancel: ${error.message}`); return send(res, 502, { error: "stripe" }); }
-    if (expire(book, id, now)) save();
-    return send(res, 200, { state: "expired" });
+    return commit(() => expire(book, id, now)) ? send(res, 200, { state: "expired" }) : send(res, 409, { error: "state" });
   }
 
   async function stripeEvent(req, res, { now, site }) {
@@ -123,11 +136,13 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     const id = session?.metadata?.order || session?.client_reference_id;
     try {
       if (event?.type === "checkout.session.completed" && session?.payment_status === "paid" && ORDER.test(id || "")) {
-        const done = paid(book, { id, amount: session.amount_total, currency: session.currency, email: session.customer_details?.email,
-          payment: typeof session.payment_intent === "string" ? session.payment_intent : null, session: session.id, now }, hand());
-        if (done.changed) { save(); await tell(told(done.order, site)); }
+        const done = commit(() => paid(book, { id, amount: session.amount_total, currency: session.currency, email: session.customer_details?.email,
+          payment: typeof session.payment_intent === "string" ? session.payment_intent : null, session: session.id, now }, hand()), (r) => r.changed);
+        if (done.changed) await tell(told(done.order, site));
+        // Money taken for an order the book does not have (forgotten, or a book restored from a copy): never silent.
+        else if (!done.order) { log(`stripe event: payment for unknown order ${id}`); await tell(`Kaydı olmayan koltuk ödemesi: sipariş ${id}, Stripe oturumu ${session.id}. Stripe panelinden kontrol et, gerekirse iade et.`); }
       } else if (event?.type === "checkout.session.expired" && ORDER.test(id || "")) {
-        if (expire(book, id, now)) save();
+        commit(() => expire(book, id, now));
       }
       return send(res, 200, { received: true });
     } catch (error) {
@@ -149,8 +164,15 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     return send(res, 200, { name }, { "set-cookie": cookie(makeCookie(name, secret, Date.now()), SESSION_MS / 1000) });
   }
 
+  // One decision per order at a time: a refund is awaited, and nothing else may move the order meanwhile.
   async function decide(req, res, id, action, by, now) {
-    const order = book.orders.find((o) => o.id === id);
+    if (deciding.has(id)) return send(res, 409, { error: "busy" });
+    deciding.add(id);
+    try { return await decideNow(req, res, id, action, by, now); }
+    finally { deciding.delete(id); }
+  }
+  async function decideNow(req, res, id, action, by, now) {
+    const order = find(id);
     const data = parse(await body(req, 2048)) || {};
     const reason = typeof data.reason === "string" ? data.reason : "";
     const allowed = { approve: ["paid"], reject: ["paid", "problem"], remove: ["live"] }[action];
@@ -161,13 +183,18 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
       try { await stripe.refund(order.payment, `refund-${order.id}`); }
       catch (error) { log(`refund: ${error.message}`); return send(res, 502, { error: "stripe" }); }
     }
+    let done;
     if (action === "approve") {
-      approve(book, id, by, now);
-      try { renameSync(pending(id), shown(id)); } catch (error) { log(`approve: logo not moved (${error.message})`); }
-    } else if (action === "reject") { reject(book, id, by, reason, now); forget(pending(id)); }
-    else { remove(book, id, by, reason, refund, now); forget(shown(id)); }
-    save();
-    return send(res, 200, { order: forPanel(order) });
+      // The logo goes public with the order, or the order waits.
+      try { if (!existsSync(shown(id))) renameSync(pending(id), shown(id)); }
+      catch (error) { log(`approve: logo not moved (${error.message})`); return send(res, 409, { error: "image" }); }
+      const back = () => { try { renameSync(shown(id), pending(id)); } catch { /* left public; the order is not live */ } };
+      try { done = commit(() => approve(book, id, by, now, hand())); } catch (error) { back(); throw error; }
+      if (done.error) back();
+    } else if (action === "reject") { done = commit(() => reject(book, id, by, reason, now)); if (!done.error) forget(pending(id)); }
+    else { done = commit(() => remove(book, id, by, reason, refund, now)); if (!done.error) forget(shown(id)); }
+    if (done.error) return send(res, 409, { error: done.error });
+    return send(res, 200, { order: forPanel(find(id)) });
   }
 
   async function panel(req, res, url, { foreign, key, now }) {
@@ -198,24 +225,34 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     seatsPayload: () => ({ seats: cleanSeats({ seats: [...hand(), ...liveSeats(book)] }), reserved: reserved(book), checkout: open }),
     // true when the request was the shop's to answer.
     async handle(req, res, url, ctx) {
-      const p = url.pathname;
-      if (p === "/api/seats/checkout" && req.method === "POST") { if (!open) send(res, 404, { error: "closed" }); else await checkout(req, res, ctx); return true; }
-      const order = p.match(/^\/api\/seats\/order\/(o-[0-9a-f]{24})$/);
-      if (order && req.method === "GET") {
-        const o = book.orders.find((x) => x.id === order[1]);
-        o ? send(res, 200, { state: buyerState(o) }) : send(res, 404, { error: "order" });
+      try { return await route(req, res, url, ctx); }
+      catch (error) {
+        log(`shop: ${error.message}`);
+        if (!res.headersSent) send(res, 500, { error: "server" }); else res.end();
         return true;
       }
-      const cancel = p.match(/^\/api\/seats\/order\/(o-[0-9a-f]{24})\/cancel$/);
-      if (cancel && req.method === "POST") { if (!open) send(res, 404, { error: "closed" }); else await giveUp(res, cancel[1], ctx); return true; }
-      if (p === "/api/stripe" && req.method === "POST") { if (!open) send(res, 404, { error: "closed" }); else await stripeEvent(req, res, ctx); return true; }
-      if (p.startsWith("/api/yonetim/")) { if (!panelOpen) send(res, 404, { error: "not found" }); else await panel(req, res, url, ctx); return true; }
-      return false;
     },
     sweep(now) {
-      const { expired, pruned } = sweep(book, now);
-      for (const o of pruned) forget(pending(o.id));
-      if (expired.length || pruned.length) save();
+      try {
+        const { pruned, stale } = commit(() => sweep(book, now), (r) => r.expired.length + r.pruned.length > 0);
+        for (const o of [...pruned, ...stale]) forget(pending(o.id));
+      } catch (error) { log(`orders: sweep not saved, will retry (${error.message})`); }
     },
   };
+
+  async function route(req, res, url, ctx) {
+    const p = url.pathname;
+    if (p === "/api/seats/checkout" && req.method === "POST") { if (!open) send(res, 404, { error: "closed" }); else await checkout(req, res, ctx); return true; }
+    const order = p.match(/^\/api\/seats\/order\/(o-[0-9a-f]{24})$/);
+    if (order && req.method === "GET") {
+      const o = find(order[1]);
+      o ? send(res, 200, { state: buyerState(o) }) : send(res, 404, { error: "order" });
+      return true;
+    }
+    const cancel = p.match(/^\/api\/seats\/order\/(o-[0-9a-f]{24})\/cancel$/);
+    if (cancel && req.method === "POST") { if (!open) send(res, 404, { error: "closed" }); else await giveUp(res, cancel[1], ctx); return true; }
+    if (p === "/api/stripe" && req.method === "POST") { if (!open) send(res, 404, { error: "closed" }); else await stripeEvent(req, res, ctx); return true; }
+    if (p.startsWith("/api/yonetim/")) { if (!panelOpen) send(res, 404, { error: "not found" }); else await panel(req, res, url, ctx); return true; }
+    return false;
+  }
 }

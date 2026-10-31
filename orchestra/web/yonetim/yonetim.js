@@ -73,7 +73,11 @@ async function act(order, action, body, done) {
   const res = await fetch(`/api/yonetim/orders/${order.id}/${action}`, { method: 'POST',
     headers: { 'x-yonetim': '1', 'content-type': 'application/json' }, body: JSON.stringify(body || {}) }).catch(() => null);
   if (res?.status === 401) return showLogin();
+  const why = res?.status === 409 ? (await res.json().catch(() => ({}))).error : null;
   say(res?.ok ? done : res?.status === 502 ? 'Stripe iadeyi kabul etmedi. Biraz sonra yeniden dene.'
+    : why === 'image' ? 'Logosu bulunamadı, onaylanamaz. Reddedip iade edebilirsin.'
+    : why === 'taken' ? 'Bu yere sonradan elle koltuk eklenmiş. Önce onu kaldır ya da siparişi reddedip iade et.'
+    : why === 'busy' ? 'Bu sipariş için başka bir işlem sürüyor. Biraz sonra yeniden dene.'
     : res?.status === 409 ? 'Bu sipariş artık o durumda değil. Liste yenilendi.' : 'Bir sorun oldu. Yeniden dene.');
   await load();
 }

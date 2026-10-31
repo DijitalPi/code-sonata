@@ -15,7 +15,7 @@ const STATE = {
     order('o-d', 'held', { name: 'Delta', col: 60, paidAt: null, email: null })],
   events: [{ at: T, order: 'o-a', what: 'paid', by: null }, { at: T + 60_000, order: 'o-c', what: 'live', by: 'ozer' }],
 };
-let signedIn = false, refuse = null;
+let signedIn = false, refuse = null, refusal = 'x';
 const calls = [];
 globalThis.fetch = async (url, init = {}) => {
   const call = { url, method: init.method || 'GET', headers: init.headers || {}, body: init.body ? JSON.parse(init.body) : undefined };
@@ -24,7 +24,7 @@ globalThis.fetch = async (url, init = {}) => {
   if (url === '/api/yonetim/login') return call.body?.key === KEY ? (signedIn = true, reply(200, { name: 'selim' })) : reply(401, { error: 'key' });
   if (!signedIn) return reply(401, { error: 'login' });
   if (url === '/api/yonetim/state') return reply(200, STATE);
-  if (refuse) return reply(refuse, { error: 'x' });
+  if (refuse) return reply(refuse, { error: refusal });
   return reply(200, { order: {} });
 };
 await import('./web/yonetim/yonetim.js');
@@ -85,6 +85,18 @@ test('rejecting asks for a reason first and refunds only on the second click', a
     await button('Reddet ve iade et').onclick(); await settle();
     assert.match(text(), /Stripe iadeyi kabul etmedi\. Biraz sonra yeniden dene\./);
   } finally { refuse = null; }
+});
+
+test('a refused approval says why: no logo, seats added by hand, or another step under way', async () => {
+  await go('#bekleyen');
+  refuse = 409;
+  try {
+    for (const [why, said] of [['image', /Logosu bulunamadı/], ['taken', /elle koltuk eklenmiş/], ['busy', /başka bir işlem sürüyor/], ['state', /artık o durumda değil/]]) {
+      refusal = why;
+      await button('Onayla').onclick(); await settle();
+      assert.match(text(), said, why);
+    }
+  } finally { refuse = null; refusal = 'x'; }
 });
 
 test('the seats list filters by state, and a live seat comes down with or without a refund', async () => {

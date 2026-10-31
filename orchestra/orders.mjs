@@ -8,7 +8,8 @@ import { validBlock, blockSeats, blockPrice, cleanHolder, taken, canPlace } from
 
 export const HOLD_MS = 31 * 60_000;       // Stripe keeps a Checkout session at least 30 minutes
 export const GRACE_MS = 10 * 60_000;      // a payment made in the last second may be reported a little later
-export const FORGET_MS = 24 * 3600_000;   // an expired order (and its image) is kept a day, then forgotten
+export const LOGO_MS = 24 * 3600_000;     // an expired order's logo is kept a day, for a payment reported late
+export const FORGET_MS = 4 * 24 * 3600_000; // the order itself outlives Stripe's three days of retrying an event
 export const HELD_PER_IP = 2, HELD_TOTAL = 50, EVENTS = 500;
 const STATES = new Set(["held", "paid", "problem", "live", "expired", "refunded", "removed"]);
 const BLOCKING = new Set(["held", "paid", "problem", "live"]);
@@ -58,11 +59,14 @@ export function setSession(book, id, session) {
   if (order) order.session = session;
 }
 
+// The address digest only limits holds: it goes when the order stops being held.
+function release(order, state) { order.state = state; order.ipKey = null; }
+
 // Stripe could not open a payment page: the hold ends at once.
 export function drop(book, id, now) {
   const order = find(book, id);
   if (order?.state !== "held") return null;
-  order.state = "expired";
+  release(order, "expired");
   note(book, order, "checkout-failed", null, now);
   return order;
 }
@@ -73,7 +77,7 @@ export function paid(book, { id, amount, currency, email, payment, session, now 
   Object.assign(order, { email: typeof email === "string" ? email.slice(0, 200) : null, payment: payment ?? null,
     session: session ?? order.session, paidAt: now });
   const problem = amount !== order.amount || currency !== order.currency ? "amount" : !canPlace(blockOf(order), used(book, hand, order)) ? "taken" : null;
-  order.state = problem ? "problem" : "paid";
+  release(order, problem ? "problem" : "paid");
   order.reason = problem;
   note(book, order, order.state, null, now);
   return { order, changed: true };
@@ -82,17 +86,18 @@ export function paid(book, { id, amount, currency, email, payment, session, now 
 export function expire(book, id, now) {
   const order = find(book, id);
   if (order?.state !== "held") return null;
-  order.state = "expired";
+  release(order, "expired");
   note(book, order, "expired", null, now);
   return order;
 }
 
 export function sweep(book, now) {
   const expired = book.orders.filter((o) => o.state === "held" && o.heldUntil + GRACE_MS < now);
-  for (const o of expired) { o.state = "expired"; note(book, o, "expired", null, now); }
+  for (const o of expired) { release(o, "expired"); note(book, o, "expired", null, now); }
   const pruned = book.orders.filter((o) => o.state === "expired" && o.heldUntil + FORGET_MS < now);
   book.orders = book.orders.filter((o) => !pruned.includes(o));
-  return { expired, pruned };
+  const stale = book.orders.filter((o) => o.state === "expired" && o.heldUntil + LOGO_MS < now);
+  return { expired, pruned, stale };
 }
 
 function decide(book, id, from, to, by, reason, now) {
@@ -102,7 +107,12 @@ function decide(book, id, from, to, by, reason, now) {
   note(book, order, to, by, now);
   return order;
 }
-export const approve = (book, id, by, now) => decide(book, id, ["paid"], "live", by, null, now);
+// Seats added by hand since the payment would hide the block: the order waits until that is sorted out.
+export function approve(book, id, by, now, hand = []) {
+  const order = find(book, id);
+  if (order?.state === "paid" && !canPlace(blockOf(order), used(book, hand, order))) return { error: "taken" };
+  return decide(book, id, ["paid"], "live", by, null, now);
+}
 export function reject(book, id, by, reason, now) {
   const order = decide(book, id, ["paid", "problem"], "refunded", by, reason, now);
   if (!order.error) order.refunded = true;

@@ -130,3 +130,21 @@ test('back from Stripe without paying, the held place is let go', async () => {
   assert.deepEqual([calls[0].url, calls[0].init.method], ['/api/seats/order/o-4/cancel', 'POST']);
   assert.equal($('seat-status').textContent, 'Ödeme yapılmadı. Ayırdığın yer bırakıldı.');
 });
+
+test('a cancel that comes after the payment tells what really happened', async () => {
+  calls.length = 0;
+  answer = (url) => (url.endsWith('/cancel') ? { status: 409, body: { error: 'state' } } : { status: 200, body: { state: 'paid' } });
+  await followOrder('o-5', { cancelled: true, wait: 0 });
+  assert.equal(calls[1].url, '/api/seats/order/o-5');
+  assert.equal($('seat-status').textContent, 'Ödemen alındı. Koltuğun onay bekliyor; onaylanınca salonda görünecek.');
+});
+
+test('reading the terms keeps the chosen place', async () => {
+  shop(true);
+  await fillForm({ terms: true });
+  view('terms'); view('seats');
+  calls.length = 0;
+  answer = () => ({ status: 200, body: { id: 'o-6', url: 'https://checkout.stripe.test/c/6' } });
+  await $('seat-pay').onclick();
+  assert.equal(calls[0]?.url, '/api/seats/checkout', $('seat-pay-status').textContent);
+});
