@@ -22,8 +22,8 @@ export const EN = {
   // hall status
   'Henüz nota yok': 'No notes yet', 'Ülken: {a} {b}': 'Your country: {a} {b}', 'henüz notası yok': 'no notes yet', '{a} {b} öne geçti!': '{a} {b} takes the lead!', 'Ses kontrolleri': 'Sound controls',
   'az önce': 'just now', '{a} dk önce': '{a} min ago', '{a} saat önce': '{a} h ago',
-  'Salon sakin. Salon piyanisti çalıyor; gerçek ajan faaliyeti bekleniyor.': 'The hall is quiet. The house pianist plays while it waits for real agent activity.',
-  'İlk ajan faaliyeti bekleniyor.': 'Waiting for the first agent activity.', 'Bugünün zirvesi: {a} makine.': "Today's peak: {a} machines.",
+  'Şu an çalışan ajan yok; salon piyanisti çalıyor. Ajanlar adım attıkça orkestra katılır.': 'No agent is working right now; the house pianist plays. The orchestra joins in as agents take steps.',
+  'Şu an çalışan ajan yok. Ajanlar adım attıkça orkestra çalar.': 'No agent is working right now. The orchestra plays as agents take steps.', 'Bugünün zirvesi: {a} makine.': "Today's peak: {a} machines.",
   'Şimdi': 'Now playing', 'Son faaliyet {a}.': 'Last activity {a}.', 'doruk': 'climax', 'Etkinlik salonuna bağlı': 'Connected to the event hall', 'Canlı salona bağlı': 'Connected to the live hall',
   'Bağlantı kesildi · yeniden bağlanıyor…': 'Disconnected · reconnecting…',
   'Canlı bilgi alınamıyor. Bağlantı geldiğinde salon güncellenecek.': 'No live data. The hall updates when the connection returns.',

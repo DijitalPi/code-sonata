@@ -67,6 +67,14 @@ test('the page has one listen button: the demo concert while no agent works, the
   assert.doesNotMatch(html, /id="demo-concert"/);
 });
 
+test('the help for an agent that will not connect starts with what to do, the privacy note last', async () => {
+  const html = await readFile(new URL('./web/index.html', import.meta.url), 'utf8');
+  const help = html.match(/<summary>Bağlanmazsa ne yapmalı<\/summary>([\s\S]*?)<\/details>/)[1];
+  const paragraphs = [...help.matchAll(/<p>([\s\S]*?)<\/p>/g)].map((m) => m[1]);
+  assert.match(paragraphs[0], /^Bağlanmıyorsa/);
+  assert.match(paragraphs.at(-1), /^Sunucuya anonim makine kimliği/);
+});
+
 test('flow plays loops: bounded notes, a beat, scenes; without the option a conductor plays songs', () => {
   const site = createConductor({ population: busy([1, 1, 0, 1, 0, 0, 0, 1, 0]) });
   assert.equal(site.flow, null);

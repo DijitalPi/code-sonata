@@ -102,7 +102,7 @@ function showNow(frame) {
   now.replaceChildren();
   if (!frame.working) {
     // Empty hall: the house pianist plays; say so plainly, with when an agent last played.
-    const parts = [t(frame.house ? "Salon sakin. Salon piyanisti çalıyor; gerçek ajan faaliyeti bekleniyor." : "İlk ajan faaliyeti bekleniyor.")];
+    const parts = [t(frame.house ? "Şu an çalışan ajan yok; salon piyanisti çalıyor. Ajanlar adım attıkça orkestra katılır." : "Şu an çalışan ajan yok. Ajanlar adım attıkça orkestra çalar.")];
     if (frame.lastActive) parts.push(t(`Son faaliyet ${ago(frame.lastActive)}.`));
     if (frame.peak) parts.push(t(`Bugünün zirvesi: ${frame.peak.toLocaleString()} makine.`));
     now.textContent = parts.join(" ");
