@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { TITLES } from "./web/music.mjs";
 import { createConductor } from "./web/conductor.mjs";
 import { cleanSeats } from "./web/seats.mjs";
+import { createShop } from "./shop.mjs";
 import { EN } from "./web/lang-en.mjs";
 import { loadGeo, country } from "./geo.mjs";
 
@@ -489,6 +490,9 @@ function loadSeats() {
 }
 loadSeats();
 if (SEATS_FILE) setInterval(loadSeats, 60_000).unref();
+// Selling seats (shop.mjs): open once Stripe, ORDERS_FILE and SEATS_DIR are set; the panel once ADMIN_KEYS is.
+const shop = createShop({ hand: () => seatHolders });
+setInterval(() => shop.sweep(wall()), 60_000).unref();
 
 // ---------- http ----------
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".json": "application/json", ".py": "text/plain; charset=utf-8", ".txt": "text/plain; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2", ".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg": "image/jpeg" };
@@ -552,6 +556,8 @@ const server = http.createServer({ connectionsCheckingInterval: 1000, requestTim
   res.setHeader("x-frame-options", "DENY");
   // Code, fonts and sound come only from this site; blob: is for moments made in the browser.
   res.setHeader("content-security-policy", "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+  const home = PUBLIC_URL || `${TRUST_PROXY ? "https" : "http"}://${req.headers.host}`;
+  if (await shop.handle(req, res, url, { foreign, key, now, site: home })) return;
   if (req.method === "POST" && ["/api/pair", "/api/me", "/api/unpair"].includes(url.pathname)) {
     if (foreign) return json(res, 403, { error: "origin" });
     // Each page asks for its own pairing every two seconds: that poll is limited per pairing, so an office of
@@ -633,7 +639,7 @@ const server = http.createServer({ connectionsCheckingInterval: 1000, requestTim
   // `now`: the hall's clock, so a page can tell how far behind the stream reaches it (see app.js).
   if (["GET", "HEAD"].includes(req.method) && url.pathname === "/api/health") return json(res, 200, { ok: true, players: players.size, listeners: listeners.size, now });
   if (req.method !== "GET" && req.method !== "HEAD") return json(res, 405, { error: "method" });   // HEAD: same headers, no body
-  if (url.pathname === "/api/seats") return json(res, 200, { seats: seatHolders });
+  if (url.pathname === "/api/seats") return json(res, 200, shop.seatsPayload());
   if (url.pathname.startsWith("/seat-images/")) {
     const name = url.pathname.slice("/seat-images/".length);
     try {
@@ -651,7 +657,12 @@ const server = http.createServer({ connectionsCheckingInterval: 1000, requestTim
       return res.end(file);
     } catch { res.writeHead(404); return res.end("not found"); }
   }
-  const path = normalize(url.pathname === "/" ? "/index.html" : url.pathname).replace(/^(\.\.[/\\])+/, "");
+  // The management panel exists only with ADMIN_KEYS, and search engines are asked to leave it alone.
+  const panel = /^\/yonetim(\/|$)/.test(url.pathname);
+  if (panel && !shop.panelOpen) { res.writeHead(404); return res.end("not found"); }
+  if (panel) res.setHeader("x-robots-tag", "noindex");
+  const page = url.pathname === "/" ? "/index.html" : /^\/yonetim\/?$/.test(url.pathname) ? "/yonetim/index.html" : url.pathname;
+  const path = normalize(page).replace(/^(\.\.[/\\])+/, "");
   try {
     const file = await readFile(join(WEB, path));
     // Page and code revalidate every load, so a new version shows up right away. The sound engine
