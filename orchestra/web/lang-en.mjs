@@ -163,6 +163,9 @@ export const EN = {
   'Ödemeye geç': 'Go to payment', 'Yeri değiştir': 'Change the place', 'Koltuğunun salondaki önizlemesi': 'Preview of your seats in the hall',
   'Henüz satılmış koltuk yok.': 'No seats sold yet.',
   '{a} · koltuğu {b}': '{a} · {b} per seat', '{a} boş koltuk · {b} sıra': '{a} free seats · {b} rows', '{a} koltuk · {b} yan yana, {c} sıra': '{a} seats · {b} side by side, {c} rows',
+  // One seat: the sentences above with the number written in, so English says "1 seat", not "1 seats".
+  '1 koltuk': '1 seat', '{a} · 1 koltuk': '{a} · 1 seat', '1 koltuk · {a}': '1 seat · {a}', 'Seçtiğin yer: {a}, 1 koltuk, {b}.': 'Your place: {a}, 1 seat, {b}.',
+  "{a}, {b}. sıradan 1 koltuk · {c}. Tıkla ya da Enter'a bas.": '{a}, from row {b}: 1 seat · {c}. Click or press Enter.',
   'Burayı seç': 'Choose this place', 'Vazgeç': 'Cancel',
   "{a}, {b}. sıradan {c} koltuk · {d}. Tıkla ya da Enter'a bas.": '{a}, from row {b}: {c} seats · {d}. Click or press Enter.',
   'Bu koltuklardan bazıları dolu. Bloğu boş bir yere götür.': 'Some of these seats are taken. Move the block to free seats.',

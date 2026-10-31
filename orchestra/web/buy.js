@@ -59,7 +59,7 @@ export async function followOrder(id, { cancelled = false, wait = 3000, tries = 
 }
 
 export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (url) => location.assign(url) }) {
-  let tier = 0, width = 3, depth = 2, used = new Set(), ghost = null, chosen = null, placing = false, image = null;
+  let tier = 0, width = 1, depth = 1, used = new Set(), ghost = null, chosen = null, placing = false, image = null;
   let checkoutOpen = false, paying = false;
   addEventListener('shop', (event) => { checkoutOpen = Boolean(event.detail?.checkout); });
 
@@ -92,7 +92,7 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
   }
   function price() {
     $('seat-price').textContent = money(blockPrice({ ring: TIERS[tier].rings[0], col: 0, width, depth }));
-    $('seat-count').textContent = `${width * depth} koltuk · ${width} yan yana, ${depth} sıra`;
+    $('seat-count').textContent = width * depth === 1 ? '1 koltuk' : `${width * depth} koltuk · ${width} yan yana, ${depth} sıra`;
   }
   for (const id of ['seat-width', 'seat-depth']) {
     $(id).addEventListener('input', () => { clampSize(); price(); });

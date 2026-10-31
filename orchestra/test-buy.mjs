@@ -160,3 +160,23 @@ test('a cancel that could not reach Stripe says only what the order shows', asyn
   await followOrder('o-9', { cancelled: true, wait: 0 });
   assert.equal($('seat-status').textContent, 'Ödemenin durumu şu an doğrulanamadı. Bağlantın gelince bu sayfayı yenile.');
 });
+
+test('a buyer starts from one seat and makes the block bigger if they want', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const html = await readFile(new URL('./web/index.html', import.meta.url), 'utf8');
+  assert.match(html, /<input id="seat-width"[^>]* value="1"/);
+  assert.match(html, /<input id="seat-depth"[^>]* value="1"/);
+});
+
+test('in English one seat reads as one seat, not "1 seats"', async () => {
+  const { t, setLang } = await import('./web/i18n.js');
+  setLang('en');
+  try {
+    assert.equal(t('1 koltuk'), '1 seat');
+    assert.equal(t("Orta balkon, 3. sıradan 1 koltuk · 40 $. Tıkla ya da Enter'a bas."), 'Middle balcony, from row 3: 1 seat · $40. Click or press Enter.'.replace('Middle balcony', t('Orta balkon')).replace('$40', t('40 $')));
+    assert.equal(t('Seçtiğin yer: Sahne önü, 1 koltuk, 90 $.'), `Your place: ${t('Sahne önü')}, 1 seat, ${t('90 $')}.`);
+    assert.equal(t('Sahne önü · 1 koltuk'), `${t('Sahne önü')} · 1 seat`);
+    assert.equal(t('1 koltuk · Sahne önü'), `1 seat · ${t('Sahne önü')}`);
+    assert.equal(t('Sahne önü · 11 koltuk'), `${t('Sahne önü')} · 11 seats`, 'eleven stays plural');
+  } finally { setLang('tr'); }
+});
