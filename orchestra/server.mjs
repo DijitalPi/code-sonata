@@ -476,7 +476,7 @@ if (METRICS_FILE) {
 const sameSecret = (given, secret) => { const a = Buffer.from(given), b = Buffer.from(secret); return a.length === b.length && timingSafeEqual(a, b); };
 
 // ---------- seat holders ----------
-// Sold seats live in SEATS_FILE (JSON, edited by hand until payment exists) and their images in SEATS_DIR.
+// Seats added by hand live in SEATS_FILE (JSON) and every holder's image in SEATS_DIR; paid ones come from shop.mjs.
 // The file is read again within a minute of a change; anything malformed is left out (see web/seats.mjs).
 const SEATS_FILE = process.env.SEATS_FILE || "", SEATS_DIR = process.env.SEATS_DIR || "";
 let seatHolders = [], seatsRead = 0;

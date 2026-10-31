@@ -150,8 +150,10 @@ PORT=4480 node orchestra/server.mjs    # http://127.0.0.1:4480
 
 The page gives you a one-line command that downloads `reader.py` (Python 3, stdlib only) from the
 server and joins. To play locally and join at the same time: `python3 agents.py --global <URL>`.
-There is no public hall yet; run your own. Self-hosting, Docker and reverse proxy settings are in
-[orchestra/docs/OPERATIONS.md](orchestra/docs/OPERATIONS.md), architecture details in
+There is no public hall yet; run your own. Seats around the hall can be sold with Stripe Checkout and
+approved by hand at `/yonetim/`; this stays off until `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`,
+`SEATS_DIR`, `ORDERS_FILE` and `ADMIN_KEYS` are set. Self-hosting, Docker, payment and reverse proxy
+settings are in [orchestra/docs/OPERATIONS.md](orchestra/docs/OPERATIONS.md), architecture details in
 [orchestra/README.md](orchestra/README.md) (Turkish).
 
 ## Folder and editor modes

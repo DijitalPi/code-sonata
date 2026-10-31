@@ -33,6 +33,7 @@ Sunucu sınırları: toplam 1000 dinleyici, adres başına 32 (IPv6'da /64 bir a
 - PNG/WAV/video tarayıcıda üretilir, sunucuya yüklenmez.
 - Cihazdaki isteğe bağlı sayaçlar arayüzdeki düğmeyle silinir.
 - Ses motoru, ses örnekleri ve yazı tipleri sitenin kendisinden gelir; tarayıcıdan başka siteye istek gitmez.
+- Koltuk siparişi `ORDERS_FILE`'da durur: ad, link, blok, tutar, Stripe oturum/ödeme kimliği, Stripe'tan gelen e-posta ve hız sınırının tuzlu adres özeti (IP değil). Kart bilgisi sunucuya hiç gelmez. Bekleyen logo herkese kapalı `SEATS_DIR/pending/`'de durur; reddedilince silinir, süresi dolanınki 24 saat sonra.
 
 ## Docker
 
@@ -43,11 +44,13 @@ docker build -f orchestra/Dockerfile -t agent-orchestra:local .
 docker run --rm -p 127.0.0.1:4480:4480 agent-orchestra:local
 ```
 
+Koltuk satışıyla: kalıcı bir volume bağla, ayarları dosyadan ver (`-v /srv/orchestra:/data -e SEATS_DIR=/data/seats -e ORDERS_FILE=/data/orders.json --env-file stripe.env`). Klasör `node` kullanıcısına yazılabilir olmalı.
+
 Kapsayıcı içinde `HOST=0.0.0.0`; örnek komut host portunu yalnız loopback'e açar.
 
 ## Ters vekil arkasında yayın
 
-`HOST=0.0.0.0` ve `TRUST_PROXY=1`. Sunucu portuna yalnız güvenilir vekil ulaşabilmeli: istemci portu doğrudan görürse sahte X-Forwarded-For ile hız sınırını ve ülkeyi aşar. Vekilde istek gövdesi 2 KiB, istek hızı sınırı, SSE tamponlaması kapalı, TLS ve origin doğrulaması olmalı. `PUBLIC_URL=https://alan-adin` OG/Twitter görselini ve canonical adresi mutlak üretir; yerelde boş bırak.
+`HOST=0.0.0.0` ve `TRUST_PROXY=1`. Sunucu portuna yalnız güvenilir vekil ulaşabilmeli: istemci portu doğrudan görürse sahte X-Forwarded-For ile hız sınırını ve ülkeyi aşar. Vekilde istek gövdesi 2 KiB (koltuk alırken `/api/seats/checkout` 450 KiB, Stripe olayı `/api/stripe` 64 KiB), istek hızı sınırı, SSE tamponlaması kapalı, TLS ve origin doğrulaması olmalı. `PUBLIC_URL=https://alan-adin` OG/Twitter görselini ve canonical adresi mutlak üretir; yerelde boş bırak.
 
 Kesinti: sunucu durunca tarayıcı SSE'yi kendisi yeniden dener, vekilin 502'si sayfayı kalıcı koparmaz (1–30 sn arası artan aralıklarla). Yeniden başlatma eşleştirmeleri siler; kullanıcı yeni komut oluşturur. Eski zamanlı notalar çalınmaz, saat farkı toparlanır. Kesinti sırasında canlı sayılar "—" görünür. Okuyucu olayları en iyi çabayla yollar; kalıcı kuyruk yok, kesintideki adımlar kaybolabilir. Geri dönüş için önceki imaj digest'ini ve ayarları sakla.
 
@@ -62,8 +65,22 @@ Kesinti: sunucu durunca tarayıcı SSE'yi kendisi yeniden dener, vekilin 502'si 
 | `ALLOW_SIMULATION=1` | ASLA üretimde | Yalnız crowd/benchmark testleri |
 | `PUBLIC_URL` | Yayında | Mutlak OG ve canonical adres |
 | `HALL=songs` | Gerekirse | Salon akış yerine eski şarkı modunu çalar; varsayılan akış |
+| `SEATS_FILE`, `SEATS_DIR` | Koltuk sahipleri | Elle eklenen koltuklar (JSON) ve logo klasörü; dosya bir dakika içinde yeniden okunur |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `ORDERS_FILE` | Koltuk satışı | Üçü ve `SEATS_DIR` varken "Koltuk al" ödemeye açılır; biri eksikse sayfa ödemenin açık olmadığını söyler. Kısıtlı anahtar yeter (aşağıda) |
+| `ADMIN_KEYS` | Yönetim paneli | `ad:anahtar,ad2:anahtar2`; ad küçük harf, rakam, tire (≤20), anahtar ≥24 karakter. Yoksa `/yonetim/` 404. Onaylar kimin anahtarıyla yapıldıysa o adla kaydedilir |
+| `SLACK_WEBHOOK_URL` | İsteğe bağlı | Ödenen her sipariş için bir Slack mesajı, panele bağlantıyla |
 
 Etkinlik anahtarı olmadan da bir ofis ağı çalışır: makine raporları ayrı sayılır (adres başına 40 rapor/sn, en fazla 20 makine, saatte 40 yeni makine; uykudan 20 dakika içinde dönen makine yeni sayılmaz ve kendi bölümüne döner). Dinleyici ve kişisel eşleştirme adres başına 32. Sayfa, eşleştirme ve sayaç istekleri adres başına 8/sn; kişisel görünümün iki saniyelik sorgusu eşleştirme başına sayılır. `/api/play` yalnız okuyucudan kabul edilir (JSON, tarayıcı başlığı yok): başka bir site ziyaretçilerinin tarayıcısından makine oturtamaz, dinleyici koltuğu tutamaz.
+
+## Koltuk ödemesi (Stripe)
+
+Alıcı yeri seçer, logo ve link verir, Stripe Checkout'ta öder; koltuk elle onaylanınca salonda görünür, reddedilirse ödeme tamamen iade edilir. Fiyatı sunucu belirler, ödeme sayfası 31 dakika açık kalır (Stripe en az 30 ister), süresi dolan yer boşalır.
+
+1. Stripe panelinde kısıtlı anahtar: Checkout Sessions yaz, Charges and Refunds yaz, Payment Intents oku. Başka izin gerekmez.
+2. Webhook uç noktası `https://alan-adin/api/stripe`, olaylar `checkout.session.completed` ve `checkout.session.expired`. İmza sırrı `STRIPE_WEBHOOK_SECRET`.
+3. `PUBLIC_URL` dönüş adresini belirler; yayında şart.
+4. Stripe sayfası tutarı alıcının para biriminde gösterebilir (Adaptive Pricing); tahsilat ve iade yine USD tutarı üzerinden yapılır.
+5. Yerelde test modunda dene: `stripe listen --forward-to localhost:4480/api/stripe --events checkout.session.completed,checkout.session.expired`, imza sırrı `stripe listen --print-secret`. Kart `4242 4242 4242 4242`.
 
 ## Yayın kontrol listesi
 

@@ -9,7 +9,7 @@ FROM node:25-alpine@sha256:bdf2cca6fe3dabd014ea60163eca3f0f7015fbd5c7ee1b0e9ccb4
 ENV NODE_ENV=production PORT=4480 HOST=0.0.0.0 TRUST_PROXY=0
 WORKDIR /app
 COPY --chown=node:node reader.py ./reader.py
-COPY --chown=node:node orchestra/server.mjs orchestra/geo.mjs ./orchestra/
+COPY --chown=node:node orchestra/server.mjs orchestra/geo.mjs orchestra/shop.mjs orchestra/orders.mjs orchestra/stripe.mjs orchestra/admin.mjs orchestra/webp.mjs ./orchestra/
 COPY --chown=node:node orchestra/geo/ ./orchestra/geo/
 COPY --chown=node:node orchestra/web/ ./orchestra/web/
 COPY --from=sounds --chown=node:node /app/orchestra/web/sounds/ ./orchestra/web/sounds/

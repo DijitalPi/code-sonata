@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { connect } from 'node:net';
+import { readFileSync } from 'node:fs';
 const port = 4493, base = `http://127.0.0.1:${port}`;
 const EVENT_KEY = 'event-test-key-0123456789', METRICS_KEY = 'metrics-test-key-0123456789';
 // Test tools may label simulated machines only on a server that allows it (never in production).
@@ -323,3 +324,17 @@ try {
     assert.equal(back, 'strings');
   });
 } finally { server.kill(); await once(server, 'exit'); }
+
+// The image copies orchestra/*.mjs by name (web/ goes whole): a module the server reaches but the image lacks
+// stops the server at its first line.
+test('the Docker image gets every module the server imports', () => {
+  const need = new Set(), todo = ['server.mjs'];
+  while (todo.length) {
+    const file = todo.pop();
+    if (need.has(file)) continue;
+    need.add(file);
+    for (const [, name] of readFileSync(`orchestra/${file}`, 'utf8').matchAll(/^import .* from "\.\/([a-z-]+\.mjs)";$/gm)) todo.push(name);
+  }
+  const copied = readFileSync('orchestra/Dockerfile', 'utf8').match(/^COPY .*$/gm).join(' ');
+  assert.deepEqual([...need].filter((file) => !copied.includes(`orchestra/${file}`)), []);
+});

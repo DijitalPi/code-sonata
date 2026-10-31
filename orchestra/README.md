@@ -95,4 +95,4 @@ node orchestra/benchmark.mjs 120 45 120
 
 `benchmark.mjs` kendi test sunucusunu açar ve sonucu `orchestra/evidence/` altına yazar (git dışı). Simülasyon kapasite ölçümüdür, gerçek kullanıcı sayısı değildir.
 
-Kendi sunucunda yayınlamak, Docker, ters vekil ayarları ve ölçülen sınırlar: [docs/OPERATIONS.md](docs/OPERATIONS.md).
+Kendi sunucunda yayınlamak, Docker, koltuk ödemesi (Stripe), ters vekil ayarları ve ölçülen sınırlar: [docs/OPERATIONS.md](docs/OPERATIONS.md).
