@@ -288,6 +288,12 @@ try {
     for (let i = 0; i < 12; i++) responses.push((await post('/api/me', { pair }, headers)).status);
     assert.ok(responses.includes(429));
   });
+  await test('Gemini CLI sessions sit in their own block of the audience', async () => {
+    assert.equal((await post('/api/play', { id: 'f1'.repeat(16), steps: 1, working: true, sessions: 2, tools: { gemini: 2 } })).status, 200);
+    const hello = await streamHello(base + '/api/stream');
+    assert.ok(hello.teams.agents.gemini >= 2, JSON.stringify(hello.teams.agents));
+    assert.ok('gemini' in hello.teams.fans);
+  });
   await test('seat holders come cleaned from SEATS_FILE, and their images only from SEATS_DIR', async () => {
     const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
     const { tmpdir } = await import('node:os');

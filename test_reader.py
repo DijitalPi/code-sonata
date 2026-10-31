@@ -26,6 +26,25 @@ def result(call_id, text, error=False):
     return {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": call_id, "is_error": error, "content": text}]}}
 
 
+# Gemini CLI writes one JSON object per line to ~/.gemini/tmp/<project>/chats/session-*.jsonl: the prompt as
+# a "user" line, each model reply as a "gemini" line with its thoughts and tool calls (already carrying their
+# status and result), tool results again as "user" functionResponse parts, and "$set" patches. Shapes as seen
+# in 18,000 session files on the maintainer's Mac; the text here is made up.
+def gemini(*calls, thoughts=True, text="ok"):
+    entry = {"id": "m", "timestamp": "2026-10-31T00:00:00Z", "type": "gemini", "content": text, "model": "gemini-2.5-pro",
+             "thoughts": [{"subject": "s", "description": "d", "timestamp": "t"}] if thoughts else [], "tokens": {"total": 1}}
+    if calls:
+        entry["toolCalls"] = [dict(call) for call in calls]
+    return entry
+
+
+def gcall(name, call_id, command=None, status="success", output=""):
+    args = {"command": command} if command is not None else {"file_path": "x"}
+    return {"id": call_id, "name": name, "args": args, "status": status, "timestamp": "t", "displayName": name,
+            "description": "", "renderOutputAsMarkdown": True, "resultDisplay": output,
+            "result": [{"functionResponse": {"id": call_id, "name": name, "response": {"error" if status == "error" else "output": output}}}]}
+
+
 class ClassifyTests(unittest.TestCase):
     def test_claude_steps(self):
         entry = claude({"type": "thinking"}, {"type": "tool_use", "name": "Edit"},
@@ -106,6 +125,24 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(classify({"type": "event_msg", "payload": {"type": "user_message"}}), ["busy"])
         for entry in ({"type": "attachment"}, {"type": "system"}, [], "x", {"type": "event_msg", "payload": {"type": "token_count"}}):
             self.assertEqual(classify(entry), [])
+
+
+    def test_gemini_steps_results_and_end_of_turn(self):
+        state = Classifier()
+        self.assertEqual(classify({"kind": "main", "sessionId": "x", "projectHash": "h", "startTime": "t", "lastUpdated": "t"}, state), [])
+        self.assertEqual(classify({"id": "u", "timestamp": "t", "type": "user", "content": [{"text": "fix it"}]}, state), ["busy"])
+        self.assertEqual(classify(gemini(gcall("read_file", "r1"), gcall("replace", "e1"), gcall("update_topic", "t1")), state),
+                         ["think", "text", "read", "edit", "tool"])
+        self.assertEqual(classify(gemini(gcall("run_shell_command", "b1", "npm test", output="2 failed, 3 passed")), state),
+                         ["think", "text", "bash", "testfail"])
+        self.assertEqual(classify(gemini(gcall("run_shell_command", "b2", "git commit -m x", output="[main 1a2b3c4] x")), state),
+                         ["think", "text", "bash", "ship"])
+        self.assertEqual(classify(gemini(gcall("write_file", "w1", status="error", output="denied")), state), ["think", "text", "edit", "fail"])
+        # The same results come back as functionResponse parts: the model is busy, nothing is counted twice.
+        response = {"id": "u2", "timestamp": "t", "type": "user", "content": [{"functionResponse": {"id": "b1", "name": "run_shell_command", "response": {"output": "2 failed"}}}]}
+        self.assertEqual(classify(response, state), ["busy"])
+        self.assertEqual(classify(gemini(thoughts=False, text="All done."), state), ["text", "done"])
+        self.assertEqual(classify({"$set": {"lastUpdated": "t"}}, state), [])
 
 
 class WatcherTests(unittest.TestCase):
@@ -195,6 +232,21 @@ class WatcherTests(unittest.TestCase):
         self.assertEqual(watcher.poll(1), [])
         self.append(self.log, claude({"type": "tool_use", "name": "Write"}))
         self.assertEqual(self.kinds(watcher.poll(2)), ["edit"])
+
+    def test_gemini_sessions_are_found_and_counted_as_gemini(self):
+        chats = self.root / ".gemini/tmp/my-project/chats"
+        chats.mkdir(parents=True)
+        watcher = AgentWatcher([self.root / "proj", self.root / ".gemini/tmp"], rescan=0)
+        log = chats / "session-2026-10-31T00-00-a2a-serv.jsonl"
+        log.write_text("")
+        watcher.poll(1.0)
+        self.append(log, {"type": "user", "content": [{"text": "hi"}]}, gemini(gcall("glob", "g1")))
+        events = watcher.poll(2.0)
+        self.assertEqual(self.kinds(events), ["busy", "think", "text", "read"])
+        activity = reader.Activity()
+        for path, kind in events:
+            activity.see(path, kind, 2.0)
+        self.assertEqual(activity.tools(), {"gemini": 1})
 
     def test_results_are_judged_per_session(self):
         watcher = AgentWatcher([self.root], rescan=0)

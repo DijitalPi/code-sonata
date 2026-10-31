@@ -175,7 +175,7 @@ async function poll() {
     if (data.connected && !me?.connected) metric('connection');
     me = data; ownSeat = data.connected ? [data.section, data.seat] : null; ownPulseAt = data.lastActivity;
     $('personal').hidden = !data.connected;
-    $('personal-status').textContent = data.waiting ? 'Okuyucunun bağlanması bekleniyor. Komutu Terminal’de çalıştır.' : !data.connected ? 'Bağlantı kesildi. Okuyucu ve sunucuyu kontrol et; yeniden bağlanınca güncellenir.' : data.steps ? 'Bağlı · kendi faaliyetlerin alınıyor.' : 'Bağlı · ilk yeni faaliyetini bekliyor. Claude/Codex ile çalışmaya başla.';
+    $('personal-status').textContent = data.waiting ? 'Okuyucunun bağlanması bekleniyor. Komutu Terminal’de çalıştır.' : !data.connected ? 'Bağlantı kesildi. Okuyucu ve sunucuyu kontrol et; yeniden bağlanınca güncellenir.' : data.steps ? 'Bağlı · kendi faaliyetlerin alınıyor.' : 'Bağlı · ilk yeni faaliyetini bekliyor. Ajanınla çalışmaya başla.';
     $('my-steps').textContent = num(data.steps);
     $('seat-label').textContent = data.connected ? `Senin koltuğun: ${SECTION_NAMES[data.section]} · ${data.seat + 1}. koltuk · ${data.sessions} oturum. Salondaki katmanın: ${LAYERS[data.section]}.` : '';
     $('activity-label').textContent = KINDS.map(k => `${data.activity[k]} ${labels[k]}`).join(' · ');

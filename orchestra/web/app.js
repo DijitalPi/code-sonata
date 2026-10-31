@@ -122,8 +122,8 @@ function showNow(frame) {
   now.append(heat);
 }
 
-const TEAM_NAMES = { claude: "Claude Code", codex: "Codex", other: "Diğer ajanlar", listen: "Dinleyiciler" };
-const TOOL_NAMES = { claude: "Claude Code", codex: "Codex", other: "other tools" };
+const TEAM_NAMES = { claude: "Claude Code", codex: "Codex", gemini: "Gemini CLI", other: "Diğer ajanlar", listen: "Dinleyiciler" };
+const TOOL_NAMES = { claude: "Claude Code", codex: "Codex", gemini: "Gemini CLI", other: "other tools" };
 let team = "listen";
 try { team = localStorage.getItem("team") || "listen"; } catch {}
 let teams = { agents: {}, fans: {} };
@@ -444,8 +444,8 @@ const REGIONS = {
   choir:      { band: [.89, 1.0], arc: [-72, 72], label: "koro" },
 };
 // Teams in the strip under the stage, left to right.
-const BLOCKS = ["claude", "listen", "codex", "other"];
-const BLOCK_COLORS = { claude: "#d9785a", codex: "#6fb8a0", other: "#a99bd6", listen: "#e6b45a" };
+const BLOCKS = ["claude", "codex", "listen", "gemini", "other"];
+const BLOCK_COLORS = { claude: "#d9785a", codex: "#6fb8a0", gemini: "#7ea6e8", other: "#a99bd6", listen: "#e6b45a" };
 const rad = (d) => (d * Math.PI) / 180;
 
 // Fill a wedge row by row from the front; null if it does not fit at this spacing.

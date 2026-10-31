@@ -3,9 +3,6 @@
 // The page reads it in i18n.js, the server for the English page title and preview tags.
 export const EN = {
   // page and meta
-  'Agent Orchestra · Claude ve Codex adımlarından çalan canlı orkestra': 'Agent Orchestra · a live orchestra played by Claude and Codex steps',
-  'Claude ve Codex oturumlarındaki adımlar canlı bir orkestrada nota olarak çalar. Dinle, kendi ajanını bağla, çalışma anını indir. DijitalPi tarafından geliştirildi.': 'Every step in Claude and Codex sessions plays as a note in a live orchestra. Listen, connect your own agent, download your moment. Made by DijitalPi.',
-  'Claude ve Codex adımların canlı orkestrada çalar. Dinle, ajanını bağla, anını indir.': 'Your Claude and Codex steps play in a live orchestra. Listen, connect your agent, download your moment.',
   'Ses kontrollerine geç': 'Skip to sound controls',
   'Dinlemek ve anını oluşturmak için JavaScript gerekir.': 'Listening and making your moment need JavaScript.',
   // top bar and panel
@@ -14,8 +11,6 @@ export const EN = {
   'Proje ve iletişim': 'Project and contact', 'Gizlilik': 'Privacy', 'Yapabileceklerin': 'What you can do',
   'Seçtiğin iş': 'Your task', 'Paneli kapat': 'Close the panel', 'Dil': 'Language',
   // over the hall
-  'Claude ve Codex adımlarından çalan canlı orkestra': 'A live orchestra played by Claude and Codex steps',
-  'Bağlı makinelerde atılan her adım bu salonda bir nota olarak çalar. Dinlemek için kurulum gerekmez.': 'Every step taken on a connected machine plays as a note in this hall. Listening needs no install.',
   'Orkestrayı dinle': 'Listen to the orchestra', 'Demo konseri': 'Demo concert', 'Sade tınıyla dinle': 'Listen in plain tone',
   'Canlı orkestra salonu': 'Live orchestra hall', 'İlk adım bekleniyor.': 'Waiting for the first step.',
   'Dolu salonu demo konserinde dinle': 'Hear a full hall in the demo concert',
@@ -61,12 +56,10 @@ export const EN = {
   'ana ezgi': 'melody', 'akorlar': 'chords', 'koro hattı': 'choir line', 'bas': 'bass', 'karşı ezgi': 'countermelody', 'çanlar': 'bells', 'vuruşlar': 'beats', 'arpej': 'arpeggio', 'riff': 'riff',
   '{a} · {b}': '{a} · {b}',
   // connect your agent
-  'Bilgisayarındaki yerel okuyucu (macOS ve Linux) yeni Claude ve Codex adımlarını sayıya çevirip salona gönderir. Prompt, kod ve dosya yolu gönderilmez.': 'A local reader on your computer (macOS and Linux) turns new Claude and Codex steps into counts and sends them to the hall. No prompts, code or file paths are sent.',
   'Bağlantı komutumu oluştur': 'Create my connect command', 'Yeni bağlantı oluştur': 'Create a new connection',
   "macOS ya da Linux'ta Terminal'i aç. Python 3 gerekir (macOS'ta Xcode Command Line Tools ile gelir).": 'Open Terminal on macOS or Linux. Python 3 is needed (on macOS it comes with the Xcode Command Line Tools).',
   'Aşağıdaki komutu çalıştır. Komut tek dosyalık okuyucuyu bu siteden indirip başlatır; kurulum gerekmez. İstersen önce': 'Run the command below. It downloads the one-file reader from this site and starts it; nothing is installed. If you like, first',
   'okuyucunun kodunu oku': 'read the reader’s code',
-  'Claude ya da Codex ile bir adım at. Bağlantın ve ilk adımın aşağıda görünür.': 'Take a step with Claude or Codex. Your connection and first step show up below.',
   'Bu tarayıcıya özel komut': 'Command for this browser only', 'Komutu kopyala': 'Copy the command', 'Eşleştirmeyi kaldır': 'Remove pairing',
   "Komut sana özel bir anahtar içerir, paylaşma. Anahtar bir saat sonra silinir. Eşleştirmeyi kaldırmak ortak çalmayı durdurmaz; okuyucuyu durdurmak için Terminal'de Ctrl+C.": 'The command holds a key just for you; do not share it. The key is deleted after an hour. Removing the pairing does not stop shared play; press Ctrl+C in Terminal to stop the reader.',
   'Henüz ajan bağlamadın.': 'No agent connected yet.', 'Kendi sesin nasıl duyulur: örneği dinle': 'Hear how your own sound plays: an example',
@@ -87,7 +80,6 @@ export const EN = {
   'Okuyucunun bağlanması bekleniyor. Komutu Terminal’de çalıştır.': 'Waiting for the reader. Run the command in Terminal.',
   'Bağlantı kesildi. Okuyucu ve sunucuyu kontrol et; yeniden bağlanınca güncellenir.': 'Disconnected. Check the reader and the server; this updates when it reconnects.',
   'Bağlı · kendi faaliyetlerin alınıyor.': 'Connected · your own activity is coming in.',
-  'Bağlı · ilk yeni faaliyetini bekliyor. Claude/Codex ile çalışmaya başla.': 'Connected · waiting for your first new activity. Start working with Claude or Codex.',
   'Senin koltuğun: {a} · {b}. koltuk · {c} oturum. Salondaki katmanın: {d}.': 'Your seat: {a} · seat {b} · {c} sessions. Your layer in the hall: {d}.',
   'düzenleme': 'edit', 'komut': 'command', 'okuma': 'read', 'düşünme': 'thinking', 'bitiş': 'done',
   'Örnek kişisel ses': 'Example personal sound', 'Örneği durdur': 'Stop the example',
@@ -140,7 +132,6 @@ export const EN = {
   "Bağlantıda eşleştirme anahtarın bulunmaz. Sayfa localhost'ta açıksa bağlantı yalnız senin bilgisayarında çalışır.": 'The link does not contain your pairing key. When the page is open on localhost, the link works only on your computer.',
   'Son adımların ağırlığı zamanla azalır. Bu bir başarı ya da üretkenlik sıralaması değildir.': 'Recent steps weigh less over time. This is not a ranking of success or productivity.',
   'Toplam nota': 'Total notes', 'Makine başına': 'Per machine', 'en az 3 makine': 'at least 3 machines',
-  "Agent Orchestra, DijitalPi'nin deneme projesi. Claude ve Codex'teki adımları anonim sayılara çevirir ve herkesin aynı anda duyduğu müziğe dönüştürür.": 'Agent Orchestra is an experiment by DijitalPi. It turns steps in Claude and Codex into anonymous counts and into music everyone hears at the same time.',
   'DijitalPi; etkinlik, hackathon ve ekipler için katılımcıların birlikte oluşturduğu canlı dijital deneyimler kurar.': 'DijitalPi builds live digital experiences that participants create together, for events, hackathons and teams.',
   'DijitalPi ile iletişime geç ↗': 'Contact DijitalPi ↗',
   'Salonda her ışık bağlı bir makinedir ve adım gelince yanar. Adım sayısı iş kalitesini ölçmez.': 'Each light in the hall is a connected machine and lights up with a step. Step counts do not measure the quality of work.',
@@ -157,7 +148,7 @@ export const EN = {
   'Dinlerken.': 'While listening.',
   'Tarayıcın canlı salona bağlanır. IP adresin ülkeyi bulmak, kötüye kullanımı sınırlamak ve günlük sayımda aynı adresi iki kez saymamak için o an kullanılır; kendisi kaydedilmez. Bunun için her açılışta değişen tuzlu bir özet yalnız bellekte ve en fazla o gün boyunca tutulur.': 'Your browser connects to the live hall. Your IP address is used in the moment to find the country, to limit abuse and to avoid counting one address twice in the daily totals; the address itself is not stored. For this, a salted hash that changes on every restart is kept in memory only, for that day at most.',
   'Ajanını bağlarsan.': 'If you connect your agent.',
-  'Okuyucu anonim bir makine kimliği, adım türü sayıları, çalışıyor bilgisi ve oturum sayısı gönderir. Prompt, kod, proje adı ve dosya yolu gönderilmez. Eşleştirme ve adım toplamları sunucu belleğinde en fazla bir saat kalır. Salondaki herkes koltuğunun ülke bayrağını, aracını (Claude, Codex ya da diğer), oturum sayısını ve adım attığın anları görür; küçük bir salonda ülkenden tek kişiysen tanınabilirsin.': 'The reader sends an anonymous machine id, counts of step kinds, whether it is working and the number of sessions. No prompts, code, project names or file paths. Pairings and step totals stay in server memory for at most an hour. Everyone in the hall sees your seat’s country flag, your tool (Claude, Codex or other), the number of sessions and the moments you take steps; in a small hall you may be recognisable if you are the only one from your country.',
+  'Okuyucu anonim bir makine kimliği, adım türü sayıları, çalışıyor bilgisi ve oturum sayısı gönderir. Prompt, kod, proje adı ve dosya yolu gönderilmez. Eşleştirme ve adım toplamları sunucu belleğinde en fazla bir saat kalır. Salondaki herkes koltuğunun ülke bayrağını, aracını (Claude, Codex, Gemini ya da diğer), oturum sayısını ve adım attığın anları görür; küçük bir salonda ülkenden tek kişiysen tanınabilirsin.': 'The reader sends an anonymous machine id, counts of step kinds, whether it is working and the number of sessions. No prompts, code, project names or file paths. Pairings and step totals stay in server memory for at most an hour. Everyone in the hall sees your seat’s country flag, your tool (Claude, Codex, Gemini or other), the number of sessions and the moments you take steps; in a small hall you may be recognisable if you are the only one from your country.',
   'Ölçüm.': 'Counting.', 'Sunucu yalnız günlük toplam sayılar tutar, örneğin bugün kaç kez dinleme başlatıldığı. Kimlik ya da kişiye bağlanan kayıt yoktur.': 'The server keeps only daily totals, such as how many listens started today. Nothing is tied to an identity or a person.',
   'Çalışma anın.': 'Your work moment.', 'Ses, görsel ve video bu tarayıcıda üretilir, sunucuya yüklenmez.': 'Sound, image and video are made in this browser and never uploaded.',
   'Dış kaynaklar.': 'Outside sources.',
@@ -184,4 +175,14 @@ export const EN = {
   '{a} sahip, {b} koltuk. {c} koltuğun {d} tanesi boş.': '{a} holders, {b} seats. {d} of {c} seats are free.',
   '{a} · {b} koltuk': '{a} · {b} seats', '{a} koltuk · {b}': '{a} seats · {b}', 'Demo örneği, gerçek alıcı değil · {a}': 'Demo example, not a real buyer · {a}',
   'Örnek koltuk {a}': 'Example seat {a}',
+  'Agent Orchestra · Kodlama ajanlarının adımlarından çalan canlı orkestra': 'Agent Orchestra · a live orchestra played by coding agents’ steps',
+  'Claude Code, Codex ve Gemini CLI oturumlarındaki adımlar canlı bir orkestrada nota olarak çalar. Dinle, kendi ajanını bağla, çalışma anını indir. DijitalPi tarafından geliştirildi.': 'Every step in Claude Code, Codex and Gemini CLI sessions plays as a note in a live orchestra. Listen, connect your own agent, download your moment. Made by DijitalPi.',
+  'Claude Code, Codex ve Gemini CLI adımların canlı orkestrada çalar. Dinle, ajanını bağla, anını indir.': 'Your Claude Code, Codex and Gemini CLI steps play in a live orchestra. Listen, connect your agent, download your moment.',
+  'Kodlama ajanlarının adımlarından çalan canlı orkestra': 'A live orchestra played by coding agents’ steps',
+  'Claude Code, Codex ve Gemini CLI ile bağlı makinelerde atılan her adım bu salonda bir nota olarak çalar. Dinlemek için kurulum gerekmez.': 'Every step taken with Claude Code, Codex or Gemini CLI on a connected machine plays as a note in this hall. Listening needs no install.',
+  'Bilgisayarındaki yerel okuyucu (macOS ve Linux) yeni Claude Code, Codex ve Gemini CLI adımlarını sayıya çevirip salona gönderir. Prompt, kod ve dosya yolu gönderilmez.': 'A local reader on your computer (macOS and Linux) turns new Claude Code, Codex and Gemini CLI steps into counts and sends them to the hall. No prompts, code or file paths are sent.',
+  'Claude Code, Codex ya da Gemini CLI ile bir adım at. Bağlantın ve ilk adımın aşağıda görünür.': 'Take a step with Claude Code, Codex or Gemini CLI. Your connection and first step show up below.',
+  'Agent Orchestra, DijitalPi\'nin deneme projesi. Claude Code, Codex ve Gemini CLI\'daki adımları anonim sayılara çevirir ve herkesin aynı anda duyduğu müziğe dönüştürür.': 'Agent Orchestra is an experiment by DijitalPi. It turns steps in Claude Code, Codex and Gemini CLI into anonymous counts and into music everyone hears at the same time.',
+  'Bağlı · ilk yeni faaliyetini bekliyor. Ajanınla çalışmaya başla.': 'Connected · waiting for your first new activity. Start working with your agent.',
+  'Okuyucu şu ajanların kayıtlarını okur: Claude Code, Codex ve Gemini CLI. GitHub Copilot CLI, Cursor ve OpenCode, kayıt biçimleri doğrulanınca eklenecek.': 'The reader reads the logs of Claude Code, Codex and Gemini CLI. GitHub Copilot CLI, Cursor and OpenCode will follow once their log formats are verified.',
 };

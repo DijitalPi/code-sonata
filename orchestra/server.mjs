@@ -39,8 +39,8 @@ const STEP_RATE = 12, STEP_BURST = 40;   // steps per second a machine can score
 // A team in one office shares one address: a pilot of 12 people must all hear the hall. One script still
 // cannot take the whole hall (1000 seats) from one address.
 const LISTENERS_PER_IP = 32, MAX_LISTENERS = 1000;
-const TEAMS = ["claude", "codex", "other", "listen"];   // stadium stands
-const TOOLS = ["claude", "codex", "other"];
+const TEAMS = ["claude", "codex", "gemini", "other", "listen"];   // stadium stands
+const TOOLS = ["claude", "codex", "gemini", "other"];
 try { console.log(`geo: ${loadGeo(join(fileURLToPath(new URL(".", import.meta.url)), "geo/dbip-country-ipv4.csv.gz"))} ranges`); }
 catch (error) { console.log(`geo: disabled (${error.message})`); }
 

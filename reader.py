@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Agent Orchestra reader: your Claude Code and Codex steps join the shared orchestra.
+"""Agent Orchestra reader: your Claude Code, Codex and Gemini CLI steps join the shared orchestra.
 
     python3 reader.py 'https://orchestra.example/#pair=...'
 
-Reads the session logs on this computer (~/.claude/projects, ~/.codex/sessions) and sends only
+Reads the session logs on this computer (~/.claude/projects, ~/.codex/sessions, ~/.gemini/tmp) and sends only
 counts once a second: how many steps of each kind, whether an agent is working, how many sessions
 of each tool. Prompts, code, file paths and tool output never leave this computer; test and
 commit results are read only as yes/no. Needs Python 3 and nothing else. Stop with Ctrl+C.
@@ -26,10 +26,12 @@ import urllib.parse
 HOME = Path.home()
 CACHE = HOME / "Library/Caches/code-sonata" if sys.platform == "darwin" else \
     Path(os.environ.get("XDG_CACHE_HOME") or HOME / ".cache") / "code-sonata"
-ROOTS = (HOME / ".claude/projects", HOME / ".codex/sessions")
-EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch"}
-BASH_TOOLS = {"Bash", "BashOutput", "exec", "exec_command", "shell", "local_shell", "container.exec"}
-READ_TOOLS = {"Read", "Grep", "Glob", "LS", "WebFetch", "WebSearch", "ToolSearch"}
+ROOTS = (HOME / ".claude/projects", HOME / ".codex/sessions", HOME / ".gemini/tmp")
+EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch", "write_file", "replace", "edit"}
+BASH_TOOLS = {"Bash", "BashOutput", "exec", "exec_command", "shell", "local_shell", "container.exec", "run_shell_command"}
+READ_TOOLS = {"Read", "Grep", "Glob", "LS", "WebFetch", "WebSearch", "ToolSearch",
+              "read_file", "read_many_files", "list_directory", "glob", "grep_search", "search_file_content",
+              "google_web_search", "web_fetch"}
 MAX_CHUNK = 512 * 1024
 FRESH = 15 * 60          # a log untouched this long is no longer polled; it resumes where it was
 FULL_SCAN = 30.0         # seconds between walks of the whole tree (an old session waking up)
@@ -152,6 +154,19 @@ def codex_result(output):
     return "\n".join(texts)[-4000:], any(codes)
 
 
+def gemini_result(call):
+    """The text a Gemini CLI tool call returned (read only to tell passed/failed tests and done commits)."""
+    shown = call.get("resultDisplay")
+    if isinstance(shown, str) and shown:
+        return shown[:20000]
+    parts = []
+    for part in call.get("result") if isinstance(call.get("result"), list) else []:
+        response = ((part or {}).get("functionResponse") or {}).get("response") if isinstance(part, dict) else None
+        if isinstance(response, dict):
+            parts += [str(response.get(key)) for key in ("output", "error") if response.get(key)]
+    return "\n".join(parts)[:20000]
+
+
 class Classifier:
     """Step kinds of one session's log lines.
 
@@ -216,6 +231,20 @@ class Classifier:
                     kinds.append("text")
             if message.get("stop_reason") == "end_turn":
                 kinds.append("done")
+            return kinds
+        if kind == "gemini":  # Gemini CLI: one reply, its thoughts, and its tool calls already finished
+            kinds = (["think"] if entry.get("thoughts") else []) + (["text"] if entry.get("content") else [])
+            calls = entry.get("toolCalls") if isinstance(entry.get("toolCalls"), list) else []
+            for call in calls:
+                if not isinstance(call, dict):
+                    continue
+                step = tool_kind(call.get("name"))
+                command = (call.get("args") or {}).get("command") if isinstance(call.get("args"), dict) else None
+                self.remember(call.get("id"), step, command[:2000] if isinstance(command, str) else "")
+                kinds.append(step)
+                kinds += self.judge(call.get("id"), gemini_result(call), call.get("status") == "error")
+            if not calls:
+                kinds.append("done")  # a reply that asks for no tool ends the turn
             return kinds
         payload = entry.get("payload")
         if not isinstance(payload, dict):
@@ -407,7 +436,7 @@ class Activity:
     def tools(self):
         tools = {}
         for path in self.sessions:
-            tool = "codex" if "/.codex/" in str(path) else "claude"
+            tool = "codex" if "/.codex/" in str(path) else "gemini" if "/.gemini/" in str(path) else "claude"
             tools[tool] = tools.get(tool, 0) + 1
         return tools
 

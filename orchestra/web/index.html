@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Agent Orchestra · Claude ve Codex adımlarından çalan canlı orkestra</title>
-<meta name="description" content="Claude ve Codex oturumlarındaki adımlar canlı bir orkestrada nota olarak çalar. Dinle, kendi ajanını bağla, çalışma anını indir. DijitalPi tarafından geliştirildi.">
-<meta property="og:title" content="Agent Orchestra · Claude ve Codex adımlarından çalan canlı orkestra">
-<meta property="og:description" content="Claude ve Codex adımların canlı orkestrada çalar. Dinle, ajanını bağla, anını indir.">
+<title>Agent Orchestra · Kodlama ajanlarının adımlarından çalan canlı orkestra</title>
+<meta name="description" content="Claude Code, Codex ve Gemini CLI oturumlarındaki adımlar canlı bir orkestrada nota olarak çalar. Dinle, kendi ajanını bağla, çalışma anını indir. DijitalPi tarafından geliştirildi.">
+<meta property="og:title" content="Agent Orchestra · Kodlama ajanlarının adımlarından çalan canlı orkestra">
+<meta property="og:description" content="Claude Code, Codex ve Gemini CLI adımların canlı orkestrada çalar. Dinle, ajanını bağla, anını indir.">
 <meta property="og:type" content="website">
 <meta property="og:image" content="/og.png">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Agent Orchestra · Claude ve Codex adımlarından çalan canlı orkestra">
-<meta name="twitter:description" content="Claude ve Codex adımların canlı orkestrada çalar. Dinle, ajanını bağla, anını indir.">
+<meta name="twitter:title" content="Agent Orchestra · Kodlama ajanlarının adımlarından çalan canlı orkestra">
+<meta name="twitter:description" content="Claude Code, Codex ve Gemini CLI adımların canlı orkestrada çalar. Dinle, ajanını bağla, anını indir.">
 <meta name="twitter:image" content="/og.png">
 <meta name="theme-color" content="#0d0b09">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cellipse cx='12' cy='23' rx='7' ry='5' fill='%23e8b65a'/%3E%3Crect x='17' y='4' width='3' height='19' fill='%23e8b65a'/%3E%3C/svg%3E">
@@ -52,13 +52,14 @@
   <button class="close" data-open="home" aria-label="Paneli kapat">×</button>
   <section data-view="join" hidden aria-labelledby="join-title">
     <h2 id="join-title" tabindex="-1">Ajanını bağla</h2>
-    <p class="lead">Bilgisayarındaki yerel okuyucu (macOS ve Linux) yeni Claude ve Codex adımlarını sayıya çevirip salona gönderir. Prompt, kod ve dosya yolu gönderilmez.</p>
+    <p class="lead">Bilgisayarındaki yerel okuyucu (macOS ve Linux) yeni Claude Code, Codex ve Gemini CLI adımlarını sayıya çevirip salona gönderir. Prompt, kod ve dosya yolu gönderilmez.</p>
+    <p class="note">Okuyucu şu ajanların kayıtlarını okur: Claude Code, Codex ve Gemini CLI. GitHub Copilot CLI, Cursor ve OpenCode, kayıt biçimleri doğrulanınca eklenecek.</p>
     <button id="pair">Bağlantı komutumu oluştur</button>
     <div id="setup" hidden>
       <ol class="steps">
         <li>macOS ya da Linux'ta Terminal'i aç. Python 3 gerekir (macOS'ta Xcode Command Line Tools ile gelir).</li>
         <li>Aşağıdaki komutu çalıştır. Komut tek dosyalık okuyucuyu bu siteden indirip başlatır; kurulum gerekmez. İstersen önce <a href="/reader.py" target="_blank" rel="noopener">okuyucunun kodunu oku</a>.</li>
-        <li>Claude ya da Codex ile bir adım at. Bağlantın ve ilk adımın aşağıda görünür.</li>
+        <li>Claude Code, Codex ya da Gemini CLI ile bir adım at. Bağlantın ve ilk adımın aşağıda görünür.</li>
       </ol>
       <label for="command">Bu tarayıcıya özel komut</label>
       <textarea id="command" rows="3" readonly spellcheck="false"></textarea>
@@ -130,7 +131,7 @@
 
   <section data-view="about" hidden aria-labelledby="about-title">
     <h2 id="about-title" tabindex="-1">Proje ve iletişim</h2>
-    <p class="lead">Agent Orchestra, DijitalPi'nin deneme projesi. Claude ve Codex'teki adımları anonim sayılara çevirir ve herkesin aynı anda duyduğu müziğe dönüştürür.</p>
+    <p class="lead">Agent Orchestra, DijitalPi'nin deneme projesi. Claude Code, Codex ve Gemini CLI'daki adımları anonim sayılara çevirir ve herkesin aynı anda duyduğu müziğe dönüştürür.</p>
     <p>DijitalPi; etkinlik, hackathon ve ekipler için katılımcıların birlikte oluşturduğu canlı dijital deneyimler kurar.</p>
     <a id="contact" class="pill" href="https://dijitalpi.com/iletisim/" target="_blank" rel="noopener noreferrer">DijitalPi ile iletişime geç ↗</a>
     <p class="note">Salonda her ışık bağlı bir makinedir ve adım gelince yanar. Adım sayısı iş kalitesini ölçmez.</p>
@@ -151,7 +152,7 @@
     <p class="lead">Hesap, çerez ve kişisel profil yok. Hangi durumda neyin kullanıldığı:</p>
     <ul class="facts">
       <li><b>Dinlerken.</b> Tarayıcın canlı salona bağlanır. IP adresin ülkeyi bulmak, kötüye kullanımı sınırlamak ve günlük sayımda aynı adresi iki kez saymamak için o an kullanılır; kendisi kaydedilmez. Bunun için her açılışta değişen tuzlu bir özet yalnız bellekte ve en fazla o gün boyunca tutulur.</li>
-      <li><b>Ajanını bağlarsan.</b> Okuyucu anonim bir makine kimliği, adım türü sayıları, çalışıyor bilgisi ve oturum sayısı gönderir. Prompt, kod, proje adı ve dosya yolu gönderilmez. Eşleştirme ve adım toplamları sunucu belleğinde en fazla bir saat kalır. Salondaki herkes koltuğunun ülke bayrağını, aracını (Claude, Codex ya da diğer), oturum sayısını ve adım attığın anları görür; küçük bir salonda ülkenden tek kişiysen tanınabilirsin.</li>
+      <li><b>Ajanını bağlarsan.</b> Okuyucu anonim bir makine kimliği, adım türü sayıları, çalışıyor bilgisi ve oturum sayısı gönderir. Prompt, kod, proje adı ve dosya yolu gönderilmez. Eşleştirme ve adım toplamları sunucu belleğinde en fazla bir saat kalır. Salondaki herkes koltuğunun ülke bayrağını, aracını (Claude, Codex, Gemini ya da diğer), oturum sayısını ve adım attığın anları görür; küçük bir salonda ülkenden tek kişiysen tanınabilirsin.</li>
       <li><b>Ölçüm.</b> Sunucu yalnız günlük toplam sayılar tutar, örneğin bugün kaç kez dinleme başlatıldığı. Kimlik ya da kişiye bağlanan kayıt yoktur.</li>
       <li><b>Çalışma anın.</b> Ses, görsel ve video bu tarayıcıda üretilir, sunucuya yüklenmez.</li>
       <li><b>Dış kaynaklar.</b> Sayfa, ses motoru, ses örnekleri ve yazı tipleri bu siteden gelir; başka bir siteye istek gitmez. "DijitalPi ile iletişime geç" bağlantısı dijitalpi.com'u açar.</li>
@@ -197,8 +198,8 @@
   <div class="demo-banner" id="demo-banner" role="status" hidden><span><b>Demo konseri</b> · 24 simüle makine, gerçek katılımcı değil</span><button id="demo-exit" class="quiet">Canlı salona dön</button></div>
   <div class="now"><p id="now">İlk adım bekleniyor.</p><button id="demo-offer" class="link" hidden>Dolu salonu demo konserinde dinle</button></div>
   <div class="hero" id="hero">
-    <h1 id="title" tabindex="-1">Claude ve Codex adımlarından çalan canlı orkestra</h1>
-    <p class="lead">Bağlı makinelerde atılan her adım bu salonda bir nota olarak çalar. Dinlemek için kurulum gerekmez.</p>
+    <h1 id="title" tabindex="-1">Kodlama ajanlarının adımlarından çalan canlı orkestra</h1>
+    <p class="lead">Claude Code, Codex ve Gemini CLI ile bağlı makinelerde atılan her adım bu salonda bir nota olarak çalar. Dinlemek için kurulum gerekmez.</p>
     <div class="actions"><button data-team="listen">Orkestrayı dinle</button></div>
     <p class="minor"><button id="demo-concert" class="link">Demo konseri</button><button id="simple-sound" class="link">Sade tınıyla dinle</button></p>
   </div>
