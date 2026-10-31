@@ -20,7 +20,8 @@ let leader = null, soloAt = 0, ranks = [];
 const countryName = (() => { const names = {}; return (cc) => { try { names[getLang()] ||= new Intl.DisplayNames([getLang()], { type: "region" }); return names[getLang()].of(cc) || cc; } catch { return cc; } }; })();
 const flag = (cc) => (cc && cc.length === 2 ? String.fromCodePoint(...[...cc].map((c) => 0x1f1a5 + c.charCodeAt(0))) : "");
 const glow = new Map();                  // "s:i" -> 0..1
-let info = { bpm: 64, intensity: 0, climax: false, song: "", working: 0 };
+const QUIET = { bpm: 64, intensity: 0, climax: false, song: "", working: 0 };   // until the hall's first frame
+let info = QUIET;
 const offsets = [];
 let offset = 0;                          // serverTime - localTime (best estimate)
 // Frames give the server's clock as it was when a frame left, so `offset` alone runs late by the way here (a far
@@ -146,6 +147,7 @@ function connect() {
     $("now").textContent = "Canlı bilgi alınamıyor. Bağlantı geldiğinde salon güncellenecek.";
     lastNow = ""; offsets.length = 0;
     seats = SECTIONS.map(() => []); teams = { agents: {}, fans: {} }; glow.clear(); version++;
+    info = QUIET; showListen();           // with no live news the button offers the demo, which needs no server
     // The browser retries a dropped connection by itself, but never an answer it refused: a full hall, or the
     // proxy's 502 while the server restarts. Then this page tries again, waiting longer each time (1 s .. 30 s),
     // spread out so a restarted server is not hit by everyone in the same second.
@@ -765,7 +767,7 @@ $("mode").addEventListener("change", () => {
 // the server carries none of it, and the stage says plainly that the machines are simulated.
 let stopDemo = null;
 function resetHall() {
-  seats = SECTIONS.map(() => []); teams = { agents: {}, fans: {} }; glow.clear();
+  seats = SECTIONS.map(() => []); teams = { agents: {}, fans: {} }; glow.clear(); info = QUIET;
   offsets.length = 0; latency = 0; lastNow = ""; lastLeague = ""; version++;
 }
 async function enterDemo() {
@@ -790,7 +792,8 @@ function leaveDemo() {
   if (!stopDemo) return;
   stopDemo(); stopDemo = null; setDemoPlaying(false);
   document.body.classList.remove("is-demo"); $("demo-banner").hidden = true;
-  resetHall(); connect(); amfi.setHolders(liveHolders); amfi.setReserved(liveReserved);
+  // The last demo frame is forgotten: if the live hall does not answer, the button offers the demo again.
+  resetHall(); showListen(); connect(); amfi.setHolders(liveHolders); amfi.setReserved(liveReserved);
   $("loading").textContent = "Canlı salona dönüldü.";
 }
 $("demo-offer").onclick = enterDemo;
