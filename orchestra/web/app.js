@@ -617,7 +617,8 @@ function drawHall(now, dt) {
       }
     });
   }
-  if (info.house) {                       // the house pianist: a grand piano seen from above, glowing on each note
+  // The house pianist: a grand piano seen from above, glowing on each note. Like the names, not under the title.
+  if (info.house && !titled) {
     const reg = REGIONS.piano, a = rad((reg.arc[0] + reg.arc[1]) / 2), r = ((reg.band[0] + reg.band[1]) / 2) * R;
     const s = Math.max(10, R * .04);
     g.save(); g.translate(cx + Math.sin(a) * r, cy - Math.cos(a) * r); g.rotate(a);
