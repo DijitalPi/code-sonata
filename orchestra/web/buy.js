@@ -1,7 +1,7 @@
 // Buying a seat, up to the payment step: pick a tier and a size, see the price, carry the block to a free
 // place in the hall (mouse, finger or arrow keys), then add an image, a name and a link and see the result.
 // Nothing here talks to the server: payment, upload and approval come in the second part.
-import { PLAN, TIERS, SEAT_LIMITS, tierOf, blockPrice, taken, canPlace } from './seats.mjs';
+import { PLAN, TIERS, SEAT_LIMITS, tierOf, blockPrice, taken, canPlace, blockArc } from './seats.mjs';
 import { createAmfi, closeUp } from './amfi.js';
 import { num } from './i18n.js';
 
@@ -101,9 +101,10 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
 
   // ---------- placing the block in the hall ----------
   const text = el('span', { id: 'place-text', role: 'status' });
+  const hint = el('small', { id: 'place-hint' });
   const ok = el('button', { id: 'place-ok', textContent: 'Burayı seç' });
   const cancel = el('button', { id: 'place-cancel', className: 'quiet', textContent: 'Vazgeç' });
-  const bar = el('div', { className: 'place-bar', hidden: true }, text, ok, cancel);
+  const bar = el('div', { className: 'place-bar', hidden: true }, text, hint, ok, cancel);
   document.querySelector('.stage').append(bar);
 
   // The block as close to the asked seat as the tier and the hall edges allow.
@@ -121,18 +122,29 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
       }
     return blockAt(tr.rings[0], tr.cols / 2);
   }
-  function setGhost(block) {
+  // A finger only moves the block (the button chooses); a mouse click chooses where it points.
+  const touch = () => Boolean(globalThis.matchMedia?.('(pointer: coarse)').matches);
+  function setGhost(block, suggested = false) {
     ghost = { block, ok: canPlace(block, used) };
     amfi.setGhost(ghost);
     ok.disabled = !ghost.ok;
-    text.textContent = ghost.ok
-      ? `${tierOf(block.ring).label}, ${block.ring - TIERS[tier].rings[0] + 1}. sıradan ${width * depth} koltuk · ${money(blockPrice(block))}. Tıkla ya da Enter'a bas.`
-      : 'Bu koltuklardan bazıları dolu. Bloğu boş bir yere götür.';
+    const where = `${tierOf(block.ring).label}, ${block.ring - TIERS[tier].rings[0] + 1}. sıradan ${width * depth} koltuk · ${money(blockPrice(block))}.`;
+    text.textContent = !ghost.ok ? 'Bu koltuklardan bazıları dolu. Bloğu boş bir yere götür.' : suggested ? `En iyi boş yer: ${where}` : where;
+    hint.textContent = touch() ? "Başka bir yere dokun ya da Burayı seç'e bas." : "Tıkla ya da Enter'a bas.";
+  }
+  // On a phone the hall is drawn wider than the screen while placing (style.css), so a seat is big enough
+  // to tap; it opens with the suggested block in the middle and scrolls sideways from there.
+  function showGhost() {
+    const stage = canvas.parentElement;
+    if (!ghost || !(stage.scrollWidth > stage.clientWidth)) return;
+    const G = geometry(), arc = blockArc(ghost.block), a = (arc.a1 + arc.a2) / 2 * Math.PI / 180;
+    stage.scrollLeft = G.cx + Math.sin(a) * (arc.r1 + arc.r2) / 2 * G.R - stage.clientWidth / 2;
   }
   function startPlacing() {
     clampSize(); sold(); placing = true; chosen = null;
     document.body.classList.add('is-placing'); bar.hidden = false;
-    setGhost(firstFree());
+    setGhost(firstFree(), true);
+    showGhost();
     ok.focus({ preventScroll: true });
   }
   function stopPlacing() {
@@ -158,8 +170,10 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
     const rect = canvas.getBoundingClientRect();
     return amfi.hit(geometry(), event.clientX - rect.left, event.clientY - rect.top);
   };
+  // A move without movement is the hall sliding under a resting mouse (the panel closing, a phone's tap):
+  // it would carry the block off the suggested place.
   canvas.addEventListener('pointermove', (event) => {
-    if (!placing || event.pointerType === 'touch') return;
+    if (!placing || event.pointerType === 'touch' || (!event.movementX && !event.movementY)) return;
     const p = pointed(event); if (p) setGhost(blockAt(p.k, p.c));
   });
   // Placing takes the hall's clicks: a mouse click chooses, a finger only moves the block (the button chooses).

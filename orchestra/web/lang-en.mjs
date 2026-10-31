@@ -165,9 +165,10 @@ export const EN = {
   '{a} · koltuğu {b}': '{a} · {b} per seat', '{a} boş koltuk · {b} sıra': '{a} free seats · {b} rows', '{a} koltuk · {b} yan yana, {c} sıra': '{a} seats · {b} side by side, {c} rows',
   // One seat: the sentences above with the number written in, so English says "1 seat", not "1 seats".
   '1 koltuk': '1 seat', '{a} · 1 koltuk': '{a} · 1 seat', '1 koltuk · {a}': '1 seat · {a}', 'Seçtiğin yer: {a}, 1 koltuk, {b}.': 'Your place: {a}, 1 seat, {b}.',
-  "{a}, {b}. sıradan 1 koltuk · {c}. Tıkla ya da Enter'a bas.": '{a}, from row {b}: 1 seat · {c}. Click or press Enter.',
+  '{a}, {b}. sıradan 1 koltuk · {c}.': '{a}, from row {b}: 1 seat · {c}.',
   'Burayı seç': 'Choose this place', 'Vazgeç': 'Cancel',
-  "{a}, {b}. sıradan {c} koltuk · {d}. Tıkla ya da Enter'a bas.": '{a}, from row {b}: {c} seats · {d}. Click or press Enter.',
+  '{a}, {b}. sıradan {c} koltuk · {d}.': '{a}, from row {b}: {c} seats · {d}.', 'En iyi boş yer: {a}': 'Best free place: {a}',
+  "Tıkla ya da Enter'a bas.": 'Click or press Enter.', "Başka bir yere dokun ya da Burayı seç'e bas.": 'Tap another place or press Choose this place.',
   'Bu koltuklardan bazıları dolu. Bloğu boş bir yere götür.': 'Some of these seats are taken. Move the block to free seats.',
   'Seçtiğin yer: {a}, {b} koltuk, {c}.': 'Your place: {a}, {b} seats, {c}.', 'Senin adın': 'Your name',
   'Yalnız PNG, JPG ya da WebP.': 'PNG, JPG or WebP only.', 'Resim en fazla 2 MB olabilir.': 'The image can be 2 MB at most.', 'Bu resim açılamadı. Başka bir dosya dene.': 'This image could not be opened. Try another file.',

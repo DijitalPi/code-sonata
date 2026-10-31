@@ -815,7 +815,8 @@ addEventListener("holders", (event) => listHolders(event.detail));
 addEventListener("seats-stale", loadHolders);
 loadHolders();
 setInterval(loadHolders, 60_000);
-setupBuying({ canvas, geometry, amfi });
+// Placing a block can resize the hall (on a phone it grows wider than the screen): measure it again first.
+setupBuying({ canvas, geometry: () => { if (canvas.clientWidth !== width || canvas.clientHeight !== height) resize(); return geometry(); }, amfi });
 
 // The title sits in the middle of the stage on a wide screen, over the orchestra it describes.
 function placeHero(G) {

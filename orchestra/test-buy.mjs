@@ -24,7 +24,8 @@ globalThis.fetch = async (url, init = {}) => {
   return new Response(JSON.stringify(body), { status });
 };
 const { setupBuying, followOrder } = await import('./web/buy.js');
-setupBuying({ canvas, geometry: () => ({}), amfi, encode: async (img) => { logos.push(img); return 'data:image/webp;base64,UklGRg=='; }, go: (url) => went.push(url) });
+let hallGeometry = {};
+setupBuying({ canvas, geometry: () => hallGeometry, amfi, encode: async (img) => { logos.push(img); return 'data:image/webp;base64,UklGRg=='; }, go: (url) => went.push(url) });
 
 const view = (name) => dispatchEvent(new CustomEvent('view', { detail: name }));
 const key = (name) => dispatchEvent(Object.assign(new Event('keydown'), { key: name }));
@@ -173,10 +174,53 @@ test('in English one seat reads as one seat, not "1 seats"', async () => {
   setLang('en');
   try {
     assert.equal(t('1 koltuk'), '1 seat');
-    assert.equal(t("Orta balkon, 3. sıradan 1 koltuk · 40 $. Tıkla ya da Enter'a bas."), 'Middle balcony, from row 3: 1 seat · $40. Click or press Enter.'.replace('Middle balcony', t('Orta balkon')).replace('$40', t('40 $')));
+    assert.equal(t('En iyi boş yer: Orta, 3. sıradan 1 koltuk · 10 $.'), `Best free place: ${t('Orta')}, from row 3: 1 seat · ${t('10 $')}.`);
     assert.equal(t('Seçtiğin yer: Sahne önü, 1 koltuk, 90 $.'), `Your place: ${t('Sahne önü')}, 1 seat, ${t('90 $')}.`);
     assert.equal(t('Sahne önü · 1 koltuk'), `${t('Sahne önü')} · 1 seat`);
     assert.equal(t('1 koltuk · Sahne önü'), `1 seat · ${t('Sahne önü')}`);
     assert.equal(t('Sahne önü · 11 koltuk'), `${t('Sahne önü')} · 11 seats`, 'eleven stays plural');
   } finally { setLang('tr'); }
+});
+
+test('placing starts on the best free place; on a touch screen the bar says to tap', () => {
+  globalThis.matchMedia = (query) => ({ matches: query === '(pointer: coarse)' });
+  $('seat-width').value = '1'; $('seat-depth').value = '1';
+  try {
+    view('seats'); place();
+    assert.match($('place-text').textContent, /^En iyi boş yer: Ön sıra, 1\. sıradan 1 koltuk · /);
+    assert.equal($('place-hint').textContent, "Başka bir yere dokun ya da Burayı seç'e bas.");
+    key('ArrowRight');
+    assert.match($('place-text').textContent, /^Ön sıra, 1\. sıradan 1 koltuk · /, 'a moved block is no longer the suggestion');
+  } finally { delete globalThis.matchMedia; key('Escape'); }
+  place();
+  assert.equal($('place-hint').textContent, "Tıkla ya da Enter'a bas.", 'with a mouse a click chooses');
+  key('Escape');
+  $('seat-width').value = '3'; $('seat-depth').value = '2';
+});
+
+test('on a phone the hall, wider than the screen while placing, opens at the suggested place', async () => {
+  const { blockArc } = await import('./web/seats.mjs');
+  const stage = canvas.parentElement;
+  Object.assign(stage, { clientWidth: 390, scrollWidth: 975, scrollLeft: 0 });
+  hallGeometry = { cx: 487.5, cy: 530, R: 266 };
+  try {
+    view('seats'); place();
+    const arc = blockArc(ghosts.at(-1).block), a = (arc.a1 + arc.a2) / 2 * Math.PI / 180;
+    const x = 487.5 + Math.sin(a) * (arc.r1 + arc.r2) / 2 * 266;
+    assert.ok(stage.scrollLeft > 0);
+    assert.ok(Math.abs(stage.scrollLeft + 195 - x) < 1, 'the block is in the middle of the screen');
+  } finally { key('Escape'); hallGeometry = {}; Object.assign(stage, { clientWidth: 0, scrollWidth: 0, scrollLeft: 0 }); }
+});
+
+test('a hall that slides under a resting mouse keeps the suggested place; a real move moves the block', () => {
+  const hit = amfi.hit; amfi.hit = () => ({ k: 3, c: 40 });
+  const move = (movementX) => canvas.dispatchEvent(Object.assign(new Event('pointermove'), { pointerType: 'mouse', movementX, movementY: 0, clientX: 5, clientY: 5 }));
+  try {
+    view('seats'); place();
+    const suggested = $('place-text').textContent;
+    move(0);
+    assert.equal($('place-text').textContent, suggested);
+    move(4);
+    assert.notEqual($('place-text').textContent, suggested);
+  } finally { amfi.hit = hit; key('Escape'); }
 });
