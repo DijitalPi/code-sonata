@@ -20,7 +20,7 @@ export function createStripe({ key, base = "https://api.stripe.com", fetch = glo
       headers: { authorization: `Bearer ${key}`, "content-type": "application/x-www-form-urlencoded", ...extra },
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(`stripe ${path}: ${res.status} ${data?.error?.message || ""}`.trim());
+    if (!res.ok) throw Object.assign(new Error(`stripe ${path}: ${res.status} ${data?.error?.message || ""}`.trim()), { status: res.status, code: data?.error?.code });
     return data;
   }
   return {
@@ -36,10 +36,14 @@ export function createStripe({ key, base = "https://api.stripe.com", fetch = glo
       if (typeof data.id !== "string" || typeof data.url !== "string") throw new Error("stripe: no session in the answer");
       return { id: data.id, url: data.url };
     },
-    // A refund Stripe answers as failed or canceled did not happen; pending (some banks) is on its way.
+    // A refund Stripe answers as failed or canceled did not happen (`refused`); pending (some banks) is on its way.
+    // A payment refunded already (by an earlier try whose answer was lost, or by hand) counts as refunded.
     async refund(paymentIntent, idempotencyKey) {
-      const data = await call("/v1/refunds", { payment_intent: paymentIntent }, { "idempotency-key": idempotencyKey });
-      if (typeof data.id !== "string" || ["failed", "canceled"].includes(data.status)) throw new Error(`stripe refund: ${data.status || "no refund in the answer"}`);
+      let data;
+      try { data = await call("/v1/refunds", { payment_intent: paymentIntent }, { "idempotency-key": idempotencyKey }); }
+      catch (error) { if (error.code === "charge_already_refunded") return { id: null, status: "already_refunded" }; throw error; }
+      if (["failed", "canceled"].includes(data.status)) throw Object.assign(new Error(`stripe refund: ${data.status}`), { refused: true });
+      if (typeof data.id !== "string") throw new Error("stripe refund: no refund in the answer");
       return { id: data.id, status: data.status };
     },
     // A buyer who came back without paying: the page closes, so the seats can go to someone else.

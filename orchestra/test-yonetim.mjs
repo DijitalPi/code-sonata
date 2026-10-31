@@ -97,6 +97,9 @@ test('a refused approval says why: no logo, seats added by hand, or another step
       await button('Onayla').onclick(); await settle();
       assert.match(text(), said, why);
     }
+    refuse = 502; refusal = 'unknown';
+    await button('Onayla').onclick(); await settle();
+    assert.match(text(), /yanıt alınamadı; iade yapılmış olabilir/);
   } finally { refuse = null; refusal = 'x'; }
 });
 

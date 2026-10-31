@@ -39,7 +39,8 @@ export async function followOrder(id, { cancelled = false, wait = 3000, tries = 
     // reached: say only what the order shows now; a hold is let go 41 minutes after it began at the latest.
     if (res?.status !== 409) {
       const now = await fetch(`/api/seats/order/${id}`, { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-      if (!now || now.state === 'held') return say('Ödemen bize ulaşmadı. Ayırdığın yer en geç bir saat içinde bırakılacak.');
+      if (!now) return say('Ödemenin durumu şu an doğrulanamadı. Bağlantın gelince bu sayfayı yenile.');
+      if (now.state === 'held') return say('Ödemen bize ulaşmadı. Ulaşmazsa ayırdığın yer en geç bir saat içinde bırakılır.');
     }
   }
   say('Ödemen kontrol ediliyor…');

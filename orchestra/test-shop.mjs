@@ -16,11 +16,12 @@ const WEBHOOK = 'whsec_test_shop', SELIM = 's'.repeat(30), OZER = 'z'.repeat(30)
 
 // Fake Stripe: records every call, answers a session or a refund, or fails when told to.
 const stripeCalls = [];
-let stripeFails = false, pause = null;   // pause: { path, until } holds Stripe's answer to that call
+let stripeFails = false, pause = null;   // stripeFails: true (500) or a status; pause: { path, until } holds that call's answer
 const stripe = http.createServer(async (req, res) => {
   let body = ''; for await (const chunk of req) body += chunk;
   stripeCalls.push({ path: req.url, headers: req.headers, body: new URLSearchParams(body) });
-  if (stripeFails) { res.writeHead(500); return res.end('{"error":{"message":"down"}}'); }
+  if (stripeFails === 'hang up') return req.socket.destroy();
+  if (stripeFails) { res.writeHead(stripeFails === true ? 500 : stripeFails); return res.end('{"error":{"message":"down"}}'); }
   if (pause && req.url === pause.path) await pause.until;
   const n = stripeCalls.length;
   res.writeHead(200, { 'content-type': 'application/json' });
@@ -248,14 +249,24 @@ test('approving puts the block and its logo in the hall; rejecting refunds it on
   assert.equal(stripeCalls.filter((c) => c.path === '/v1/refunds').length, refunds + 1, 'removed without a refund');
 });
 
-test('a refund Stripe refuses leaves the order as it was', async () => {
+test('a refund Stripe refuses leaves the order as it was; one whose answer was lost keeps it from being approved', async () => {
   const { cookie } = await login();
   const c = await (await buy({ block: block(130) })).json();
   await completed(c.id, blockPrice(block(130)) * 100);
-  stripeFails = true;
+  const onDisk = async () => JSON.parse(await readFile(env.ORDERS_FILE, 'utf8')).orders.find((o) => o.id === c.id);
+  stripeFails = 400;
   try { assert.equal((await panel(`orders/${c.id}/reject`, { cookie, method: 'POST', body: {} })).status, 502); }
   finally { stripeFails = false; }
   assert.deepEqual(await (await fetch(`${base}/api/seats/order/${c.id}`)).json(), { state: 'paid' });
+  assert.equal((await onDisk()).refunding, false, 'Stripe said no: nothing was refunded');
+  for (const lost of [true, 'hang up']) {
+    stripeFails = lost;
+    try { assert.equal((await panel(`orders/${c.id}/reject`, { cookie, method: 'POST', body: {} })).status, 502); }
+    finally { stripeFails = false; }
+    assert.equal((await onDisk()).refunding, true, `${lost}: the refund may have been made`);
+    assert.equal((await panel(`orders/${c.id}/approve`, { cookie, method: 'POST' })).status, 409);
+  }
+  assert.equal((await panel(`orders/${c.id}/reject`, { cookie, method: 'POST', body: {} })).status, 200);
 });
 
 test('an order is decided one step at a time: approving while its refund is under way is refused', async () => {
@@ -338,6 +349,19 @@ test('a Stripe page that opened is handed to the buyer even if its id could not 
     assert.equal(res.status, 200);
     assert.match((await res.json()).url, /^https:\/\/checkout\.stripe\.test\//);
   } finally { await rm(`${env.ORDERS_FILE}.tmp`, { recursive: true, force: true }); }
+});
+
+test('after a restart, a hold whose Stripe page id was never written is not let go by a cancel', async () => {
+  let id;
+  try {
+    const res = await failWriteDuring('/v1/checkout/sessions', () => buy({ block: block(197, 1, 1) }));
+    ({ id } = await res.json());
+  } finally { await rm(`${env.ORDERS_FILE}.tmp`, { recursive: true, force: true }); }
+  server.kill(); await once(server, 'exit');
+  server = await start(PORT, env);
+  const res = await fetch(`${base}/api/seats/order/${id}/cancel`, { method: 'POST' });
+  assert.equal(res.status, 502, 'the page may still be open: Stripe ends it, then the seats go');
+  assert.ok((await seats()).reserved.some((b) => b.col === 197));
 });
 
 test('payment opens only with someone to approve it, and stays shut on an order file it cannot trust', async () => {

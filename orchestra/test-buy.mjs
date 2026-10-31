@@ -155,5 +155,8 @@ test('a cancel that could not reach Stripe says only what the order shows', asyn
   assert.equal($('seat-status').textContent, 'Ödemen alındı. Koltuğun onay bekliyor; onaylanınca salonda görünecek.');
   answer = (url) => (url.endsWith('/cancel') ? { status: 502, body: { error: 'stripe' } } : { status: 200, body: { state: 'held' } });
   await followOrder('o-8', { cancelled: true, wait: 0 });
-  assert.equal($('seat-status').textContent, 'Ödemen bize ulaşmadı. Ayırdığın yer en geç bir saat içinde bırakılacak.');
+  assert.equal($('seat-status').textContent, 'Ödemen bize ulaşmadı. Ulaşmazsa ayırdığın yer en geç bir saat içinde bırakılır.');
+  answer = () => ({ status: 503, body: {} });
+  await followOrder('o-9', { cancelled: true, wait: 0 });
+  assert.equal($('seat-status').textContent, 'Ödemenin durumu şu an doğrulanamadı. Bağlantın gelince bu sayfayı yenile.');
 });

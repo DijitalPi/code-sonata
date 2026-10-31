@@ -74,7 +74,9 @@ async function act(order, action, body, done) {
     headers: { 'x-yonetim': '1', 'content-type': 'application/json' }, body: JSON.stringify(body || {}) }).catch(() => null);
   if (res?.status === 401) return showLogin();
   const why = res?.status === 409 ? (await res.json().catch(() => ({}))).error : null;
-  say(res?.ok ? done : res?.status === 502 ? 'Stripe iadeyi kabul etmedi. Biraz sonra yeniden dene.'
+  const lost = res?.status === 502 && (await res.clone().json().catch(() => ({}))).error === 'unknown';
+  say(res?.ok ? done : lost ? 'Stripe\'tan yanıt alınamadı; iade yapılmış olabilir. Reddet ile yeniden dene, aynı iade tamamlanır.'
+    : res?.status === 502 ? 'Stripe iadeyi kabul etmedi. Biraz sonra yeniden dene.'
     : why === 'image' ? 'Logosu bulunamadı, onaylanamaz. Reddedip iade edebilirsin.'
     : why === 'taken' ? 'Bu yere sonradan elle koltuk eklenmiş. Önce onu kaldır ya da siparişi reddedip iade et.'
     : why === 'busy' ? 'Bu sipariş için başka bir işlem sürüyor. Biraz sonra yeniden dene.'

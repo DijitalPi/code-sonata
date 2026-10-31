@@ -89,6 +89,15 @@ test('a refund Stripe answers as failed or canceled is an error, not a refund; t
   assert.deepEqual(await createStripe({ key: 'sk', base: 'https://stripe.test', fetch }).refund('pi_1', 'k'), { id: 're_2', status: 'pending' });
 });
 
+test('a Stripe error carries its status and code; a payment already refunded counts as refunded', async () => {
+  const stripe = (answer, status) => createStripe({ key: 'sk', base: 'https://stripe.test', fetch: recorder(answer, status).fetch });
+  await assert.rejects(stripe({ error: { message: 'No such payment_intent', code: 'resource_missing' } }, 400).refund('pi_1', 'k'),
+    (error) => error.status === 400 && error.code === 'resource_missing');
+  await assert.rejects(stripe({ error: { message: 'down' } }, 500).refund('pi_1', 'k'), (error) => error.status === 500);
+  assert.deepEqual(await stripe({ error: { message: 'Charge has already been refunded.', code: 'charge_already_refunded' } }, 400).refund('pi_1', 'k'),
+    { id: null, status: 'already_refunded' });
+});
+
 test('ending a session asks Stripe to expire it, so it can no longer be paid', async () => {
   const { calls, fetch } = recorder({ id: 'cs_1', status: 'expired' });
   await createStripe({ key: 'sk_test_x', base: 'https://stripe.test', fetch }).expire('cs_1');

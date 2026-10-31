@@ -126,7 +126,10 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     const order = find(id);
     if (!order) return send(res, 404, { error: "order" });
     if (order.state !== "held") return send(res, 409, { error: "state" });
-    try { if (order.session) await stripe.expire(order.session); }
+    // A held order without its page id (it could not be written before a restart) may still have an open page:
+    // the seats wait for Stripe's own end of it.
+    if (!order.session) return send(res, 502, { error: "session" });
+    try { await stripe.expire(order.session); }
     catch (error) { log(`cancel: ${error.message}`); return send(res, 502, { error: "stripe" }); }
     return commit(() => expire(book, id, now)) ? send(res, 200, { state: "expired" }) : send(res, 409, { error: "state" });
   }
@@ -186,7 +189,14 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
       if (!order.payment) return send(res, 409, { error: "payment" });
       commit(() => startRefund(book, id));
       try { refunded = await stripe.refund(order.payment, `refund-${order.id}`); }
-      catch (error) { log(`refund: ${error.message}`); commit(() => stopRefund(book, id)); return send(res, 502, { error: "stripe" }); }
+      catch (error) {
+        // Only a clear no from Stripe means nothing was refunded. A lost or broken answer (and 409: the same key is
+        // still being worked on) may hide a refund: the mark stays until rejecting again settles it.
+        const refused = error.refused || (error.status >= 400 && error.status < 500 && error.status !== 409);
+        log(`refund: ${error.message}${refused ? "" : " (outcome unknown, kept as refunding)"}`);
+        if (refused) commit(() => stopRefund(book, id));
+        return send(res, 502, { error: refused ? "stripe" : "unknown" });
+      }
     }
     let done;
     if (action === "approve") {
