@@ -4,7 +4,7 @@
 //   held ─▶ paid ─▶ live ─▶ removed            held ─▶ expired (runs out, or Stripe could not be reached)
 //             └──▶ refunded ◀── problem         a payment that does not match its order, or comes after its seats
 //                                               went to someone else, is a problem: refunded from the panel
-import { validBlock, blockSeats, blockPrice, cleanHolder, taken, canPlace } from "./web/seats.mjs";
+import { validBlock, blockSeats, blockPrice, cleanHolder, taken, canPlace, AUCTION, isAuctionBlock } from "./web/seats.mjs";
 
 export const HOLD_MS = 31 * 60_000;       // Stripe keeps a Checkout session at least 30 minutes
 export const GRACE_MS = 10 * 60_000;      // a payment made in the last second may be reported a little later
@@ -40,7 +40,7 @@ function used(book, hand, except) {
 
 export function hold(book, { id, block, name, link, ipKey, now }, hand = []) {
   const b = blockOf(block || {});
-  if (!validBlock(b)) return { error: "block" };
+  if (!validBlock(b) || isAuctionBlock(b)) return { error: "block" };   // the auction block is sold only by auction
   const holder = cleanHolder({ name, link });
   if (!holder) return { error: "holder" };
   const held = book.orders.filter((o) => o.state === "held");
@@ -58,6 +58,26 @@ export function hold(book, { id, block, name, link, ipKey, now }, hand = []) {
 export function setSession(book, id, session) {
   const order = find(book, id);
   if (order) order.session = session;
+}
+
+// The auction's winner (auction.mjs) has paid already: the block waits for approval like any paid order. Sent
+// again before approval, the name and link are replaced; the amount stays what was captured.
+export function won(book, { id, name, link, amount, payment, email, now }) {
+  const holder = cleanHolder({ name, link });
+  if (!holder) return { error: "holder" };
+  const known = find(book, id);
+  if (known) {
+    if (known.state !== "paid") return { error: "state" };
+    Object.assign(known, holder);
+    note(book, known, "content", null, now);
+    return { order: known };
+  }
+  const order = { id, state: "paid", ...AUCTION.block, ...holder, amount, currency: "usd", email: email ?? null, session: null,
+    payment, ipKey: null, created: now, heldUntil: now, paidAt: now, decidedAt: null, decidedBy: null, reason: null, refunded: false,
+    refunding: false, refund: null, auction: true };
+  book.orders.push(order);
+  note(book, order, "paid", null, now);
+  return { order };
 }
 
 // The address digest only limits holds: it goes when the order stops being held.

@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createBook, hold, setSession, drop, paid, expire, sweep, approve, reject, remove, liveSeats, reserved, summary, buyerState,
-  HOLD_MS, GRACE_MS } from './orders.mjs';
-import { TIERS, blockPrice } from './web/seats.mjs';
+  won, HOLD_MS, GRACE_MS } from './orders.mjs';
+import { TIERS, blockPrice, AUCTION } from './web/seats.mjs';
 
 const T0 = Date.UTC(2026, 9, 31, 10, 0);
 const front = TIERS[0].rings[0];
@@ -164,4 +164,21 @@ test('a book read back keeps well-formed orders and the last 500 events only', (
   assert.deepEqual(copy.orders, [order]);
   assert.deepEqual([copy.events.length, copy.events[0].at], [500, 100]);
   assert.deepEqual(createBook(null), { orders: [], events: [] });
+});
+
+test('the auction block is never held seat by seat', () => {
+  const book = createBook();
+  assert.deepEqual(hold(book, { id: nextId(), block: AUCTION.block, name: 'Acme', link: 'https://acme.example', ipKey: 'ip', now: T0 }), { error: 'block' });
+});
+
+test('the auction winner becomes a paid order waiting for approval; sent again, its name and link change', () => {
+  const book = createBook(), id = nextId();
+  const { order } = won(book, { id, name: 'Acme', link: 'https://acme.example', amount: 310_000, payment: 'pi_w', email: 'w@acme.example', now: T0 });
+  assert.deepEqual([order.state, order.width, order.depth, order.amount, order.payment, order.auction], ['paid', 24, 4, 310_000, 'pi_w', true]);
+  assert.equal(won(book, { id, name: 'Acme Ltd', link: 'https://acme.example/x', amount: 1, payment: 'pi_other', email: null, now: T0 }).order.name, 'Acme Ltd');
+  assert.equal(order.amount, 310_000, 'the amount stays what was captured');
+  assert.equal(approve(book, id, 'selim', T0).state, 'live');
+  assert.deepEqual(won(book, { id, name: 'Late', link: 'https://late.example', amount: 1, payment: 'p', email: null, now: T0 }), { error: 'state' });
+  assert.deepEqual(won(book, { id: nextId(), name: '', link: 'nope', amount: 1, payment: 'p', email: null, now: T0 }), { error: 'holder' });
+  assert.equal(createBook(JSON.parse(JSON.stringify(book))).orders.length, 1, 'the 24-wide block survives a reload');
 });
