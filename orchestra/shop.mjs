@@ -123,9 +123,9 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     const top = leader(ab);
     try { await stripe.captureIntent(top.payment, `capture-${top.id}`); }
     catch (error) {
-      // As with a refund: only a clear no fails the auction; a lost answer, 409 (the same key still being worked
-      // on) or 429 (too many requests) leaves it capturing, tried again with the same key.
-      const refused = error.refused || (error.status >= 400 && error.status < 500 && ![409, 429].includes(error.status));
+      // Only a hold Stripe shows gone fails the auction (stripe.mjs `captureIntent` reads it); anything else may
+      // hide an earlier capture, so it stays capturing and is tried again with the same key.
+      const refused = error.refused === true;
       log(`auction: capture ${refused ? "refused" : "outcome unknown, tried again"} (${error.message})`);
       if (refused) {
         await serial(() => commitAuction(() => captureRefused(ab, now)));
@@ -137,12 +137,15 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     await tell(`Açık artırma bitti: ${top.amount} $, kazanan ${top.email || "e-posta yok"}. Logo bekleniyor.`);
   }
   // The auction holds the block until the winner's order takes it over; meanwhile no normal order may take its seats.
-  const auctionHolds = () => auctionOpen && blocking(ab) && !(ab.auction.order && find(ab.auction.order));
+  // The winner's order has an id taken from the auction's: one order per auction, however often the logo is sent.
+  const winnerOrderId = () => `o-${ab.auction.id.slice(2)}`;
+  const winnerOrder = () => (ab.auction ? find(winnerOrderId()) : null);
+  const auctionHolds = () => auctionOpen && blocking(ab) && !winnerOrder();
   const occupied = () => (auctionHolds() ? [...hand(), AUCTION.block] : hand());
   // The hall shows a won auction ("sold, awaiting approval") until the winner's order is decided: live, the logo
   // is there; refunded or removed, the block is free again.
   const auctionShown = () => auctionOpen && Boolean(ab.auction)
-    && (ab.auction.state !== "won" || !find(ab.auction.order) || ["paid", "problem"].includes(find(ab.auction.order).state));
+    && (ab.auction.state !== "won" || !winnerOrder() || ["paid", "problem"].includes(winnerOrder().state));
   const label = (o) => { const n = o.width * o.depth; return `${EN[tierOf(o.ring).label] || tierOf(o.ring).label} · ${n} seat${n === 1 ? "" : "s"}`; };
   async function tell(text) {
     if (!env.SLACK_WEBHOOK_URL) return;
@@ -235,26 +238,29 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
   }
 
   // The winner (their bid id is their key, from their return address) sends the logo; the block becomes a paid order.
+  // All in one step: the order id comes from the auction's, so a retry or a second tab finds the same order, and the
+  // auction points to it only once the order is written.
   async function winnerContent(req, res, { foreign, now, site }) {
     if (foreign) return send(res, 403, { error: "origin" });
     const data = parse(await body(req, 450 * 1024));
     if (!data) return send(res, 400, { error: "body" });
     if (data.terms !== true) return send(res, 400, { error: "terms" });
-    const win = winner(ab);
-    if (!win || data.id !== win.id) return send(res, 409, { error: "state" });
     const image = logoOf(data.image);
     if (!image) return send(res, 400, { error: "image" });
-    // The order id is written to the auction first, so a second try never makes a second order.
-    if (!ab.auction.order) await serial(() => commitAuction(() => setOrder(ab, `o-${randomBytes(12).toString("hex")}`)));
-    const id = ab.auction.order;
-    const current = find(id);
-    if (current && current.state !== "paid") return send(res, 409, { error: "state" });
-    mkdirSync(join(seatsDir, "pending"), { recursive: true });
-    const done = commit(() => won(book, { id, name: data.name, link: data.link, amount: win.amount * 100, payment: win.payment, email: win.email, now }));
+    const done = await serial(() => {
+      const win = winner(ab);
+      if (!win || data.id !== win.id) return { error: "state" };
+      const id = winnerOrderId();
+      mkdirSync(join(seatsDir, "pending"), { recursive: true });
+      const made = commit(() => won(book, { id, name: data.name, link: data.link, amount: win.amount * 100, payment: win.payment, email: win.email, now }));
+      if (made.error) return made;
+      writeFileSync(pending(id), image);
+      if (ab.auction.order !== id) commitAuction(() => setOrder(ab, id));
+      return { order: made.order, win };
+    });
     if (done.error) return send(res, done.error === "holder" ? 400 : 409, { error: done.error });
-    writeFileSync(pending(id), image);
-    await tell(`Açık artırma kazananı logosunu gönderdi: ${done.order.name} · ${win.amount} $. Onay bekliyor: ${siteOf(site)}/yonetim/#bekleyen`);
-    return send(res, 200, { order: id });
+    await tell(`Açık artırma kazananı logosunu gönderdi: ${done.order.name} · ${done.win.amount} $. Onay bekliyor: ${siteOf(site)}/yonetim/#bekleyen`);
+    return send(res, 200, { order: done.order.id });
   }
 
   // Stripe holds money for a bid: what it holds is read from Stripe itself, not from the event.
@@ -359,7 +365,7 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
   async function auctionPanel(res, step, by, now) {
     if (!auctionOpen) return send(res, 404, { error: "closed" });
     if (step === "start") {
-      const order = ab.auction?.order && find(ab.auction.order);
+      const order = winnerOrder();
       const done = await serial(() => commitAuction(() => start(ab, { id: `a-${randomBytes(12).toString("hex")}`, by, now,
         used: taken([...hand(), ...liveSeats(book), ...reserved(book)]), again: Boolean(order && ["refunded", "removed"].includes(order.state)) })));
       if (done.error) return send(res, 409, { error: done.error });
@@ -424,7 +430,7 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
           if (!ended.capture) await tell("Açık artırma teklifsiz bitti; blok normal satışa döndü.");
         }
         if (ab.auction?.state === "capturing") await settleCapture(now);
-        await serial(() => commitAuction(() => sweepBids(ab, now), (r) => r.expired.length + r.forgot > 0));
+        await serial(() => commitAuction(() => sweepBids(ab, now), (r) => r.expired.length + r.forgot + r.dropped > 0));
       } catch (error) { log(`auction: sweep not saved, will retry (${error.message})`); }
     },
     sweep(now) {
@@ -441,7 +447,13 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     if (p === "/api/auction/bid" && req.method === "POST") { if (!auctionOpen) send(res, 404, { error: "closed" }); else await placeBid(req, res, ctx); return true; }
     if (p === "/api/auction/content" && req.method === "POST") { if (!auctionOpen) send(res, 404, { error: "closed" }); else await winnerContent(req, res, ctx); return true; }
     const bidPath = p.match(/^\/api\/auction\/bid\/(b-[0-9a-f]{24})(\/cancel)?$/);
-    if (bidPath && auctionOpen && req.method === "GET" && !bidPath[2]) { const v = bidView(ab, bidPath[1]); v ? send(res, 200, v) : send(res, 404, { error: "bid" }); return true; }
+    if (bidPath && auctionOpen && req.method === "GET" && !bidPath[2]) {
+      const v = bidView(ab, bidPath[1]);
+      // The winner's logo: sent or not, and open to change until the order is decided.
+      if (v?.state === "winner") { const o = winnerOrder(); v.content = Boolean(o); v.editable = !o || o.state === "paid"; }
+      v ? send(res, 200, v) : send(res, 404, { error: "bid" });
+      return true;
+    }
     if (bidPath && auctionOpen && req.method === "POST" && bidPath[2]) { await giveUpBid(res, bidPath[1], ctx); return true; }
     if (p === "/api/seats/checkout" && req.method === "POST") { if (!open) send(res, 404, { error: "closed" }); else await checkout(req, res, ctx); return true; }
     const order = p.match(/^\/api\/seats\/order\/(o-[0-9a-f]{24})$/);

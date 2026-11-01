@@ -83,6 +83,22 @@ test('a remembered bid says whether it still leads; the line says when time is u
   assert.equal($('auction-left').textContent, '· bitti');
 });
 
+test('back from Stripe after the auction closed, the outcome still shows (B5)', async () => {
+  auction.show({ state: 'unsold' });
+  history.replaceState(null, '', `/?teklif=b-${'8'.repeat(24)}`);
+  answer = () => ({ status: 200, body: { state: 'late', auction: 'unsold', amount: 3200, current: null, endsAt: now, content: false } });
+  await backFromBid({ wait: 0, tries: 2 });
+  assert.deepEqual([$('auction').hidden, $('auction-form').hidden], [false, true], 'the box shows, without a form to bid');
+  assert.match($('auction-status').textContent, /geçerli olmadı/);
+});
+
+test('a remembered winner whose logo waits for approval may send it again (B4)', async () => {
+  localStorage.setItem('teklifler', JSON.stringify([`b-${'9'.repeat(24)}`]));
+  answer = () => ({ status: 200, body: { state: 'winner', auction: 'won', amount: 3300, current: 3300, endsAt: now, content: true, editable: true } });
+  await auction.remembered();
+  assert.deepEqual([$('auction-win').hidden, $('auction-status').textContent], [false, 'Logon onay bekliyor. Değiştirmek istersen yeniden gönderebilirsin.']);
+});
+
 test('a remembered winning bid shows the button that opens the logo form', async () => {
   localStorage.setItem('teklifler', JSON.stringify([`b-${'4'.repeat(24)}`]));
   answer = () => ({ status: 200, body: { state: 'winner', auction: 'won', amount: 3300, current: 3300, endsAt: now, content: false } });

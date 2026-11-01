@@ -3,7 +3,9 @@
 import { num } from './i18n.js';
 
 const $ = (id) => document.getElementById(id);
-const say = (text) => { $('auction-status').textContent = text; };
+// A message about this visitor's bid shows the box even when no auction takes bids (back from Stripe after the end).
+let told = false;
+const say = (text) => { $('auction-status').textContent = text; told = Boolean(text); if (told) $('auction').hidden = false; };
 const SAVED = 'teklifler', BID = /^b-[0-9a-f]{24}$/;
 const saved = () => { try { return (JSON.parse(localStorage.getItem(SAVED) || '[]') || []).filter((id) => BID.test(id)); } catch { return []; } };
 const remember = (id) => { try { localStorage.setItem(SAVED, JSON.stringify([...new Set([...saved(), id])].slice(-10))); } catch { /* private mode */ } };
@@ -62,7 +64,7 @@ export function setupAuction({ go = (url) => location.assign(url), startWinner, 
   function show(v) {
     view = v;
     const open = v?.state === 'open';
-    $('auction').hidden = !open && !winning;
+    $('auction').hidden = !open && !winning && !told;
     $('auction-form').hidden = !open;
     if (open) {
       $('auction-price').textContent = v.current ? `Şu an ${num(v.current)} $` : `Açılış ${num(v.min)} $`;
@@ -97,7 +99,10 @@ export function setupAuction({ go = (url) => location.assign(url), startWinner, 
     for (const id of saved()) {
       const res = await fetch(`/api/auction/bid/${id}`, { cache: 'no-store' }).catch(() => null);
       const v = res?.ok ? await res.json().catch(() => null) : null;
-      if (v?.state === 'winner' && !v.content) { winning = id; say(SAID.winner); $('auction-win').hidden = false; $('auction').hidden = false; }
+      if (v?.state === 'winner' && (v.editable ?? !v.content)) {
+        winning = id; $('auction-win').hidden = false;
+        say(v.content ? 'Logon onay bekliyor. Değiştirmek istersen yeniden gönderebilirsin.' : SAID.winner);
+      }
       else if (v?.auction === 'open' && ['top', 'outbid'].includes(v.state)) say(SAID[v.state]);
     }
   }

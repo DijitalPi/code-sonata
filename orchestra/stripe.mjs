@@ -67,14 +67,16 @@ export function createStripe({ key, base = "https://api.stripe.com", fetch = glo
       try { return await call(`/v1/payment_intents/${encodeURIComponent(id)}/cancel`, {}, { "idempotency-key": idempotencyKey }); }
       catch (error) { if (error.code === "payment_intent_unexpected_state") return { status: "not_held" }; throw error; }
     },
-    // Taking the held money. If Stripe says the hold is in another state, it is read: captured already (an earlier try
-    // whose answer was lost) is success; anything else is a clear no (`refused`).
+    // Taking the held money. Whatever goes wrong, the hold itself is read: captured already (an earlier try whose
+    // answer was lost) is success; still held, or not readable, is tried again later; gone (run out, canceled) is the
+    // only clear no (`refused`). A refused retry never says what an earlier try did.
     async captureIntent(id, idempotencyKey) {
       try { return await call(`/v1/payment_intents/${encodeURIComponent(id)}/capture`, {}, { "idempotency-key": idempotencyKey }); }
       catch (error) {
-        if (error.code !== "payment_intent_unexpected_state") throw error;
-        const now = await call(`/v1/payment_intents/${encodeURIComponent(id)}`, {}, {}, "GET");
+        let now;
+        try { now = await call(`/v1/payment_intents/${encodeURIComponent(id)}`, {}, {}, "GET"); } catch { throw error; }
         if (now.status === "succeeded") return now;
+        if (["requires_capture", "processing"].includes(now.status)) throw error;
         throw Object.assign(new Error(`stripe capture: ${now.status}`), { refused: true });
       }
     },

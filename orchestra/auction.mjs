@@ -18,16 +18,21 @@ const AUCTION_STATES = new Set(["open", "capturing", "won", "unsold", "failed"])
 const BID_STATES = new Set(["pending", "top", "outbid", "winner", "late", "expired"]);
 const AUCTION_ID = /^a-[0-9a-f]{24}$/, BID_ID = /^b-[0-9a-f]{24}$/;
 
+// `old`: bids of earlier auctions that may still hold money (a page still open, a hold not let go yet). A new
+// auction never forgets them: a late hold is let go, a failed letting go is tried again.
 export function createAuctions(data) {
   const a = data?.auction;
   const auction = a && typeof a === "object" && AUCTION_ID.test(a.id) && AUCTION_STATES.has(a.state) ? a : null;
-  const bids = auction ? (Array.isArray(data.bids) ? data.bids : [])
-    .filter((b) => b && typeof b === "object" && BID_ID.test(b.id) && BID_STATES.has(b.state) && Number.isInteger(b.amount)) : [];
+  const valid = (list) => (Array.isArray(list) ? list : [])
+    .filter((b) => b && typeof b === "object" && BID_ID.test(b.id) && BID_STATES.has(b.state) && Number.isInteger(b.amount));
+  const bids = auction ? valid(data.bids) : [], old = auction ? valid(data.old) : [];
   const past = (Array.isArray(data?.past) ? data.past : []).filter((p) => p && typeof p === "object").slice(-20);
-  return { auction, bids, past };
+  return { auction, bids, old, past };
 }
 
-const findBid = (ab, id) => ab.bids.find((b) => b.id === id) || null;
+const oldOf = (ab) => ab.old || [];
+const owing = (b) => b.state === "pending" || b.releasing;
+const findBid = (ab, id) => ab.bids.find((b) => b.id === id) || oldOf(ab).find((b) => b.id === id) || null;
 export const leader = (ab) => (ab.auction?.top ? findBid(ab, ab.auction.top) : null);
 export const minBid = (ab) => { const top = leader(ab); return top ? top.amount + AUCTION.step : AUCTION.start; };
 export const winner = (ab) => (ab.auction?.state === "won" ? leader(ab) : null);
@@ -43,6 +48,7 @@ export function start(ab, { id, by, now, used, again = false }) {
   if (a) ab.past.push({ id: a.id, state: a.state, startedAt: a.startedAt, endedAt: a.endedAt, amount: leader(ab)?.amount ?? null, order: a.order });
   ab.auction = { id, state: "open", startedAt: now, startedBy: by, endsAt: now + RUN_MS, hardEnd: now + HARD_MS, top: null,
     endedAt: null, capturedAt: null, failedAt: null, order: null };
+  ab.old = [...oldOf(ab), ...ab.bids].filter(owing);
   ab.bids = [];
   return { auction: ab.auction };
 }
@@ -76,7 +82,7 @@ export function confirmBid(ab, { id, status, capturable, currency, payment, emai
   bid.payment = payment ?? null;
   bid.email = typeof email === "string" ? email.slice(0, 200) : null;
   const holding = status === "requires_capture";
-  const counts = bid.state === "pending" && holding && capturable === bid.amount * 100 && currency === "usd"
+  const counts = bid.state === "pending" && ab.bids.includes(bid) && holding && capturable === bid.amount * 100 && currency === "usd"
     && a?.state === "open" && now < a.endsAt && bid.amount >= minBid(ab);
   if (!counts) {
     settle(bid, "late", now);
@@ -91,7 +97,7 @@ export function confirmBid(ab, { id, status, capturable, currency, payment, emai
   return { bid, changed: true, top: true, release: passed ? [passed] : [] };
 }
 export function released(ab, id) { const b = findBid(ab, id); if (b) b.releasing = false; return b; }
-export const toRelease = (ab) => ab.bids.filter((b) => b.releasing && b.payment);
+export const toRelease = (ab) => [...ab.bids, ...oldOf(ab)].filter((b) => b.releasing && b.payment);
 
 export const due = (ab, now) => ab.auction?.state === "open" && now >= ab.auction.endsAt;
 // The end. The top bid is marked for capture first (a lost answer is retried with the same key, never charged twice).
@@ -127,12 +133,17 @@ export function setOrder(ab, order) {
   return { auction: ab.auction };
 }
 
+// Pages never paid expire; bids of earlier auctions that owe nothing any more are dropped; a month after the end the
+// e-mails are forgotten, but the winner's (the order needs it, and it is in the order book too).
 export function sweepBids(ab, now) {
-  const expired = ab.bids.filter((b) => b.state === "pending" && b.createdAt + PAGE_MS + GRACE_MS < now);
+  const expired = [...ab.bids, ...oldOf(ab)].filter((b) => b.state === "pending" && b.createdAt + PAGE_MS + GRACE_MS < now);
   for (const b of expired) settle(b, "expired", now);
+  const kept = oldOf(ab).filter(owing), dropped = oldOf(ab).length - kept.length;
+  if (dropped) ab.old = kept;
   let forgot = 0;
-  if (ab.auction?.endedAt && ab.auction.endedAt + FORGET_MS < now) for (const b of ab.bids) if (b.email) { b.email = null; forgot++; }
-  return { expired, forgot };
+  const keep = ab.auction?.state === "won" ? ab.auction.top : null;
+  if (ab.auction?.endedAt && ab.auction.endedAt + FORGET_MS < now) for (const b of ab.bids) if (b.email && b.id !== keep) { b.email = null; forgot++; }
+  return { expired, forgot, dropped };
 }
 
 // What anyone sees: the block, the price, the end, the bids that counted (amount and time, no one's name).
@@ -146,6 +157,7 @@ export function publicView(ab) {
 // What a bidder sees of their own bid (they know its id from their return address).
 export function bidView(ab, id) {
   const b = findBid(ab, id);
-  return b && { state: b.state, auction: ab.auction.state, amount: b.amount, current: leader(ab)?.amount ?? null, endsAt: ab.auction.endsAt, content: Boolean(ab.auction.order) };
+  return b && { state: b.state, auction: ab.bids.includes(b) ? ab.auction.state : "ended", amount: b.amount, current: leader(ab)?.amount ?? null, endsAt: ab.auction.endsAt, content: Boolean(ab.auction.order) };
 }
-export const panelView = (ab) => ({ auction: ab.auction, bids: ab.bids.map(({ ipKey, ...b }) => b), past: ab.past });
+const unaddressed = ({ ipKey, ...b }) => b;
+export const panelView = (ab) => ({ auction: ab.auction, bids: ab.bids.map(unaddressed), old: oldOf(ab).map(unaddressed), past: ab.past });

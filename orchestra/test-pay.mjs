@@ -162,3 +162,18 @@ test('a bid page holds the card instead of charging it; a hold is read, let go a
   answers.push([400, { error: { message: 'x', code: 'payment_intent_unexpected_state' } }], [200, { id: 'pi_3', status: 'canceled' }]);
   await assert.rejects(s.captureIntent('pi_3', 'capture-b-3'), (e) => e.refused === true);
 });
+
+test('a capture without a clear answer is never a refusal: the hold is read, and one that cannot be read is tried again (B2)', async () => {
+  const steps = [];
+  const fetch = async () => { const step = steps.shift(); if (step instanceof Error) throw step; return new Response(JSON.stringify(step[1]), { status: step[0] }); };
+  const s = createStripe({ key: 'sk', base: 'https://stripe.test', fetch });
+  const notRefused = (e) => e.refused !== true;
+  steps.push([500, { error: { message: 'x' } }], [200, { id: 'pi_1', status: 'requires_capture' }]);
+  await assert.rejects(s.captureIntent('pi_1', 'capture-b-1'), notRefused, 'still held: try again');
+  steps.push(new Error('lost'), [401, { error: { message: 'key' } }]);
+  await assert.rejects(s.captureIntent('pi_1', 'capture-b-1'), notRefused, 'cannot read the hold: try again');
+  steps.push([401, { error: { message: 'key' } }], [200, { id: 'pi_1', status: 'succeeded' }]);
+  assert.equal((await s.captureIntent('pi_1', 'capture-b-1')).status, 'succeeded', 'captured by an earlier try');
+  steps.push([402, { error: { message: 'x' } }], [200, { id: 'pi_1', status: 'canceled' }]);
+  await assert.rejects(s.captureIntent('pi_1', 'capture-b-1'), (e) => e.refused === true, 'the hold is gone: a clear no');
+});

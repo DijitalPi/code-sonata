@@ -132,3 +132,26 @@ test('a closed page before any hold expires its bid', () => {
   assert.equal(expireBid(ab, a.id, T0).state, 'expired');
   assert.equal(expireBid(ab, a.id, T0), null);
 });
+
+test('a new auction keeps the holds of the last one still to let go; a page of it paid late is let go too (B3)', () => {
+  const ab = fresh(), a = ask(ab, 2400), b = ask(ab, 2500), c = ask(ab, 2600);
+  hold(ab, a); hold(ab, b);
+  end(ab, ab.auction.endsAt); captureRefused(ab, ab.auction.endsAt);
+  assert.ok(start(ab, { id: id('a'), by: 'selim', now: T0 + RUN_MS, used: new Set() }).auction);
+  assert.deepEqual(toRelease(ab).map((x) => x.id), [a.id], 'the passed bid of the last auction is still to let go');
+  assert.equal(createAuctions(JSON.parse(JSON.stringify(ab))).old.length, 2, 'kept in the file');
+  assert.deepEqual([publicView(ab).bids, minBid(ab), bidView(ab, c.id).state], [[], 2400, 'pending']);
+  const late = hold(ab, c, { now: T0 + RUN_MS + 1000 });
+  assert.deepEqual([late.bid.state, c.releasing, Boolean(late.top), ab.auction.top], ['late', true, false, null]);
+  released(ab, a.id); released(ab, c.id);
+  assert.equal(sweepBids(ab, T0 + RUN_MS + 2000).dropped, 2, 'settled ones are dropped');
+  assert.deepEqual([toRelease(ab), ab.old], [[], []]);
+});
+
+test('the winner keeps their e-mail after a month; the others are forgotten (B6)', () => {
+  const ab = fresh(), a = ask(ab, 2400), b = ask(ab, 2500);
+  hold(ab, a); hold(ab, b);
+  end(ab, ab.auction.endsAt); captured(ab, ab.auction.endsAt);
+  assert.equal(sweepBids(ab, ab.auction.endedAt + FORGET_MS + 1).forgot, 1);
+  assert.deepEqual([a.email, b.email], [null, 'x@y.example']);
+});

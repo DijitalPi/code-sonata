@@ -3,6 +3,8 @@ import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { Readable } from 'node:stream';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sign } from './stripe.mjs';
@@ -223,4 +225,80 @@ test('the auction is read back from its file after a restart', async () => {
   assert.deepEqual(await get('/api/auction'), before.view);
   assert.deepEqual(shop.seatsPayload(), before.payload);
   assert.ok(!(await readFile(env.AUCTION_FILE, 'utf8')).includes('ipKey'));
+});
+
+// ---------- one shop per case, from a file the test writes (Codex review, B1–B4) ----------
+const FT = Date.UTC(2026, 10, 20, 12, 0), BIDX = `b-${'7'.repeat(24)}`, AIDX = `a-${'7'.repeat(24)}`;
+const saved = (state) => ({ auction: { id: AIDX, state, startedAt: FT - 1000, startedBy: 'selim', endsAt: FT + 1000, hardEnd: FT + 100_000, top: BIDX,
+  endedAt: state === 'open' ? null : FT, capturedAt: null, failedAt: null, order: null },
+  bids: [{ id: BIDX, amount: 2400, state: state === 'won' ? 'winner' : 'top', payment: 'pi_old', session: 'cs_old', email: 'w@acme.example',
+    createdAt: FT - 1000, settledAt: FT - 500, releasing: false }], past: [] });
+const offline = async () => { throw new Error('no network in this case'); };
+function fixture(data, stripeFetch = offline) {
+  const at = mkdtempSync(join(tmpdir(), 'auction-case-'));
+  const caseEnv = { ...env, SEATS_DIR: at, ORDERS_FILE: join(at, 'orders.json'), AUCTION_FILE: join(at, 'auction.json'), SLACK_WEBHOOK_URL: '' };
+  writeFileSync(caseEnv.AUCTION_FILE, JSON.stringify(data));
+  const one = createShop({ env: caseEnv, log: () => {}, fetch: stripeFetch });
+  // A request straight into the shop, no socket: body, headers and the answer it writes.
+  async function request(path, payload, headers = {}, method = 'POST') {
+    const req = Object.assign(Readable.from(payload == null ? [] : [Buffer.from(typeof payload === 'string' ? payload : JSON.stringify(payload))]), { method, headers });
+    const out = {};
+    const res = { headersSent: false, writeHead(status, h) { out.status = status; out.headers = h; }, end(b) { out.body = b ? JSON.parse(b) : {}; } };
+    await one.handle(req, res, new URL(path, 'http://local'), { foreign: false, key: 'ip-case', now: FT, site: 'https://o.test' });
+    return out;
+  }
+  const login = async () => (await request('/api/yonetim/login', { key: SELIM }, { 'x-yonetim': '1' })).headers['set-cookie'].split(';')[0];
+  return { shop: one, env: caseEnv, request, login, read: () => JSON.parse(readFileSync(caseEnv.AUCTION_FILE, 'utf8')),
+    orders: () => JSON.parse(readFileSync(caseEnv.ORDERS_FILE, 'utf8')).orders, clear: () => rmSync(at, { recursive: true, force: true }) };
+}
+const logo = { name: 'Acme', link: 'https://acme.example', image: webp(120, 40), terms: true };
+
+test('two first logos sent at once make one order (B1)', async () => {
+  const f = fixture(saved('won'));
+  try {
+    const [a, b] = await Promise.all([f.request('/api/auction/content', { id: BIDX, ...logo }), f.request('/api/auction/content', { id: BIDX, ...logo })]);
+    assert.deepEqual([a.status, b.status], [200, 200]);
+    assert.equal(f.orders().length, 1);
+    assert.equal(f.read().auction.order, f.orders()[0].id);
+  } finally { f.clear(); }
+});
+
+test('a capture whose answer was lost is never failed by a refused retry; the block stays off sale (B2)', async () => {
+  let n = 0;
+  const f = fixture(saved('open'), async () => { if (++n === 1) throw new Error('answer lost'); return reply(401, { error: { message: 'invalid key' } }); });
+  try {
+    await f.shop.auctionSweep(FT + 2000);
+    assert.equal(f.read().auction.state, 'capturing');
+    await f.shop.auctionSweep(FT + 3000);
+    assert.equal(f.read().auction.state, 'capturing');
+    assert.ok(f.shop.seatsPayload().reserved.some((b) => b.width === 24));
+  } finally { f.clear(); }
+});
+
+test('a page of an earlier auction paid after a new one started is let go at once (B3)', async () => {
+  const data = saved('unsold');
+  data.auction.top = null; data.bids[0].state = 'pending'; data.bids[0].settledAt = null;
+  let cancels = 0;
+  const f = fixture(data, async (url) => { if (url.endsWith('/cancel')) cancels++; return reply(200, { id: 'pi_old', status: 'requires_capture', amount_capturable: 240000, currency: 'usd' }); });
+  try {
+    assert.equal((await f.request('/api/yonetim/auction/start', {}, { cookie: await f.login(), 'x-yonetim': '1' })).status, 200);
+    const raw = JSON.stringify({ id: 'evt_old', type: 'checkout.session.completed', data: { object: { id: 'cs_old', metadata: { bid: BIDX }, payment_intent: 'pi_old', customer_details: {} } } });
+    assert.equal((await f.request('/api/stripe', raw, { 'stripe-signature': sign(raw, WEBHOOK, Math.floor(FT / 1000)) })).status, 200);
+    assert.equal(cancels, 1);
+    assert.equal((await f.request(`/api/auction/bid/${BIDX}`, null, {}, 'GET')).body.state, 'late');
+  } finally { f.clear(); }
+});
+
+test('a logo the server turns down leaves the winner free to send again; until approval it may be changed (B4)', async () => {
+  const f = fixture(saved('won'));
+  try {
+    const bad = await f.request('/api/auction/content', { id: BIDX, ...logo, name: '' });
+    assert.deepEqual([bad.status, bad.body.error], [400, 'holder']);
+    assert.equal((await f.request(`/api/auction/bid/${BIDX}`, null, {}, 'GET')).body.content, false);
+    assert.equal((await f.request('/api/auction/content', { id: BIDX, ...logo })).status, 200);
+    const view = (await f.request(`/api/auction/bid/${BIDX}`, null, {}, 'GET')).body;
+    assert.deepEqual([view.content, view.editable], [true, true]);
+    assert.equal((await f.request(`/api/yonetim/orders/${f.orders()[0].id}/approve`, {}, { cookie: await f.login(), 'x-yonetim': '1' })).status, 200);
+    assert.equal((await f.request(`/api/auction/bid/${BIDX}`, null, {}, 'GET')).body.editable, false, 'live: no more changes');
+  } finally { f.clear(); }
 });
