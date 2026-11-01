@@ -248,4 +248,6 @@ export const EN = {
   'Gönderilemedi. Birazdan yeniden dene.': 'Could not send. Try again shortly.',
   'Açık artırma': 'Auction', 'Satıldı, onay bekliyor': 'Sold, awaiting approval', 'Sahnenin önü · 96 koltuk': 'In front of the stage · 96 seats',
   'Şu an {a} $ · bitişe {b}': 'Now ${a} · ends in {b}', 'Açılış {a} $ · bitişe {b}': 'Opens at ${a} · ends in {b}',
+  'Açık artırma.': 'Auction.',
+  'Sahnenin önündeki blok açık artırmayla satılır. Teklifin kartında bloke edilir, çekilmez; daha yüksek teklif gelince bloke hemen kaldırılır. Bitişte en yüksek teklif tahsil edilir. Kazanan logo, ad ve link gönderir; içerik onaylanmazsa ücret tamamen iade edilir. Son 10 dakikada gelen teklif bitişi 10 dakika uzatır, açık artırma en çok 6 gün sürer.': 'The block in front of the stage is sold by auction. Your bid is held on your card, not charged; when a higher bid comes in, the hold is released at once. At the end the highest bid is charged. The winner sends a logo, name and link; if the content is not approved, the payment is refunded in full. A bid in the last 10 minutes moves the end 10 minutes later; the auction lasts at most 6 days.',
 };
