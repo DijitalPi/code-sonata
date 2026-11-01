@@ -16,11 +16,11 @@ const money = (cents) => `${num(cents / 100)} $`;
 const when = (ms) => (ms ? new Date(ms).toLocaleString('tr-TR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
 const STATE = { held: 'Tutuluyor', paid: 'Onay bekliyor', problem: 'Sorunlu', live: 'Yayında', expired: 'Süresi doldu', refunded: 'İade edildi', removed: 'Kaldırıldı' };
 const DONE = { held: 'yer tuttu', 'checkout-failed': 'ödeme sayfası açılamadı', paid: 'ödendi', problem: 'sorunlu ödeme', expired: 'süresi doldu',
-  live: 'onayladı', refunded: 'iade etti', removed: 'kaldırdı' };
+  live: 'onayladı', refunded: 'iade etti', removed: 'kaldırdı', content: 'logosunu güncelledi' };
 const PROBLEM = { amount: 'Tutar tutmuyor', taken: 'Yer artık dolu' };
 const FILTERS = [['Tümü', () => true], ['Yayında', (o) => o.state === 'live'], ['Onay bekleyen', (o) => ['paid', 'problem'].includes(o.state)],
   ['Tutuluyor', (o) => o.state === 'held'], ['İade edildi', (o) => o.state === 'refunded' || o.refunded], ['Diğer', (o) => ['expired', 'removed'].includes(o.state)]];
-const VIEWS = { '#genel': 'Genel bakış', '#bekleyen': 'Onay bekleyenler', '#koltuklar': 'Koltuklar' };
+const VIEWS = { '#genel': 'Genel bakış', '#bekleyen': 'Onay bekleyenler', '#koltuklar': 'Koltuklar', '#artirma': 'Açık artırma' };
 
 let data = null, filter = 'Tümü';
 const hall = createAmfi();
@@ -102,7 +102,7 @@ function render() {
     return link;
   }));
   const closed = !data.checkout && el('p', { className: 'warn' }, 'Ödeme kapalı: Stripe ayarları eksik. Alıcılar şu an ödeme yapamaz.');
-  view.replaceChildren(...[closed, ...({ '#genel': overview, '#bekleyen': waiting, '#koltuklar': seats }[current])()].filter(Boolean));
+  view.replaceChildren(...[closed, ...({ '#genel': overview, '#bekleyen': waiting, '#koltuklar': seats, '#artirma': auctionTab }[current])()].filter(Boolean));
 }
 addEventListener('hashchange', render);
 
@@ -184,3 +184,38 @@ function seats() {
 }
 
 load();
+
+// ---------- the front-block auction (auction.mjs) ----------
+const AUCTION_STATE = { open: 'Sürüyor', capturing: 'Bitti, tahsil ediliyor', won: 'Kazanıldı', unsold: 'Teklifsiz bitti', failed: 'Tahsilat başarısız' };
+const BID_STATE = { pending: 'Stripe sayfası açık', top: 'Önde', outbid: 'Geçildi', winner: 'Kazanan', late: 'Geç kaldı', expired: 'Vazgeçildi' };
+
+async function auctionStep(step, done) {
+  const res = await fetch(`/api/yonetim/auction/${step}`, { method: 'POST', headers: { 'x-yonetim': '1' } }).catch(() => null);
+  if (res?.status === 401) return showLogin();
+  const why = !res?.ok && (await res?.json().catch(() => ({})))?.error;
+  say(res?.ok ? done : why === 'taken' ? 'Blokta satılmış ya da tutulan koltuk var; önce onu çöz.' : why === 'state' ? 'Açık artırma artık o durumda değil. Liste yenilendi.' : 'Bir sorun oldu. Yeniden dene.');
+  await load();
+}
+
+function auctionTab() {
+  const a = data.auction?.auction, bids = data.auction?.bids || [];
+  const ask = el('div', { className: 'ask', hidden: true },
+    el('p', {}, 'Sahnenin önündeki 96 koltuk açık artırmaya çıkar: 2.400 $\'dan başlar, en az +100 $, 5 gün sürer (son 10 dakikadaki teklif uzatır, en çok 6 gün). Blok bu sürede normal satışta dolu görünür.'),
+    el('div', { className: 'row' }, el('button', { type: 'button', onclick: () => auctionStep('start', 'Açık artırma başladı.') }, 'Başlat'),
+      el('button', { type: 'button', className: 'quiet', onclick: () => { ask.hidden = true; } }, 'Vazgeç')));
+  const canStart = !a || ['unsold', 'failed'].includes(a.state) || (a.state === 'won' && ['refunded', 'removed'].includes(data.orders.find((o) => o.id === a.order)?.state));
+  const top = bids.find((b) => b.id === a?.top);
+  return [
+    el('h2', {}, 'Açık artırma'),
+    !a ? el('p', { className: 'dim' }, 'Açık artırma yok.')
+      : el('p', {}, `${AUCTION_STATE[a.state]} · bitiş ${when(a.endsAt)}${top ? ` · en yüksek ${money(top.amount * 100)}` : ''}`),
+    a?.state === 'won' && top && el('p', {}, `Kazanan: ${top.email || 'e-posta yok'} · ${a.order ? 'logo geldi, Onay bekleyenler\'de' : 'logo bekleniyor'}`),
+    a?.state === 'capturing' && el('div', { className: 'row' }, el('button', { type: 'button', onclick: () => auctionStep('capture', 'Tahsilat yeniden denendi.') }, 'Tahsilatı yeniden dene')),
+    a?.state === 'failed' && el('p', { className: 'warn' }, 'Tahsilat reddedildi; yeniden başlatabilir ya da bloğu satışa açabilirsin.'),
+    a?.state === 'failed' && el('div', { className: 'row' }, el('button', { type: 'button', className: 'quiet', onclick: () => auctionStep('close', 'Blok normal satışa açıldı.') }, 'Satışa aç')),
+    canStart && el('div', { className: 'row' }, el('button', { type: 'button', onclick: () => { ask.hidden = false; } }, 'Başlat')), ask,
+    bids.length > 0 && el('table', {}, el('thead', {}, el('tr', {}, ...['Tutar', 'Durum', 'E-posta', 'Saat'].map((h) => el('th', {}, h)))),
+      el('tbody', {}, ...[...bids].sort((x, y) => y.amount - x.amount).map((b) => el('tr', {}, el('td', {}, money(b.amount * 100)),
+        el('td', {}, BID_STATE[b.state] + (b.releasing ? ', bloke kaldırılıyor' : '')), el('td', {}, b.email || ''), el('td', {}, when(b.settledAt || b.createdAt)))))),
+  ];
+}

@@ -151,3 +151,26 @@ test('an order whose refund was started says so on its card', async () => {
     assert.match(text(), /İadesi başladı, kaydı tamamlanmadı\. Reddet ile bitir\./);
   } finally { STATE.orders[0].refunding = false; }
 });
+
+test('the auction tab starts an auction after asking, and lists bids with their state and e-mail', async () => {
+  STATE.auction = { auction: null, bids: [], past: [] };
+  await go('#artirma');
+  assert.match(text(), /Açık artırma yok/);
+  button('Başlat').onclick(); await settle();
+  assert.match(text(), /5 gün sürer/);
+  calls.length = 0;
+  await buttons('Başlat').at(-1).onclick(); await settle();
+  assert.equal(calls[0].url, '/api/yonetim/auction/start');
+  STATE.auction = { auction: { id: 'a-1', state: 'open', endsAt: T + 86_400_000, startedAt: T, startedBy: 'selim', top: 'b-2', order: null },
+    bids: [{ id: 'b-2', amount: 2500, state: 'top', email: 'b@x.example', settledAt: T }, { id: 'b-1', amount: 2400, state: 'outbid', email: 'a@x.example', settledAt: T, releasing: true }], past: [] };
+  button('Yenile').onclick(); await settle();
+  assert.match(text(), /Sürüyor/);
+  assert.match(text(), /2\.500 \$.*Önde.*b@x\.example/);
+  assert.match(text(), /Geçildi, bloke kaldırılıyor/);
+  STATE.auction.auction.state = 'failed';
+  button('Yenile').onclick(); await settle();
+  calls.length = 0;
+  await button('Satışa aç').onclick(); await settle();
+  assert.equal(calls[0].url, '/api/yonetim/auction/close');
+  STATE.auction = null;
+});
