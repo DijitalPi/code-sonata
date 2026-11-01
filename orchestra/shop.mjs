@@ -9,12 +9,14 @@ import { createBook, hold, setSession, drop, paid, expire, sweep, approve, rejec
 import { createStripe, verifySignature } from "./stripe.mjs";
 import { parseKeys, whoHasKey, sessionSecret, makeCookie, readCookie, SESSION_MS } from "./admin.mjs";
 import { webpSize } from "./webp.mjs";
-import { PLAN, tierOf, cleanSeats } from "./web/seats.mjs";
+import { createAuctions, start, minBid, openBid, setBidSession, expireBid, confirmBid, released, toRelease, due, end, captured,
+  captureRefused, close, setOrder, leader, winner, blocking, sweepBids, publicView, bidView, panelView, PAGE_MS } from "./auction.mjs";
+import { PLAN, tierOf, cleanSeats, AUCTION, taken } from "./web/seats.mjs";
 import { EN } from "./web/lang-en.mjs";
 
 const IMAGE_MAX = 300 * 1024, IMAGE_SIDE = 1024;
 const TRIES = 5, TRIES_MS = 10 * 60_000, LOGINS = 5, LOGINS_MS = 60_000;
-const ORDER = /^o-[0-9a-f]{24}$/;
+const ORDER = /^o-[0-9a-f]{24}$/, BID = /^b-[0-9a-f]{24}$/;
 
 // Up to `limit` bytes of a request body, or null once it is longer or breaks off.
 async function body(req, limit) {
@@ -53,9 +55,17 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
       book = createBook(data);
     } catch (error) { readable = false; log(`orders: not read, payment stays closed (${error.message})`); }
   }
+  // The front-block auction (auction.mjs) lives in AUCTION_FILE; it needs payment open and its own file.
+  const auctionFile = env.AUCTION_FILE || "";
+  let ab = createAuctions(), auctionReadable = true;
+  if (auctionFile && existsSync(auctionFile)) {
+    try { ab = createAuctions(JSON.parse(readFileSync(auctionFile, "utf8"))); }
+    catch (error) { auctionReadable = false; log(`auction: not read, stays closed (${error.message})`); }
+  }
   // Payment opens only with someone to approve what is paid.
   const open = Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET && ordersFile && seatsDir && readable && keys.size > 0);
   const panelOpen = keys.size > 0 && readable && Boolean(ordersFile);
+  const auctionOpen = open && Boolean(auctionFile) && auctionReadable;
   const tries = new Map(), logins = new Map(), deciding = new Set();
   const pending = (id) => join(seatsDir, "pending", `${id}.webp`), shown = (id) => join(seatsDir, `${id}.webp`);
   const forget = (file) => { try { unlinkSync(file); } catch { /* already gone */ } };
@@ -74,6 +84,30 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     } catch (error) { book = before; throw error; }
   }
   const find = (id) => book.orders.find((o) => o.id === id);
+  function commitAuction(change, changed = (result) => Boolean(result) && !result.error) {
+    const before = structuredClone(ab);
+    try {
+      const result = change();
+      if (!changed(result)) return result;
+      writeFileSync(`${auctionFile}.tmp`, JSON.stringify(ab, (k, v) => (k === "ipKey" ? undefined : v)));
+      renameSync(`${auctionFile}.tmp`, auctionFile);
+      return result;
+    } catch (error) { ab = before; throw error; }
+  }
+  // Auction steps run one at a time: a hold reported, the end, a capture, a start from the panel.
+  let line = Promise.resolve();
+  const serial = (step) => { const run = line.then(step); line = run.catch(() => {}); return run; };
+  const siteOf = (site) => (env.PUBLIC_URL ? new URL(env.PUBLIC_URL).origin : site);
+  const when = (ms) => new Date(ms).toISOString().replace("T", " ").slice(0, 16) + " UTC";
+  async function releaseAll(bids) {
+    for (const b of bids) {
+      try { await stripe.cancelIntent(b.payment, `release-${b.id}`); await serial(() => commitAuction(() => released(ab, b.id))); }
+      catch (error) { log(`auction: hold of ${b.id} not let go yet (${error.message})`); }
+    }
+  }
+  // The auction holds the block until the winner's order takes it over; meanwhile no normal order may take its seats.
+  const auctionHolds = () => auctionOpen && blocking(ab) && !(ab.auction.order && find(ab.auction.order));
+  const occupied = () => (auctionHolds() ? [...hand(), AUCTION.block] : hand());
   const label = (o) => { const n = o.width * o.depth; return `${EN[tierOf(o.ring).label] || tierOf(o.ring).label} · ${n} seat${n === 1 ? "" : "s"}`; };
   async function tell(text) {
     if (!env.SLACK_WEBHOOK_URL) return;
@@ -104,7 +138,7 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     mkdirSync(join(seatsDir, "pending"), { recursive: true });
     writeFileSync(pending(id), image);
     let held;
-    try { held = commit(() => hold(book, { id, block: data.block, name: data.name, link: data.link, ipKey: key, now }, hand())); }
+    try { held = commit(() => hold(book, { id, block: data.block, name: data.name, link: data.link, ipKey: key, now }, occupied())); }
     catch (error) { forget(pending(id)); throw error; }
     if (held.error) { forget(pending(id)); return send(res, { block: 400, holder: 400, taken: 409, busy: 429, full: 429 }[held.error], { error: held.error }); }
     let session;
@@ -134,15 +168,65 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     return commit(() => expire(book, id, now)) ? send(res, 200, { state: "expired" }) : send(res, 409, { error: "state" });
   }
 
+  // ---------- the auction ----------
+  async function placeBid(req, res, { foreign, key, now, site }) {
+    if (foreign) return send(res, 403, { error: "origin" });
+    if (over(tries, key, now, TRIES, TRIES_MS)) return send(res, 429, { error: "tries" });
+    const data = parse(await body(req, 2048));
+    if (!data) return send(res, 400, { error: "body" });
+    if (data.terms !== true) return send(res, 400, { error: "terms" });
+    const id = `b-${randomBytes(12).toString("hex")}`;
+    const made = await serial(() => commitAuction(() => openBid(ab, { id, amount: data.amount, ipKey: key, now })));
+    if (made.error) return send(res, { closed: 409, amount: 400, busy: 429, full: 429 }[made.error], { error: made.error, min: minBid(ab), max: AUCTION.max });
+    let session;
+    try { session = await stripe.bidCheckout({ bid: made.bid, site: siteOf(site), expiresAt: now + PAGE_MS, label: "Agent Orchestra · front block auction bid" }); }
+    catch (error) {
+      log(`bid: ${error.message}`);
+      await serial(() => commitAuction(() => expireBid(ab, id, now)));
+      return send(res, 502, { error: "stripe" });
+    }
+    setBidSession(ab, id, session.id);
+    try { await serial(() => commitAuction(() => true)); } catch (error) { log(`bid: session id not saved yet (${error.message})`); }
+    return send(res, 200, { id, url: session.url });
+  }
+
+  async function giveUpBid(res, id, { foreign, now }) {
+    if (foreign) return send(res, 403, { error: "origin" });
+    const b = ab.bids.find((x) => x.id === id);
+    if (!b) return send(res, 404, { error: "bid" });
+    if (b.state !== "pending") return send(res, 409, { error: "state" });
+    if (!b.session) return send(res, 502, { error: "session" });
+    try { await stripe.expire(b.session); } catch (error) { log(`bid cancel: ${error.message}`); return send(res, 502, { error: "stripe" }); }
+    return (await serial(() => commitAuction(() => expireBid(ab, id, now)))) ? send(res, 200, { state: "expired" }) : send(res, 409, { error: "state" });
+  }
+
+  // Stripe holds money for a bid: what it holds is read from Stripe itself, not from the event.
+  async function bidEvent(event, session, id, now) {
+    if (event.type === "checkout.session.expired") return serial(() => commitAuction(() => expireBid(ab, id, now)));
+    if (event.type !== "checkout.session.completed" || typeof session.payment_intent !== "string") return;
+    const intent = await stripe.intent(session.payment_intent);   // fails: 500, and Stripe sends the event again
+    const done = await serial(() => commitAuction(() => confirmBid(ab, { id, status: intent.status, capturable: intent.amount_capturable,
+      currency: intent.currency, payment: intent.id, email: session.customer_details?.email, now }), (r) => r.changed));
+    if (!done.changed) return;
+    if (done.top) await tell(`Açık artırmada yeni en yüksek teklif: ${done.bid.amount} $. Bitiş: ${when(ab.auction.endsAt)}.`);
+    await releaseAll(done.release);
+  }
+
   async function stripeEvent(req, res, { now, site }) {
     const raw = await body(req, 64 * 1024);
     if (raw === null || !verifySignature(raw, req.headers["stripe-signature"], env.STRIPE_WEBHOOK_SECRET, Math.floor(now / 1000))) return send(res, 400, { error: "signature" });
     const event = parse(raw), session = event?.data?.object;
     const id = session?.metadata?.order || session?.client_reference_id;
     try {
+      const bidId = session?.metadata?.bid;
+      if (BID.test(bidId || "")) {
+        if (!auctionOpen) { log(`stripe event: bid ${bidId} while the auction is closed (its hold runs out at Stripe)`); return send(res, 200, { received: true }); }
+        await bidEvent(event, session, bidId, now);
+        return send(res, 200, { received: true });
+      }
       if (event?.type === "checkout.session.completed" && session?.payment_status === "paid" && ORDER.test(id || "")) {
         const done = commit(() => paid(book, { id, amount: session.amount_total, currency: session.currency, email: session.customer_details?.email,
-          payment: typeof session.payment_intent === "string" ? session.payment_intent : null, session: session.id, now }, hand()), (r) => r.changed);
+          payment: typeof session.payment_intent === "string" ? session.payment_intent : null, session: session.id, now }, occupied()), (r) => r.changed);
         if (done.changed) await tell(told(done.order, site));
         // Money taken for an order the book does not have (forgotten, or a book restored from a copy): never silent.
         else if (!done.order) { log(`stripe event: payment for unknown order ${id}`); await tell(`Kaydı olmayan koltuk ödemesi: sipariş ${id}, Stripe oturumu ${session.id}. Stripe panelinden kontrol et, gerekirse iade et.`); }
@@ -207,12 +291,25 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
       try { if (!existsSync(shown(id))) renameSync(pending(id), shown(id)); }
       catch (error) { log(`approve: logo not moved (${error.message})`); return send(res, 409, { error: "image" }); }
       const back = () => { try { renameSync(shown(id), pending(id)); } catch { /* left public; the order is not live */ } };
-      try { done = commit(() => approve(book, id, by, now, hand())); } catch (error) { back(); throw error; }
+      try { done = commit(() => approve(book, id, by, now, occupied())); } catch (error) { back(); throw error; }
       if (done.error) back();
     } else if (action === "reject") { done = commit(() => withRefund(reject(book, id, by, reason, now), refunded)); if (!done.error) forget(pending(id)); }
     else { done = commit(() => withRefund(remove(book, id, by, reason, refund, now), refunded)); if (!done.error) forget(shown(id)); }
     if (done.error) return send(res, 409, { error: done.error });
     return send(res, 200, { order: forPanel(find(id)) });
+  }
+
+  async function auctionPanel(res, step, by, now) {
+    if (!auctionOpen) return send(res, 404, { error: "closed" });
+    if (step === "start") {
+      const order = ab.auction?.order && find(ab.auction.order);
+      const done = await serial(() => commitAuction(() => start(ab, { id: `a-${randomBytes(12).toString("hex")}`, by, now,
+        used: taken([...hand(), ...liveSeats(book), ...reserved(book)]), again: Boolean(order && ["refunded", "removed"].includes(order.state)) })));
+      if (done.error) return send(res, 409, { error: done.error });
+      await tell(`Açık artırma başladı: sahnenin önü, 96 koltuk, ${AUCTION.start} $'dan. Bitiş: ${when(ab.auction.endsAt)}.`);
+      return send(res, 200, panelView(ab));
+    }
+    return send(res, 404, { error: "not found" });   // capture, close: Task 6
   }
 
   async function panel(req, res, url, { foreign, key, now }) {
@@ -223,7 +320,8 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     const name = who(req);
     if (!name) return send(res, 401, { error: "login" });
     if (path === "state" && req.method === "GET")
-      return send(res, 200, { me: name, checkout: open, seats: PLAN.count, summary: summary(book, now), orders: book.orders.map(forPanel), events: book.events.slice(-100) });
+      return send(res, 200, { me: name, checkout: open, seats: PLAN.count, summary: summary(book, now), orders: book.orders.map(forPanel), events: book.events.slice(-100),
+        auction: auctionOpen ? panelView(ab) : null });
     const image = path.match(/^image\/(o-[0-9a-f]{24})$/);
     if (image && req.method === "GET") {
       for (const file of [pending(image[1]), shown(image[1])]) {
@@ -232,6 +330,8 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
       }
       return send(res, 404, { error: "image" });
     }
+    const auctionStep = path.match(/^auction\/(start|capture|close)$/);
+    if (auctionStep && req.method === "POST") return auctionPanel(res, auctionStep[1], name, now);
     const action = path.match(/^orders\/(o-[0-9a-f]{24})\/(approve|reject|remove)$/);
     if (action && req.method === "POST") return decide(req, res, action[1], action[2], name, now);
     return send(res, 404, { error: "not found" });
@@ -240,7 +340,8 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
   return {
     open, panelOpen,
     // What the hall shows: seats added by hand and approved orders, and where held or paid blocks are.
-    seatsPayload: () => ({ seats: cleanSeats({ seats: [...hand(), ...liveSeats(book)] }), reserved: reserved(book), checkout: open }),
+    seatsPayload: () => ({ seats: cleanSeats({ seats: [...hand(), ...liveSeats(book)] }),
+      reserved: [...reserved(book), ...(auctionHolds() ? [AUCTION.block] : [])], checkout: open, auction: auctionOpen ? publicView(ab) : null }),
     // true when the request was the shop's to answer.
     async handle(req, res, url, ctx) {
       try { return await route(req, res, url, ctx); }
@@ -260,6 +361,11 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
 
   async function route(req, res, url, ctx) {
     const p = url.pathname;
+    if (p === "/api/auction" && req.method === "GET") { auctionOpen ? send(res, 200, publicView(ab) ?? { state: null }) : send(res, 404, { error: "closed" }); return true; }
+    if (p === "/api/auction/bid" && req.method === "POST") { if (!auctionOpen) send(res, 404, { error: "closed" }); else await placeBid(req, res, ctx); return true; }
+    const bidPath = p.match(/^\/api\/auction\/bid\/(b-[0-9a-f]{24})(\/cancel)?$/);
+    if (bidPath && auctionOpen && req.method === "GET" && !bidPath[2]) { const v = bidView(ab, bidPath[1]); v ? send(res, 200, v) : send(res, 404, { error: "bid" }); return true; }
+    if (bidPath && auctionOpen && req.method === "POST" && bidPath[2]) { await giveUpBid(res, bidPath[1], ctx); return true; }
     if (p === "/api/seats/checkout" && req.method === "POST") { if (!open) send(res, 404, { error: "closed" }); else await checkout(req, res, ctx); return true; }
     const order = p.match(/^\/api\/seats\/order\/(o-[0-9a-f]{24})$/);
     if (order && req.method === "GET") {
