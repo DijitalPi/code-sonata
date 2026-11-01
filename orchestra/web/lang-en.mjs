@@ -240,4 +240,10 @@ export const EN = {
   'Bu arada fiyat yükseldi: en az {a} $.': 'The price rose meanwhile: at least ${a}.', 'Açık artırma bitti.': 'The auction has ended.',
   'Teklif sayfası açılamadı. Birazdan yeniden dene.': 'The bid page could not open. Try again shortly.',
   '· bitti': '· ended',
+  'Kazandığın blok: sahnenin önü, 96 koltuk.': 'Your block: in front of the stage, 96 seats.', 'Logoyu gönder': 'Send the logo',
+  'Logo gönderiliyor…': 'Sending the logo…',
+  'Logon onaya gönderildi. Onaylanınca blok salonda görünür.': 'Your logo was sent for approval. Once approved the block shows in the hall.',
+  'Logo ya da ad kabul edilmedi. Başka bir resim ya da ad dene.': 'The logo or name was not accepted. Try another image or name.',
+  'Bu teklif kazanan değil ya da logo artık değiştirilemez.': 'This bid did not win, or the logo can no longer be changed.',
+  'Gönderilemedi. Birazdan yeniden dene.': 'Could not send. Try again shortly.',
 };

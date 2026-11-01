@@ -25,7 +25,7 @@ globalThis.fetch = async (url, init = {}) => {
 };
 const { setupBuying, followOrder, backFromStripe } = await import('./web/buy.js');
 let hallGeometry = {};
-setupBuying({ canvas, geometry: () => hallGeometry, amfi, encode: async (img) => { logos.push(img); return 'data:image/webp;base64,UklGRg=='; }, go: (url) => went.push(url) });
+const buying = setupBuying({ canvas, geometry: () => hallGeometry, amfi, encode: async (img) => { logos.push(img); return 'data:image/webp;base64,UklGRg=='; }, go: (url) => went.push(url) });
 
 const view = (name) => dispatchEvent(new CustomEvent('view', { detail: name }));
 const key = (name) => dispatchEvent(Object.assign(new Event('keydown'), { key: name }));
@@ -241,4 +241,35 @@ test('a hall that slides under a resting mouse keeps the suggested place; a real
     move(4);
     assert.notEqual($('place-text').textContent, suggested);
   } finally { amfi.hit = hit; key('Escape'); }
+});
+
+test('the auction winner sends the logo with the same form: no payment, the bid id instead', async () => {
+  const id = `b-${'5'.repeat(24)}`;
+  shop(true);
+  buying.startWinner(id);
+  assert.deepEqual([$('seat-form').hidden, $('seat-pay').textContent, $('seat-again').hidden], [false, 'Logoyu gönder', true]);
+  assert.match($('seat-status').textContent, /sahnenin önü, 96 koltuk/);
+  assert.deepEqual(ghosts.at(-1).block, { ring: 0, col: 88, width: 24, depth: 4 });
+  $('seat-image').files = [new File([new Uint8Array(8)], 'logo.png', { type: 'image/png' })];
+  $('seat-image').dispatchEvent(new Event('change'));
+  await tick();
+  $('seat-name').value = 'Acme'; $('seat-link').value = 'https://acme.example'; $('seat-terms').checked = true;
+  answer = () => ({ status: 200, body: { order: 'o-x' } });
+  calls.length = 0;
+  const pages = went.length;
+  await $('seat-pay').onclick();
+  assert.equal(calls[0].url, '/api/auction/content');
+  assert.deepEqual(Object.keys(JSON.parse(calls[0].init.body)).sort(), ['id', 'image', 'link', 'name', 'terms']);
+  assert.equal(JSON.parse(calls[0].init.body).id, id);
+  assert.equal($('seat-pay-status').textContent, 'Logon onaya gönderildi. Onaylanınca blok salonda görünür.');
+  assert.equal(went.length, pages, 'no payment page');
+});
+
+test('choosing a normal place, or leaving the panel, ends the winner mode', () => {
+  buying.startWinner(`b-${'6'.repeat(24)}`);
+  view('seats'); place(); key('Enter');
+  assert.deepEqual([$('seat-pay').textContent, $('seat-again').hidden], ['Ödemeye geç', false]);
+  buying.startWinner(`b-${'6'.repeat(24)}`);
+  view('home');
+  assert.deepEqual([$('seat-pay').textContent, $('seat-again').hidden], ['Ödemeye geç', false]);
 });

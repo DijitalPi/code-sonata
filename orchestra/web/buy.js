@@ -1,7 +1,7 @@
 // Buying a seat, up to the payment step: pick a tier and a size, see the price, carry the block to a free
 // place in the hall (mouse, finger or arrow keys), then add an image, a name and a link and see the result.
 // Nothing here talks to the server: payment, upload and approval come in the second part.
-import { PLAN, TIERS, SEAT_LIMITS, tierOf, blockPrice, taken, canPlace, blockArc } from './seats.mjs';
+import { PLAN, TIERS, SEAT_LIMITS, AUCTION, tierOf, blockPrice, taken, canPlace, blockArc } from './seats.mjs';
 import { createAmfi, closeUp } from './amfi.js';
 import { num } from './i18n.js';
 
@@ -73,7 +73,7 @@ export async function backFromStripe() {
 
 export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (url) => location.assign(url) }) {
   let tier = 0, width = 1, depth = 1, used = new Set(), ghost = null, chosen = null, placing = false, image = null;
-  let checkoutOpen = false, paying = false;
+  let checkoutOpen = false, paying = false, winner = null;
   addEventListener('shop', (event) => { checkoutOpen = Boolean(event.detail?.checkout); });
 
   // ---------- tier, size and price ----------
@@ -167,6 +167,7 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
   }
   function choose() {
     if (!ghost?.ok) return;
+    leaveWinner();
     chosen = ghost.block;
     stopPlacing();
     $('seat-form').hidden = false;
@@ -174,6 +175,21 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
     $('seat-place').textContent = 'Başka bir yer seç';
     preview();
     $('seat-image').focus();
+  }
+  // The auction winner (auction.js) uses this form for the logo: the block is the auction's, nothing is paid here.
+  function startWinner(id) {
+    if (placing) stopPlacing();
+    winner = id; chosen = { ...AUCTION.block };
+    amfi.setGhost({ block: chosen, ok: true });
+    $('seat-form').hidden = false; $('seat-again').hidden = true;
+    $('seat-status').textContent = 'Kazandığın blok: sahnenin önü, 96 koltuk.';
+    $('seat-pay').textContent = 'Logoyu gönder';
+    preview();
+  }
+  function leaveWinner() {
+    if (!winner) return;
+    winner = null;
+    $('seat-pay').textContent = 'Ödemeye geç'; $('seat-again').hidden = false;
   }
   $('seat-place').onclick = startPlacing;
   $('seat-again').onclick = startPlacing;
@@ -232,8 +248,23 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
     let url = null; try { url = new URL(link); } catch { url = null; }
     const problem = !chosen ? 'Önce salonda bir yer seç.' : !image ? 'Bir logo ya da profil resmi ekle.' : !name ? 'Görünecek adı yaz.'
       : !url || !['http:', 'https:'].includes(url.protocol) ? 'Link https:// ile başlayan bir adres olmalı.'
-      : checkoutOpen && !$('seat-terms').checked ? 'Koltuk şartlarını okuyup kutuyu işaretle.' : '';
+      : (checkoutOpen || winner) && !$('seat-terms').checked ? 'Koltuk şartlarını okuyup kutuyu işaretle.' : '';
     if (problem) return say(problem);
+    if (winner) {
+      paying = true; $('seat-pay').disabled = true;
+      say('Logo gönderiliyor…');
+      try {
+        const logo = await encode(image);
+        if (!logo) return say('Tarayıcın bu resmi hazırlayamadı. Başka bir tarayıcı dene.');
+        const res = await fetch('/api/auction/content', { method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ id: winner, name, link: url.href, image: logo, terms: true }) });
+        say(res.ok ? 'Logon onaya gönderildi. Onaylanınca blok salonda görünür.'
+          : res.status === 400 ? 'Logo ya da ad kabul edilmedi. Başka bir resim ya da ad dene.'
+          : 'Bu teklif kazanan değil ya da logo artık değiştirilemez.');
+      } catch { say('Gönderilemedi. Birazdan yeniden dene.'); }
+      finally { paying = false; $('seat-pay').disabled = false; }
+      return;
+    }
     if (!checkoutOpen) return say('Ödeme henüz açık değil. Satış başladığında bu adımda ödeme sayfası açılacak. Seçtiğin yer ayrılmadı, hiçbir bilgi gönderilmedi.');
     paying = true; $('seat-pay').disabled = true;
     say('Ödeme sayfası hazırlanıyor…');
@@ -258,11 +289,12 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
   addEventListener('view', (event) => {
     if (placing) stopPlacing();
     if (event.detail === 'seats') { drawTiers(); clampSize(); price(); }
-    else if (event.detail !== 'terms') { chosen = null; amfi.setGhost(null); }
+    else if (event.detail !== 'terms') { chosen = null; leaveWinner(); amfi.setGhost(null); }
   });
   addEventListener('holders', () => { if (!$('panel').hidden) drawTiers(); });
   clampSize(); price();
   backFromStripe();
+  return { startWinner };
 }
 
 // The holders list in the panel: every sold block as a name and a link, for readers and search engines.
