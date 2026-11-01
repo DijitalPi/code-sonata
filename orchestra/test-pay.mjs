@@ -137,3 +137,28 @@ test('the session cookie names its holder until it runs out, and any change to i
     assert.equal(readCookie(bad, secret, now), null, String(bad));
   assert.equal(readCookie(cookie, sessionSecret(`selim:${OZER}`), now), null, 'new keys end old sessions');
 });
+
+test('a bid page holds the card instead of charging it; a hold is read, let go and captured with fixed keys', async () => {
+  const calls = [], answers = [];
+  const fetch = async (url, init) => { calls.push({ url, init, body: new URLSearchParams(init.body || '') }); const [status, data] = answers.shift(); return new Response(JSON.stringify(data), { status }); };
+  const s = createStripe({ key: 'sk', base: 'https://stripe.test', fetch });
+  answers.push([200, { id: 'cs_1', url: 'https://pay.test/cs_1' }]);
+  assert.deepEqual(await s.bidCheckout({ bid: { id: 'b-1', amount: 2500 }, site: 'https://o.test', expiresAt: 1_900_000_000_000, label: 'Bid' }), { id: 'cs_1', url: 'https://pay.test/cs_1' });
+  const page = calls[0].body;
+  assert.deepEqual([page.get('payment_intent_data[capture_method]'), page.get('line_items[0][price_data][unit_amount]'), page.get('metadata[bid]'), page.get('success_url'), page.get('cancel_url')],
+    ['manual', '250000', 'b-1', 'https://o.test/?teklif=b-1', 'https://o.test/?teklif=b-1&iptal=1']);
+  answers.push([200, { id: 'pi_1', status: 'requires_capture', amount_capturable: 250000, currency: 'usd' }]);
+  assert.equal((await s.intent('pi_1')).status, 'requires_capture');
+  assert.equal(calls[1].init.method, 'GET');
+  answers.push([200, { id: 'pi_1', status: 'canceled' }]);
+  await s.cancelIntent('pi_1', 'release-b-1');
+  assert.deepEqual([calls[2].url, calls[2].init.headers['idempotency-key']], ['https://stripe.test/v1/payment_intents/pi_1/cancel', 'release-b-1']);
+  answers.push([400, { error: { message: 'x', code: 'payment_intent_unexpected_state' } }]);
+  assert.deepEqual(await s.cancelIntent('pi_1', 'release-b-1'), { status: 'not_held' }, 'nothing held any more counts as let go');
+  answers.push([200, { id: 'pi_2', status: 'succeeded' }]);
+  assert.equal((await s.captureIntent('pi_2', 'capture-b-2')).status, 'succeeded');
+  answers.push([400, { error: { message: 'x', code: 'payment_intent_unexpected_state' } }], [200, { id: 'pi_2', status: 'succeeded' }]);
+  assert.equal((await s.captureIntent('pi_2', 'capture-b-2')).status, 'succeeded', 'captured by an earlier try whose answer was lost');
+  answers.push([400, { error: { message: 'x', code: 'payment_intent_unexpected_state' } }], [200, { id: 'pi_3', status: 'canceled' }]);
+  await assert.rejects(s.captureIntent('pi_3', 'capture-b-3'), (e) => e.refused === true);
+});
