@@ -174,3 +174,11 @@ test('the auction tab starts an auction after asking, and lists bids with their 
   assert.equal(calls[0].url, '/api/yonetim/auction/close');
   STATE.auction = null;
 });
+
+test('the auction tab shows bids of the last auction still holding money (B3)', async () => {
+  STATE.auction = { auction: { id: 'a-2', state: 'open', endsAt: T + 86_400_000, startedAt: T, startedBy: 'selim', top: null, order: null }, bids: [],
+    old: [{ id: 'b-9', amount: 2400, state: 'outbid', email: 'old@x.example', settledAt: T, releasing: true }], past: [] };
+  await go('#artirma'); button('Yenile').onclick(); await settle();
+  assert.match(text(), /2\.400 \$.*Geçildi, bloke kaldırılıyor · önceki açık artırma.*old@x\.example/);
+  STATE.auction = null;
+});

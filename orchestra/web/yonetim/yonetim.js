@@ -198,7 +198,7 @@ async function auctionStep(step, done) {
 }
 
 function auctionTab() {
-  const a = data.auction?.auction, bids = data.auction?.bids || [];
+  const a = data.auction?.auction, bids = data.auction?.bids || [], old = data.auction?.old || [];
   const ask = el('div', { className: 'ask', hidden: true },
     el('p', {}, 'Sahnenin önündeki 96 koltuk açık artırmaya çıkar: 2.400 $\'dan başlar, en az +100 $, 5 gün sürer (son 10 dakikadaki teklif uzatır, en çok 6 gün). Blok bu sürede normal satışta dolu görünür.'),
     el('div', { className: 'row' }, el('button', { type: 'button', onclick: () => auctionStep('start', 'Açık artırma başladı.') }, 'Başlat'),
@@ -214,8 +214,10 @@ function auctionTab() {
     a?.state === 'failed' && el('p', { className: 'warn' }, 'Tahsilat reddedildi; yeniden başlatabilir ya da bloğu satışa açabilirsin.'),
     a?.state === 'failed' && el('div', { className: 'row' }, el('button', { type: 'button', className: 'quiet', onclick: () => auctionStep('close', 'Blok normal satışa açıldı.') }, 'Satışa aç')),
     canStart && el('div', { className: 'row' }, el('button', { type: 'button', onclick: () => { ask.hidden = false; } }, 'Başlat')), ask,
-    bids.length > 0 && el('table', {}, el('thead', {}, el('tr', {}, ...['Tutar', 'Durum', 'E-posta', 'Saat'].map((h) => el('th', {}, h)))),
-      el('tbody', {}, ...[...bids].sort((x, y) => y.amount - x.amount).map((b) => el('tr', {}, el('td', {}, money(b.amount * 100)),
-        el('td', {}, BID_STATE[b.state] + (b.releasing ? ', bloke kaldırılıyor' : '')), el('td', {}, b.email || ''), el('td', {}, when(b.settledAt || b.createdAt)))))),
+    // Bids of the last auction appear while they may still hold money (a page open, a hold being let go).
+    bids.length + old.length > 0 && el('table', {}, el('thead', {}, el('tr', {}, ...['Tutar', 'Durum', 'E-posta', 'Saat'].map((h) => el('th', {}, h)))),
+      el('tbody', {}, ...[...[...bids].sort((x, y) => y.amount - x.amount), ...old].map((b) => el('tr', {}, el('td', {}, money(b.amount * 100)),
+        el('td', {}, BID_STATE[b.state] + (b.releasing ? ', bloke kaldırılıyor' : '') + (old.includes(b) ? ' · önceki açık artırma' : '')),
+        el('td', {}, b.email || ''), el('td', {}, when(b.settledAt || b.createdAt)))))),
   ];
 }

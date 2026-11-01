@@ -61,11 +61,12 @@ export function setSession(book, id, session) {
 }
 
 // The auction's winner (auction.mjs) has paid already: the block waits for approval like any paid order. Sent
-// again before approval, the name and link are replaced; the amount stays what was captured.
+// again before approval, the name and link are replaced; the amount stays what was captured. One payment, one
+// order: an order that payment already has is the one updated, whatever id it was asked under.
 export function won(book, { id, name, link, amount, payment, email, now }) {
   const holder = cleanHolder({ name, link });
   if (!holder) return { error: "holder" };
-  const known = find(book, id);
+  const known = find(book, id) || book.orders.find((o) => o.auction && payment && o.payment === payment) || null;
   if (known) {
     if (known.state !== "paid") return { error: "state" };
     Object.assign(known, holder);

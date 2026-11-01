@@ -3,7 +3,7 @@ import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { Readable } from 'node:stream';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -234,21 +234,22 @@ const saved = (state) => ({ auction: { id: AIDX, state, startedAt: FT - 1000, st
   bids: [{ id: BIDX, amount: 2400, state: state === 'won' ? 'winner' : 'top', payment: 'pi_old', session: 'cs_old', email: 'w@acme.example',
     createdAt: FT - 1000, settledAt: FT - 500, releasing: false }], past: [] });
 const offline = async () => { throw new Error('no network in this case'); };
-function fixture(data, stripeFetch = offline) {
+function fixture(data, stripeFetch = offline, book = null) {
   const at = mkdtempSync(join(tmpdir(), 'auction-case-'));
   const caseEnv = { ...env, SEATS_DIR: at, ORDERS_FILE: join(at, 'orders.json'), AUCTION_FILE: join(at, 'auction.json'), SLACK_WEBHOOK_URL: '' };
   writeFileSync(caseEnv.AUCTION_FILE, JSON.stringify(data));
+  if (book) writeFileSync(caseEnv.ORDERS_FILE, JSON.stringify(book));
   const one = createShop({ env: caseEnv, log: () => {}, fetch: stripeFetch });
   // A request straight into the shop, no socket: body, headers and the answer it writes.
-  async function request(path, payload, headers = {}, method = 'POST') {
+  async function request(path, payload, headers = {}, method = 'POST', now = FT) {
     const req = Object.assign(Readable.from(payload == null ? [] : [Buffer.from(typeof payload === 'string' ? payload : JSON.stringify(payload))]), { method, headers });
     const out = {};
     const res = { headersSent: false, writeHead(status, h) { out.status = status; out.headers = h; }, end(b) { out.body = b ? JSON.parse(b) : {}; } };
-    await one.handle(req, res, new URL(path, 'http://local'), { foreign: false, key: 'ip-case', now: FT, site: 'https://o.test' });
+    await one.handle(req, res, new URL(path, 'http://local'), { foreign: false, key: 'ip-case', now, site: 'https://o.test' });
     return out;
   }
   const login = async () => (await request('/api/yonetim/login', { key: SELIM }, { 'x-yonetim': '1' })).headers['set-cookie'].split(';')[0];
-  return { shop: one, env: caseEnv, request, login, read: () => JSON.parse(readFileSync(caseEnv.AUCTION_FILE, 'utf8')),
+  return { shop: one, env: caseEnv, at, request, login, read: () => JSON.parse(readFileSync(caseEnv.AUCTION_FILE, 'utf8')),
     orders: () => JSON.parse(readFileSync(caseEnv.ORDERS_FILE, 'utf8')).orders, clear: () => rmSync(at, { recursive: true, force: true }) };
 }
 const logo = { name: 'Acme', link: 'https://acme.example', image: webp(120, 40), terms: true };
@@ -300,5 +301,56 @@ test('a logo the server turns down leaves the winner free to send again; until a
     assert.deepEqual([view.content, view.editable], [true, true]);
     assert.equal((await f.request(`/api/yonetim/orders/${f.orders()[0].id}/approve`, {}, { cookie: await f.login(), 'x-yonetim': '1' })).status, 200);
     assert.equal((await f.request(`/api/auction/bid/${BIDX}`, null, {}, 'GET')).body.editable, false, 'live: no more changes');
+  } finally { f.clear(); }
+});
+
+test('the order a won auction already points to is the one the logo updates, whatever its id (B1)', async () => {
+  const data = saved('won'), other = `o-${'2'.repeat(24)}`;
+  data.auction.order = other;
+  const book = { orders: [{ id: other, state: 'paid', ...AUCTION.block, name: 'Acme', link: 'https://acme.example/', amount: 240000, currency: 'usd',
+    email: null, session: null, payment: 'pi_old', created: FT, heldUntil: FT, paidAt: FT, decidedAt: null, decidedBy: null, reason: null,
+    refunded: false, refunding: false, refund: null, auction: true }], events: [] };
+  const f = fixture(data, offline, book);
+  try {
+    assert.equal((await f.request('/api/auction/content', { id: BIDX, ...logo, name: 'Acme Ltd' })).status, 200);
+    assert.deepEqual(f.orders().map((o) => [o.id, o.name]), [[other, 'Acme Ltd']]);
+    assert.equal(f.shop.seatsPayload().reserved.filter((b) => b.width === 24).length, 1, 'the order holds the block, once');
+  } finally { f.clear(); }
+});
+
+test('a page of the last auction paid long after it ran out is still let go; it can be closed too (B3)', async () => {
+  const data = saved('unsold');
+  data.auction.top = null;
+  data.bids = [{ ...data.bids[0], state: 'pending', settledAt: null },
+    { ...data.bids[0], id: `b-${'6'.repeat(24)}`, session: 'cs_open', payment: null, state: 'pending', settledAt: null }];
+  let cancels = 0, closed = 0;
+  const f = fixture(data, async (url) => {
+    if (url.endsWith('/cancel')) cancels++;
+    if (url.endsWith('/expire')) { closed++; return reply(200, { id: 'cs_open', status: 'expired' }); }
+    return reply(200, { id: 'pi_old', status: 'requires_capture', amount_capturable: 240000, currency: 'usd' });
+  });
+  try {
+    assert.equal((await f.request('/api/yonetim/auction/start', {}, { cookie: await f.login(), 'x-yonetim': '1' })).status, 200);
+    assert.equal((await f.request(`/api/auction/bid/b-${'6'.repeat(24)}/cancel`, {})).status, 200, 'an open page of the last auction can be closed');
+    assert.equal(closed, 1);
+    const late = FT + 60 * MIN;
+    await f.shop.auctionSweep(late);
+    const raw = JSON.stringify({ id: 'evt_late', type: 'checkout.session.completed', data: { object: { id: 'cs_old', metadata: { bid: BIDX }, payment_intent: 'pi_old', customer_details: {} } } });
+    assert.equal((await f.request('/api/stripe', raw, { 'stripe-signature': sign(raw, WEBHOOK, Math.floor(late / 1000)) }, 'POST', late)).status, 200);
+    assert.equal(cancels, 1);
+  } finally { f.clear(); }
+});
+
+test('a logo that could not be written is not taken for one; sent again, it is (B4)', async () => {
+  const f = fixture(saved('won'));
+  try {
+    const target = join(f.at, 'pending', `o-${AIDX.slice(2)}.webp`);
+    mkdirSync(target, { recursive: true });                    // the logo's place cannot take a file
+    assert.equal((await f.request('/api/auction/content', { id: BIDX, ...logo })).status, 500);
+    const view = (await f.request(`/api/auction/bid/${BIDX}`, null, {}, 'GET')).body;
+    assert.deepEqual([view.content, view.editable], [false, true]);
+    rmSync(target, { recursive: true });
+    assert.equal((await f.request('/api/auction/content', { id: BIDX, ...logo })).status, 200);
+    assert.equal((await f.request(`/api/auction/bid/${BIDX}`, null, {}, 'GET')).body.content, true);
   } finally { f.clear(); }
 });

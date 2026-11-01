@@ -2,7 +2,7 @@
 // request here first; anything not about the shop is left to it. The order book lives in ORDERS_FILE, waiting
 // logos in SEATS_DIR/pending (shown only in the panel), approved ones in SEATS_DIR (public, /seat-images/).
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createBook, hold, setSession, drop, paid, expire, sweep, approve, won, reject, remove, startRefund, stopRefund, liveSeats, reserved, summary, buyerState } from "./orders.mjs";
@@ -10,8 +10,8 @@ import { createStripe, verifySignature } from "./stripe.mjs";
 import { parseKeys, whoHasKey, sessionSecret, makeCookie, readCookie, SESSION_MS } from "./admin.mjs";
 import { webpSize } from "./webp.mjs";
 import { createAuctions, start, minBid, openBid, setBidSession, expireBid, confirmBid, released, toRelease, due, end, captured,
-  captureRefused, close, setOrder, leader, winner, blocking, sweepBids, publicView, bidView, panelView, PAGE_MS } from "./auction.mjs";
-import { PLAN, tierOf, cleanSeats, AUCTION, taken } from "./web/seats.mjs";
+  captureRefused, close, setOrder, leader, winner, blocking, sweepBids, publicView, bidView, panelView, findBid, PAGE_MS } from "./auction.mjs";
+import { PLAN, tierOf, cleanSeats, cleanHolder, AUCTION, taken } from "./web/seats.mjs";
 import { EN } from "./web/lang-en.mjs";
 
 const IMAGE_MAX = 300 * 1024, IMAGE_SIDE = 1024;
@@ -138,8 +138,11 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
   }
   // The auction holds the block until the winner's order takes it over; meanwhile no normal order may take its seats.
   // The winner's order has an id taken from the auction's: one order per auction, however often the logo is sent.
+  // The order the auction already points to comes first (written by an earlier version under another id).
   const winnerOrderId = () => `o-${ab.auction.id.slice(2)}`;
-  const winnerOrder = () => (ab.auction ? find(winnerOrderId()) : null);
+  const winnerOrder = () => (ab.auction ? find(ab.auction.order) || find(winnerOrderId()) || null : null);
+  // A logo counts once its file is there, waiting or shown.
+  const hasLogo = (id) => [pending(id), shown(id)].some((file) => { try { return statSync(file).isFile(); } catch { return false; } });
   const auctionHolds = () => auctionOpen && blocking(ab) && !winnerOrder();
   const occupied = () => (auctionHolds() ? [...hand(), AUCTION.block] : hand());
   // The hall shows a won auction ("sold, awaiting approval") until the winner's order is decided: live, the logo
@@ -229,7 +232,7 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
 
   async function giveUpBid(res, id, { foreign, now }) {
     if (foreign) return send(res, 403, { error: "origin" });
-    const b = ab.bids.find((x) => x.id === id);
+    const b = findBid(ab, id);   // a page of the last auction may still be open
     if (!b) return send(res, 404, { error: "bid" });
     if (b.state !== "pending") return send(res, 409, { error: "state" });
     if (!b.session) return send(res, 502, { error: "session" });
@@ -248,13 +251,19 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     const image = logoOf(data.image);
     if (!image) return send(res, 400, { error: "image" });
     const done = await serial(() => {
-      const win = winner(ab);
-      if (!win || data.id !== win.id) return { error: "state" };
-      const id = winnerOrderId();
+      const win = winner(ab), known = winnerOrder();
+      if (!win || data.id !== win.id || (known && known.state !== "paid")) return { error: "state" };
+      if (!cleanHolder({ name: data.name, link: data.link })) return { error: "holder" };
+      // The logo is written next to its place first: if that fails nothing changed; then the order, then the logo
+      // takes its place. A logo that could not take it is not counted (`hasLogo`) and is sent again.
+      const id = known?.id ?? winnerOrderId(), next = `${pending(id)}.new`;
       mkdirSync(join(seatsDir, "pending"), { recursive: true });
-      const made = commit(() => won(book, { id, name: data.name, link: data.link, amount: win.amount * 100, payment: win.payment, email: win.email, now }));
-      if (made.error) return made;
-      writeFileSync(pending(id), image);
+      writeFileSync(next, image);
+      let made;
+      try { made = commit(() => won(book, { id, name: data.name, link: data.link, amount: win.amount * 100, payment: win.payment, email: win.email, now })); }
+      catch (error) { forget(next); throw error; }
+      if (made.error) { forget(next); return made; }
+      renameSync(next, pending(id));
       if (ab.auction.order !== id) commitAuction(() => setOrder(ab, id));
       return { order: made.order, win };
     });
@@ -450,7 +459,7 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     if (bidPath && auctionOpen && req.method === "GET" && !bidPath[2]) {
       const v = bidView(ab, bidPath[1]);
       // The winner's logo: sent or not, and open to change until the order is decided.
-      if (v?.state === "winner") { const o = winnerOrder(); v.content = Boolean(o); v.editable = !o || o.state === "paid"; }
+      if (v?.state === "winner") { const o = winnerOrder(); v.content = Boolean(o) && hasLogo(o.id); v.editable = !o || o.state === "paid"; }
       v ? send(res, 200, v) : send(res, 404, { error: "bid" });
       return true;
     }

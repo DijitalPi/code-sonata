@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createAuctions, start, minBid, openBid, setBidSession, expireBid, confirmBid, released, toRelease, due, end, captured,
-  captureRefused, close, setOrder, leader, winner, blocking, sweepBids, publicView, bidView, panelView,
-  RUN_MS, HARD_MS, SNIPE_MS, PAGE_MS, GRACE_MS, FORGET_MS, PENDING_PER_IP } from './auction.mjs';
+  captureRefused, close, setOrder, leader, winner, blocking, sweepBids, publicView, bidView, panelView, findBid,
+  RUN_MS, HARD_MS, SNIPE_MS, PAGE_MS, GRACE_MS, FORGET_MS, RETRY_MS, PENDING_PER_IP } from './auction.mjs';
 import { AUCTION, taken } from './web/seats.mjs';
 
 const T0 = Date.UTC(2026, 10, 2, 12, 0);
@@ -154,4 +154,21 @@ test('the winner keeps their e-mail after a month; the others are forgotten (B6)
   end(ab, ab.auction.endsAt); captured(ab, ab.auction.endsAt);
   assert.equal(sweepBids(ab, ab.auction.endedAt + FORGET_MS + 1).forgot, 1);
   assert.deepEqual([a.email, b.email], [null, 'x@y.example']);
+});
+
+test('a page of the last auction that ran out is still known while Stripe may report it; then it is dropped (B3)', () => {
+  const ab = fresh(), a = ask(ab, 2400);
+  end(ab, ab.auction.endsAt);
+  const later = T0 + RUN_MS + 1000;
+  start(ab, { id: id('a'), by: 'selim', now: later, used: new Set() });
+  sweepBids(ab, later + PAGE_MS + GRACE_MS);
+  assert.deepEqual([a.state, findBid(ab, a.id)?.id], ['expired', a.id], 'expired here, but Stripe may still say it was paid');
+  assert.deepEqual([hold(ab, a, { now: later + PAGE_MS + GRACE_MS + 1 }).bid.state, a.releasing], ['late', true]);
+  released(ab, a.id);
+  const b = ask(ab, 2400, { now: later + 1 });
+  end(ab, ab.auction.endsAt); start(ab, { id: id('a'), by: 'selim', now: ab.auction.endsAt + 1, used: new Set() });
+  sweepBids(ab, ab.auction.startedAt + PAGE_MS + GRACE_MS + 1);
+  assert.equal(findBid(ab, b.id)?.state, 'expired');
+  sweepBids(ab, b.settledAt + RETRY_MS + 1);
+  assert.equal(findBid(ab, b.id), null, 'gone once Stripe has stopped resending');
 });

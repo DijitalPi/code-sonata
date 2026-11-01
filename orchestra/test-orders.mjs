@@ -182,3 +182,10 @@ test('the auction winner becomes a paid order waiting for approval; sent again, 
   assert.deepEqual(won(book, { id: nextId(), name: '', link: 'nope', amount: 1, payment: 'p', email: null, now: T0 }), { error: 'holder' });
   assert.equal(createBook(JSON.parse(JSON.stringify(book))).orders.length, 1, 'the 24-wide block survives a reload');
 });
+
+test('one order per auction payment: a logo sent under another id updates the order that payment already has', () => {
+  const book = createBook(), first = nextId();
+  won(book, { id: first, name: 'Acme', link: 'https://acme.example', amount: 310_000, payment: 'pi_w', email: null, now: T0 });
+  const { order } = won(book, { id: nextId(), name: 'Acme Ltd', link: 'https://acme.example', amount: 310_000, payment: 'pi_w', email: null, now: T0 });
+  assert.deepEqual([book.orders.length, order.id, order.name], [1, first, 'Acme Ltd']);
+});
