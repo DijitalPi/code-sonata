@@ -7,6 +7,11 @@ const pitch = (OUTER - INNER) / RINGS;
 // rectangle of rows and columns and an image fits it; outer seats are a little wider, as in a real hall.
 const TIER_SPEC = [['front', 'Ön sıra', 25, 8], ['middle', 'Orta', 10, 15], ['back', 'Arka', 3, 17]];
 export const SEAT_LIMITS = { width: 12, depth: 6 };
+// The front block sold by auction (auction.mjs): bigger than any block bought seat by seat, so it is one of a kind.
+// Rules in dollars; the page and the server read the same numbers.
+export const AUCTION = Object.freeze({ block: Object.freeze({ ring: 0, col: 88, width: 24, depth: 4 }), start: 2400, step: 100, max: 100_000 });
+export const isAuctionBlock = (b) => Boolean(b) && b.ring === AUCTION.block.ring && b.col === AUCTION.block.col
+  && b.width === AUCTION.block.width && b.depth === AUCTION.block.depth;
 
 const rings = [], tiers = [];
 for (const [name, label, price, count] of TIER_SPEC) {
@@ -30,7 +35,7 @@ export function validBlock(b) {
   if (!b || typeof b !== 'object') return false;
   const { ring, col, width, depth } = b;
   if (![ring, col, width, depth].every(Number.isInteger)) return false;
-  if (width < 1 || width > SEAT_LIMITS.width || depth < 1 || depth > SEAT_LIMITS.depth) return false;
+  if (width < 1 || depth < 1 || (!isAuctionBlock(b) && (width > SEAT_LIMITS.width || depth > SEAT_LIMITS.depth))) return false;
   const first = rings[ring], last = rings[ring + depth - 1];
   return Boolean(first && last && first.tier === last.tier && col >= 0 && col + width <= first.cols);
 }

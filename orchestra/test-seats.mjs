@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PLAN, TIERS, seat, tierOf, validBlock, blockPrice, blockSeats, taken, canPlace, blockArc, seatAt, noteAngle, litBlocks, cleanSeats, cleanHolder, SEAT_LIMITS } from './web/seats.mjs';
+import { PLAN, TIERS, seat, tierOf, validBlock, blockPrice, blockSeats, taken, canPlace, blockArc, seatAt, noteAngle, litBlocks, cleanSeats, cleanHolder, SEAT_LIMITS, AUCTION, isAuctionBlock } from './web/seats.mjs';
 
 test('the amphitheatre holds about ten thousand seats, each with one id', () => {
   assert.ok(PLAN.count >= 9500 && PLAN.count <= 10500, `count ${PLAN.count}`);
@@ -114,4 +114,17 @@ test('the hall keeps the blocks someone is paying for, well-formed ones only', a
   assert.deepEqual(hall.reserved(), []);
   hall.setReserved([b, { ring: -1, col: 0, width: 1, depth: 1 }, null]);
   assert.deepEqual(hall.reserved(), [b]);
+});
+
+test('the auction block alone may be larger than the size limit, and sits in front of the stage', () => {
+  const b = AUCTION.block;
+  assert.deepEqual(b, { ring: 0, col: 88, width: 24, depth: 4 });
+  assert.ok(b.width > SEAT_LIMITS.width && isAuctionBlock(b) && validBlock(b));
+  assert.equal(validBlock({ ...b, col: 87 }), false, 'the same size elsewhere is too big');
+  assert.equal(blockSeats(b).length, 96);
+  assert.equal(tierOf(b.ring), TIERS[0]);
+  // 201 seats in the row and 24 in the block: 88 to its left, 89 to its right.
+  assert.ok(Math.abs(b.col + b.width / 2 - PLAN.rings[0].cols / 2) <= .5, 'centred');
+  assert.deepEqual([AUCTION.start, AUCTION.step, AUCTION.max], [2400, 100, 100000]);
+  assert.equal(AUCTION.start, blockPrice(b), 'opens at its list price');
 });
