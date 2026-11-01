@@ -138,9 +138,14 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
   }
   // The auction holds the block until the winner's order takes it over; meanwhile no normal order may take its seats.
   // The winner's order has an id taken from the auction's: one order per auction, however often the logo is sent.
-  // The order the auction already points to comes first (written by an earlier version under another id).
+  // The order the auction already points to comes first (written by an earlier version under another id), then the
+  // derived id, then the auction order holding the top bid's payment (a pointer lost): one payment, one order.
   const winnerOrderId = () => `o-${ab.auction.id.slice(2)}`;
-  const winnerOrder = () => (ab.auction ? find(ab.auction.order) || find(winnerOrderId()) || null : null);
+  const winnerOrder = () => {
+    if (!ab.auction) return null;
+    const payment = leader(ab)?.payment;
+    return find(ab.auction.order) || find(winnerOrderId()) || (payment && book.orders.find((o) => o.auction && o.payment === payment)) || null;
+  };
   // A logo counts once its file is there, waiting or shown.
   const hasLogo = (id) => [pending(id), shown(id)].some((file) => { try { return statSync(file).isFile(); } catch { return false; } });
   const auctionHolds = () => auctionOpen && blocking(ab) && !winnerOrder();
@@ -263,8 +268,9 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
       try { made = commit(() => won(book, { id, name: data.name, link: data.link, amount: win.amount * 100, payment: win.payment, email: win.email, now })); }
       catch (error) { forget(next); throw error; }
       if (made.error) { forget(next); return made; }
-      renameSync(next, pending(id));
-      if (ab.auction.order !== id) commitAuction(() => setOrder(ab, id));
+      const placed = made.order.id;   // the order the payment has, whatever id it was asked under
+      renameSync(next, pending(placed));
+      if (ab.auction.order !== placed) commitAuction(() => setOrder(ab, placed));
       return { order: made.order, win };
     });
     if (done.error) return send(res, done.error === "holder" ? 400 : 409, { error: done.error });

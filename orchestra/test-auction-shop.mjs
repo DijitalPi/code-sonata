@@ -354,3 +354,17 @@ test('a logo that could not be written is not taken for one; sent again, it is (
     assert.equal((await f.request(`/api/auction/bid/${BIDX}`, null, {}, 'GET')).body.content, true);
   } finally { f.clear(); }
 });
+
+test('an order found by its payment gets the logo and the pointer of the auction under its own id (C1)', async () => {
+  const other = `o-${'3'.repeat(24)}`;
+  const book = { orders: [{ id: other, state: 'paid', ...AUCTION.block, name: 'Acme', link: 'https://acme.example/', amount: 240000, currency: 'usd',
+    email: null, session: null, payment: 'pi_old', created: FT, heldUntil: FT, paidAt: FT, decidedAt: null, decidedBy: null, reason: null,
+    refunded: false, refunding: false, refund: null, auction: true }], events: [] };
+  const f = fixture(saved('won'), offline, book);   // the auction lost its pointer; the order is known by its payment only
+  try {
+    const sent = await f.request('/api/auction/content', { id: BIDX, ...logo });
+    assert.deepEqual([sent.status, sent.body.order, f.read().auction.order], [200, other, other]);
+    assert.equal((await f.request(`/api/auction/bid/${BIDX}`, null, {}, 'GET')).body.content, true);
+    assert.equal((await f.request(`/api/yonetim/orders/${other}/approve`, {}, { cookie: await f.login(), 'x-yonetim': '1' })).status, 200);
+  } finally { f.clear(); }
+});
