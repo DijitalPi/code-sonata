@@ -333,7 +333,7 @@ test('the Docker image gets every module the server imports', () => {
     const file = todo.pop();
     if (need.has(file)) continue;
     need.add(file);
-    for (const [, name] of readFileSync(`orchestra/${file}`, 'utf8').matchAll(/^import .* from "\.\/([a-z-]+\.mjs)";$/gm)) todo.push(name);
+    for (const [, name] of readFileSync(`orchestra/${file}`, 'utf8').matchAll(/^import [^;]*? from "\.\/([a-z-]+\.mjs)";$/gm)) todo.push(name);
   }
   const copied = readFileSync('orchestra/Dockerfile', 'utf8').match(/^COPY .*$/gm).join(' ');
   assert.deepEqual([...need].filter((file) => !copied.includes(`orchestra/${file}`)), []);
