@@ -195,3 +195,30 @@ test('a capture Stripe refuses fails the auction; the panel can close it and sta
     assert.ok(!other.seatsPayload().reserved.some((b) => b.width === 24), 'the block is on normal sale again');
   } finally { mine.close(); }
 });
+
+test('only the winning bid sends the logo; it waits for approval, then the 24-wide block is in the hall', async () => {
+  const bids = (await panel('state', { cookie }).then((r) => r.json())).auction.bids;
+  const win = bids.find((b) => b.state === 'winner'), lost = bids.find((b) => b.state === 'outbid');
+  const send = (id, extra = {}) => post('/api/auction/content', { id, name: 'Acme', link: 'https://acme.example', image: webp(480, 120), terms: true, ...extra });
+  assert.equal((await send(lost.id)).status, 409);
+  assert.equal((await send(win.id, { terms: false })).status, 400);
+  assert.equal((await send(win.id, { image: 'data:image/png;base64,iVBORw0KGgo=' })).status, 400);
+  const first = await (await send(win.id)).json();
+  assert.equal((await send(win.id, { name: 'Acme Ltd' })).status, 200, 'sent again before approval');
+  const s = await panel('state', { cookie }).then((r) => r.json());
+  const order = s.orders.find((o) => o.id === first.order);
+  assert.deepEqual([order.state, order.name, order.amount, order.payment, order.width], ['paid', 'Acme Ltd', win.amount * 100, win.payment, 24]);
+  assert.equal(s.auction.auction.order, first.order);
+  assert.equal((await get(`/api/auction/bid/${win.id}`)).content, true);
+  assert.equal((await panel(`orders/${first.order}/approve`, { cookie, method: 'POST' })).status, 200);
+  assert.ok(shop.seatsPayload().seats.some((x) => x.id === first.order && x.width === 24));
+  assert.ok(!shop.seatsPayload().reserved.some((b) => b.width === 24), 'the order holds the block now, not the auction');
+});
+
+test('the auction is read back from its file after a restart', async () => {
+  const before = { view: await get('/api/auction'), payload: shop.seatsPayload() };
+  shop = createShop({ env, log: () => {}, fetch: fakeFetch });
+  assert.deepEqual(await get('/api/auction'), before.view);
+  assert.deepEqual(shop.seatsPayload(), before.payload);
+  assert.ok(!(await readFile(env.AUCTION_FILE, 'utf8')).includes('ipKey'));
+});

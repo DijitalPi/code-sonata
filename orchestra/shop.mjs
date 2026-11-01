@@ -5,7 +5,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createBook, hold, setSession, drop, paid, expire, sweep, approve, reject, remove, startRefund, stopRefund, liveSeats, reserved, summary, buyerState } from "./orders.mjs";
+import { createBook, hold, setSession, drop, paid, expire, sweep, approve, won, reject, remove, startRefund, stopRefund, liveSeats, reserved, summary, buyerState } from "./orders.mjs";
 import { createStripe, verifySignature } from "./stripe.mjs";
 import { parseKeys, whoHasKey, sessionSecret, makeCookie, readCookie, SESSION_MS } from "./admin.mjs";
 import { webpSize } from "./webp.mjs";
@@ -41,6 +41,13 @@ function over(map, key, now, max, windowMs) {
   else w[1]++;
   if (map.size > 10_000) for (const [k, v] of map) if (now - v[0] > windowMs) map.delete(k);
   return map.get(key)[1] > max;
+}
+
+// A logo as the browser sends it: a WebP data URL within the size limits, or null.
+function logoOf(value) {
+  const m = typeof value === "string" && value.match(/^data:image\/webp;base64,([A-Za-z0-9+/=]+)$/);
+  const image = m ? Buffer.from(m[1], "base64") : null, size = image && webpSize(image);
+  return size && image.length <= IMAGE_MAX && size.width <= IMAGE_SIDE && size.height <= IMAGE_SIDE ? image : null;
 }
 
 export function createShop({ env = process.env, hand = () => [], log = console.log, fetch = globalThis.fetch }) {
@@ -155,9 +162,8 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     const data = parse(await body(req, 450 * 1024));
     if (!data) return send(res, 400, { error: "body" });
     if (data.terms !== true) return send(res, 400, { error: "terms" });
-    const m = typeof data.image === "string" && data.image.match(/^data:image\/webp;base64,([A-Za-z0-9+/=]+)$/);
-    const image = m ? Buffer.from(m[1], "base64") : null, size = image && webpSize(image);
-    if (!size || image.length > IMAGE_MAX || size.width > IMAGE_SIDE || size.height > IMAGE_SIDE) return send(res, 400, { error: "image" });
+    const image = logoOf(data.image);
+    if (!image) return send(res, 400, { error: "image" });
     const id = `o-${randomBytes(12).toString("hex")}`;
     mkdirSync(join(seatsDir, "pending"), { recursive: true });
     writeFileSync(pending(id), image);
@@ -222,6 +228,29 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     if (!b.session) return send(res, 502, { error: "session" });
     try { await stripe.expire(b.session); } catch (error) { log(`bid cancel: ${error.message}`); return send(res, 502, { error: "stripe" }); }
     return (await serial(() => commitAuction(() => expireBid(ab, id, now)))) ? send(res, 200, { state: "expired" }) : send(res, 409, { error: "state" });
+  }
+
+  // The winner (their bid id is their key, from their return address) sends the logo; the block becomes a paid order.
+  async function winnerContent(req, res, { foreign, now, site }) {
+    if (foreign) return send(res, 403, { error: "origin" });
+    const data = parse(await body(req, 450 * 1024));
+    if (!data) return send(res, 400, { error: "body" });
+    if (data.terms !== true) return send(res, 400, { error: "terms" });
+    const win = winner(ab);
+    if (!win || data.id !== win.id) return send(res, 409, { error: "state" });
+    const image = logoOf(data.image);
+    if (!image) return send(res, 400, { error: "image" });
+    // The order id is written to the auction first, so a second try never makes a second order.
+    if (!ab.auction.order) await serial(() => commitAuction(() => setOrder(ab, `o-${randomBytes(12).toString("hex")}`)));
+    const id = ab.auction.order;
+    const current = find(id);
+    if (current && current.state !== "paid") return send(res, 409, { error: "state" });
+    mkdirSync(join(seatsDir, "pending"), { recursive: true });
+    const done = commit(() => won(book, { id, name: data.name, link: data.link, amount: win.amount * 100, payment: win.payment, email: win.email, now }));
+    if (done.error) return send(res, done.error === "holder" ? 400 : 409, { error: done.error });
+    writeFileSync(pending(id), image);
+    await tell(`Açık artırma kazananı logosunu gönderdi: ${done.order.name} · ${win.amount} $. Onay bekliyor: ${siteOf(site)}/yonetim/#bekleyen`);
+    return send(res, 200, { order: id });
   }
 
   // Stripe holds money for a bid: what it holds is read from Stripe itself, not from the event.
@@ -406,6 +435,7 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     const p = url.pathname;
     if (p === "/api/auction" && req.method === "GET") { auctionOpen ? send(res, 200, publicView(ab) ?? { state: null }) : send(res, 404, { error: "closed" }); return true; }
     if (p === "/api/auction/bid" && req.method === "POST") { if (!auctionOpen) send(res, 404, { error: "closed" }); else await placeBid(req, res, ctx); return true; }
+    if (p === "/api/auction/content" && req.method === "POST") { if (!auctionOpen) send(res, 404, { error: "closed" }); else await winnerContent(req, res, ctx); return true; }
     const bidPath = p.match(/^\/api\/auction\/bid\/(b-[0-9a-f]{24})(\/cancel)?$/);
     if (bidPath && auctionOpen && req.method === "GET" && !bidPath[2]) { const v = bidView(ab, bidPath[1]); v ? send(res, 200, v) : send(res, 404, { error: "bid" }); return true; }
     if (bidPath && auctionOpen && req.method === "POST" && bidPath[2]) { await giveUpBid(res, bidPath[1], ctx); return true; }
