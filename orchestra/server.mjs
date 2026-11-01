@@ -492,7 +492,7 @@ loadSeats();
 if (SEATS_FILE) setInterval(loadSeats, 60_000).unref();
 // Selling seats (shop.mjs): open once Stripe, ORDERS_FILE and SEATS_DIR are set; the panel once ADMIN_KEYS is.
 const shop = createShop({ hand: () => seatHolders });
-setInterval(() => shop.sweep(wall()), 60_000).unref();
+setInterval(() => { shop.sweep(wall()); shop.auctionSweep(wall()); }, 60_000).unref();
 
 // ---------- http ----------
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".json": "application/json", ".py": "text/plain; charset=utf-8", ".txt": "text/plain; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2", ".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg": "image/jpeg" };

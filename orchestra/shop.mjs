@@ -105,6 +105,30 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
       catch (error) { log(`auction: hold of ${b.id} not let go yet (${error.message})`); }
     }
   }
+  // One capture at a time (the sweep and the panel's retry may meet); it ends with one message, not two.
+  let settling = false;
+  async function settleCapture(now) {
+    if (settling) return;
+    settling = true;
+    try { await settleCaptureNow(now); } finally { settling = false; }
+  }
+  async function settleCaptureNow(now) {
+    const top = leader(ab);
+    try { await stripe.captureIntent(top.payment, `capture-${top.id}`); }
+    catch (error) {
+      // As with a refund: only a clear no fails the auction; a lost answer, 409 (the same key still being worked
+      // on) or 429 (too many requests) leaves it capturing, tried again with the same key.
+      const refused = error.refused || (error.status >= 400 && error.status < 500 && ![409, 429].includes(error.status));
+      log(`auction: capture ${refused ? "refused" : "outcome unknown, tried again"} (${error.message})`);
+      if (refused) {
+        await serial(() => commitAuction(() => captureRefused(ab, now)));
+        await tell(`Açık artırma tahsilatı başarısız: ${top.amount} $ (${error.message}). Panelden yeniden başlat ya da bloğu satışa aç.`);
+      }
+      return;
+    }
+    if ((await serial(() => commitAuction(() => captured(ab, now)))).error) return;
+    await tell(`Açık artırma bitti: ${top.amount} $, kazanan ${top.email || "e-posta yok"}. Logo bekleniyor.`);
+  }
   // The auction holds the block until the winner's order takes it over; meanwhile no normal order may take its seats.
   const auctionHolds = () => auctionOpen && blocking(ab) && !(ab.auction.order && find(ab.auction.order));
   const occupied = () => (auctionHolds() ? [...hand(), AUCTION.block] : hand());
@@ -309,7 +333,13 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
       await tell(`Açık artırma başladı: sahnenin önü, 96 koltuk, ${AUCTION.start} $'dan. Bitiş: ${when(ab.auction.endsAt)}.`);
       return send(res, 200, panelView(ab));
     }
-    return send(res, 404, { error: "not found" });   // capture, close: Task 6
+    if (step === "capture") {
+      if (ab.auction?.state !== "capturing") return send(res, 409, { error: "state" });
+      await settleCapture(now);
+      return send(res, 200, panelView(ab));
+    }
+    const closed = await serial(() => commitAuction(() => close(ab)));
+    return closed.error ? send(res, 409, { error: closed.error }) : send(res, 200, panelView(ab));
   }
 
   async function panel(req, res, url, { foreign, key, now }) {
@@ -350,6 +380,19 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
         if (!res.headersSent) send(res, 500, { error: "server" }); else res.end();
         return true;
       }
+    },
+    // Every minute: holds still to let go, the end, a capture still owed, pages never paid.
+    async auctionSweep(now) {
+      if (!auctionOpen) return;
+      try {
+        await releaseAll(toRelease(ab));
+        if (due(ab, now)) {
+          const ended = await serial(() => commitAuction(() => end(ab, now)));
+          if (!ended.capture) await tell("Açık artırma teklifsiz bitti; blok normal satışa döndü.");
+        }
+        if (ab.auction?.state === "capturing") await settleCapture(now);
+        await serial(() => commitAuction(() => sweepBids(ab, now), (r) => r.expired.length + r.forgot > 0));
+      } catch (error) { log(`auction: sweep not saved, will retry (${error.message})`); }
     },
     sweep(now) {
       try {

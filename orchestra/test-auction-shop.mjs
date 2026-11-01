@@ -138,3 +138,60 @@ test('an unknown bid is not found; the shop without AUCTION_FILE has no auction'
   const closed = createShop({ env: { ...env, AUCTION_FILE: '' }, log: () => {}, fetch: fakeFetch });
   assert.equal(closed.seatsPayload().auction, null);
 });
+
+test('a hold Stripe could not let go is tried again at the next sweep', async () => {
+  const f = await bid(2700);
+  fail = { path: /\/cancel$/, status: 500 };
+  try { await hold(f); } finally { fail = null; }
+  const passed = (await panel('state', { cookie }).then((r) => r.json())).auction.bids.find((b) => b.state === 'outbid' && b.releasing);
+  assert.ok(passed, 'still marked to let go');
+  await shop.auctionSweep(clock);
+  assert.equal(intents.get(passed.payment).status, 'canceled');
+});
+
+test('a bid in the last ten minutes moves the end on', async () => {
+  const { endsAt } = await get('/api/auction');
+  clock = endsAt - 5 * MIN;
+  const g = await bid(2800); await hold(g);
+  assert.equal((await get('/api/auction')).endsAt, clock + 10 * MIN);
+});
+
+test('at the end the top bid is captured once, even when the answer was lost', async () => {
+  const { endsAt, current } = await get('/api/auction');
+  clock = endsAt + MIN;
+  fail = { path: /\/capture$/, status: 500 };
+  try { await shop.auctionSweep(clock); } finally { fail = null; }
+  assert.equal((await get('/api/auction')).state, 'capturing');
+  const top = (await panel('state', { cookie }).then((r) => r.json())).auction.bids.find((b) => b.state === 'top');
+  intents.get(top.payment).status = 'succeeded';            // Stripe did capture; only the answer was lost
+  await shop.auctionSweep(clock + MIN);
+  assert.equal((await get('/api/auction')).state, 'won');
+  const captures = calls.filter((c) => c.path === `/v1/payment_intents/${top.payment}/capture`);
+  assert.ok(captures.every((c) => c.key === `capture-${top.id}`));
+  assert.match(slack.at(-1), new RegExp(`Açık artırma bitti: ${current} \\$`));
+  assert.equal(await state(top), 'winner');
+});
+
+test('a capture Stripe refuses fails the auction; the panel can close it and start again', async () => {
+  const other = createShop({ env: { ...env, AUCTION_FILE: join(dir, 'other.json'), ORDERS_FILE: join(dir, 'other-orders.json') }, log: () => {}, fetch: fakeFetch });
+  const t = clock + DAY;
+  const mine = http.createServer(async (req, res) => { if (!(await other.handle(req, res, new URL(req.url, 'http://local'), { foreign: false, key: `ip-${Math.random()}`, now: t, site: 'https://o.test' }))) { res.writeHead(404); res.end(); } });
+  await new Promise((resolve) => mine.listen(0, '127.0.0.1', resolve));
+  const at = `http://127.0.0.1:${mine.address().port}`;
+  try {
+    const login = await fetch(`${at}/api/yonetim/login`, { method: 'POST', headers: { 'x-yonetim': '1' }, body: JSON.stringify({ key: SELIM }) });
+    const c2 = login.headers.get('set-cookie').split(';')[0];
+    const p = (path) => fetch(`${at}/api/yonetim/${path}`, { method: 'POST', headers: { 'x-yonetim': '1', cookie: c2 } });
+    assert.equal((await p('auction/start')).status, 200);
+    const made = await (await fetch(`${at}/api/auction/bid`, { method: 'POST', body: JSON.stringify({ amount: 2400, terms: true }) })).json();
+    const cs = made.url.split('/').pop(), raw = JSON.stringify({ id: 'evt_r', type: 'checkout.session.completed', data: { object: { id: cs, metadata: { bid: made.id }, payment_intent: sessions.get(cs), customer_details: {} } } });
+    await fetch(`${at}/api/stripe`, { method: 'POST', headers: { 'stripe-signature': sign(raw, WEBHOOK, Math.floor(t / 1000)) }, body: raw });
+    intents.get(sessions.get(cs)).status = 'canceled';         // the hold ran out
+    await other.auctionSweep(t + 6 * DAY);
+    assert.equal(other.seatsPayload().auction.state, 'failed');
+    assert.match(slack.at(-1), /tahsilatı başarısız/);
+    assert.equal((await p('auction/close')).status, 200);
+    assert.equal(other.seatsPayload().auction.state, 'unsold');
+    assert.ok(!other.seatsPayload().reserved.some((b) => b.width === 24), 'the block is on normal sale again');
+  } finally { mine.close(); }
+});
