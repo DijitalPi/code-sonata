@@ -6,13 +6,15 @@ import { PLAN, TIERS, blockArc, seatAt, noteAngle, blockSeats, validBlock } from
 const rad = (d) => (d * Math.PI) / 180;
 const TIER_DOTS = ['rgba(232, 182, 90, .34)', 'rgba(232, 182, 90, .22)', 'rgba(232, 182, 90, .14)'];
 
-export function createAmfi() {
+// `t` translates the few words drawn on the canvas (the page passes i18n's; tests run without a page).
+export function createAmfi({ t = (text) => text } = {}) {
   let holders = [], demo = false, bySeat = new Map(), version = 0;
   const images = new Map();          // holder id -> drawable (image or canvas) once loaded
   let layer = null, layerKey = '';
   const wedges = [];                 // [angle, strength] of notes heard, fading
   const pending = [];                // [serverTime, angle] of notes still to sound
   let ghost = null;                  // { block, ok } while placing
+  let auction = null;                // the front-block auction (auction.js) while it holds the block
   let reserved = [], reservedSeats = new Set();   // blocks someone is paying for or waiting to have approved
 
   function setHolders(list, options = {}) {
@@ -118,6 +120,19 @@ export function createAmfi() {
       g.fillStyle = `rgba(243, 208, 140, ${(.28 * s).toFixed(3)})`; g.fill();
       g.strokeStyle = `rgba(255, 226, 160, ${(.95 * s).toFixed(3)})`; g.lineWidth = 1.6; g.stroke();
     }
+    // The auction block: a gold frame and what it is, until the winner's logo is in the hall. Not over the demo's
+    // made-up holders.
+    if (auction && !demo && ['open', 'capturing', 'won'].includes(auction.state) && !bySeat.has(`r${auction.block.ring}c${auction.block.col}`)) {
+      const arc = blockArc(auction.block), mid = point(G, (arc.r1 + arc.r2) / 2, (arc.a1 + arc.a2) / 2);
+      sector(g, G, arc);
+      g.fillStyle = 'rgba(230, 180, 90, .14)'; g.fill();
+      g.strokeStyle = '#e6b45a'; g.lineWidth = 2; g.stroke();
+      const size = Math.min((arc.r2 - arc.r1) * G.R * .32, 14);
+      if (size >= 8) {
+        g.fillStyle = '#f3d08c'; g.font = `600 ${size}px 'Instrument Sans', system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText(t(auction.state === 'open' ? 'Açık artırma' : 'Satıldı, onay bekliyor'), mid.x, mid.y);
+      }
+    }
     if (ghost) {
       sector(g, G, blockArc(ghost.block));
       g.fillStyle = ghost.ok ? 'rgba(230, 180, 90, .45)' : 'rgba(217, 83, 79, .4)'; g.fill();
@@ -138,7 +153,7 @@ export function createAmfi() {
     reservedSeats = new Set(reserved.flatMap(blockSeats)); version++;
   }
 
-  return { setHolders, setReserved, note, draw, hit, setGhost: (g) => { ghost = g; }, holders: () => holders, reserved: () => reserved, isDemo: () => demo };
+  return { setHolders, setReserved, note, draw, hit, setGhost: (g) => { ghost = g; }, setAuction: (a) => { auction = a; }, holders: () => holders, reserved: () => reserved, isDemo: () => demo };
 }
 
 // A close-up of one block among the hall's others: what a buyer sees before paying, and the panel before approving.

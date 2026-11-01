@@ -246,4 +246,6 @@ export const EN = {
   'Logo ya da ad kabul edilmedi. Başka bir resim ya da ad dene.': 'The logo or name was not accepted. Try another image or name.',
   'Bu teklif kazanan değil ya da logo artık değiştirilemez.': 'This bid did not win, or the logo can no longer be changed.',
   'Gönderilemedi. Birazdan yeniden dene.': 'Could not send. Try again shortly.',
+  'Açık artırma': 'Auction', 'Satıldı, onay bekliyor': 'Sold, awaiting approval', 'Sahnenin önü · 96 koltuk': 'In front of the stage · 96 seats',
+  'Şu an {a} $ · bitişe {b}': 'Now ${a} · ends in {b}', 'Açılış {a} $ · bitişe {b}': 'Opens at ${a} · ends in {b}',
 };

@@ -210,9 +210,11 @@ test('only the winning bid sends the logo; it waits for approval, then the 24-wi
   assert.deepEqual([order.state, order.name, order.amount, order.payment, order.width], ['paid', 'Acme Ltd', win.amount * 100, win.payment, 24]);
   assert.equal(s.auction.auction.order, first.order);
   assert.equal((await get(`/api/auction/bid/${win.id}`)).content, true);
+  assert.equal(shop.seatsPayload().auction.state, 'won', 'the hall says sold, awaiting approval');
   assert.equal((await panel(`orders/${first.order}/approve`, { cookie, method: 'POST' })).status, 200);
   assert.ok(shop.seatsPayload().seats.some((x) => x.id === first.order && x.width === 24));
   assert.ok(!shop.seatsPayload().reserved.some((b) => b.width === 24), 'the order holds the block now, not the auction');
+  assert.equal(shop.seatsPayload().auction, null, 'the hall shows the logo now, not the auction');
 });
 
 test('the auction is read back from its file after a restart', async () => {

@@ -219,6 +219,7 @@ body.is-demo #connection { color: var(--gold); }
 .seat-card b { font: 500 16px/1.25 var(--serif); }
 .seat-card a { color: #6b4a12; font-weight: 600; overflow-wrap: anywhere; }
 .seat-card small { color: #6b5f4b; font-size: 11.5px; }
+.seat-card .link { color: #6b4a12; font-weight: 600; font-size: 13px; padding: 4px 0 0; }
 
 /* Buying a seat: tiers, size, price, and the bar that guides placing the block in the hall. */
 .tiers { align-self: stretch; margin: 0 0 6px; padding: 0; border: 0; }
@@ -229,7 +230,7 @@ body.is-demo #connection { color: var(--gold); }
 .tier small { color: var(--dim); font-size: 13px; }
 .size { display: flex; gap: 16px; }
 .size label { display: flex; flex-direction: column; gap: 6px; }
-.size input, #seat-name, #seat-link { width: 100%; background: var(--field); border: 1px solid rgba(243, 233, 214, .2); border-radius: 8px; padding: 10px 12px; }
+.size input, #seat-name, #seat-link, #auction-amount { width: 100%; background: var(--field); border: 1px solid rgba(243, 233, 214, .2); border-radius: 8px; padding: 10px 12px; }
 .size input { width: 110px; }
 .price { display: flex; align-items: baseline; gap: 12px; margin: 16px 0 12px; }
 .price b { font: 400 40px/1 var(--serif); color: var(--gold); font-variant-numeric: tabular-nums; }
@@ -243,6 +244,8 @@ body.is-demo #connection { color: var(--gold); }
 .auction-now b { color: var(--gold); font-size: 22px; }
 #auction-left, #auction-min { color: var(--dim); font-size: 13.5px; }
 #auction-min { display: block; margin: 4px 0 10px; }
+#auction-amount { max-width: 180px; display: block; margin-top: 6px; font-variant-numeric: tabular-nums; }
+#auction-status { color: var(--gold); font-size: 14px; margin: 12px 0 0; }
 #auction-status:empty { display: none; }
 #seat-image { font-size: 13px; color: var(--dim); }
 #seat-preview { width: 100%; height: auto; display: block; margin: 16px 0 6px; border-radius: 8px; box-shadow: 0 0 0 1px var(--line); }

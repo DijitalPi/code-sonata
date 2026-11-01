@@ -139,6 +139,10 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
   // The auction holds the block until the winner's order takes it over; meanwhile no normal order may take its seats.
   const auctionHolds = () => auctionOpen && blocking(ab) && !(ab.auction.order && find(ab.auction.order));
   const occupied = () => (auctionHolds() ? [...hand(), AUCTION.block] : hand());
+  // The hall shows a won auction ("sold, awaiting approval") until the winner's order is decided: live, the logo
+  // is there; refunded or removed, the block is free again.
+  const auctionShown = () => auctionOpen && Boolean(ab.auction)
+    && (ab.auction.state !== "won" || !find(ab.auction.order) || ["paid", "problem"].includes(find(ab.auction.order).state));
   const label = (o) => { const n = o.width * o.depth; return `${EN[tierOf(o.ring).label] || tierOf(o.ring).label} · ${n} seat${n === 1 ? "" : "s"}`; };
   async function tell(text) {
     if (!env.SLACK_WEBHOOK_URL) return;
@@ -400,7 +404,7 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     open, panelOpen,
     // What the hall shows: seats added by hand and approved orders, and where held or paid blocks are.
     seatsPayload: () => ({ seats: cleanSeats({ seats: [...hand(), ...liveSeats(book)] }),
-      reserved: [...reserved(book), ...(auctionHolds() ? [AUCTION.block] : [])], checkout: open, auction: auctionOpen ? publicView(ab) : null }),
+      reserved: [...reserved(book), ...(auctionHolds() ? [AUCTION.block] : [])], checkout: open, auction: auctionShown() ? publicView(ab) : null }),
     // true when the request was the shop's to answer.
     async handle(req, res, url, ctx) {
       try { return await route(req, res, url, ctx); }

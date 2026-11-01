@@ -3,15 +3,15 @@ import { eventKey } from './moment.js';
 import { startDemo, demoFirst } from './demo.js';
 import { createAmfi, demoHolders } from './amfi.js';
 import { setupBuying, listHolders } from './buy.js';
-import { setupAuction, backFromBid } from './auction.js';
-import { t, getLang } from './i18n.js';
-import { PLAN, tierOf } from './seats.mjs';
+import { setupAuction, backFromBid, left } from './auction.js';
+import { t, getLang, num } from './i18n.js';
+import { PLAN, tierOf, AUCTION } from './seats.mjs';
 import { SECTIONS, SOUNDFONT, loadInstrument, voiceOfSection, hall, masterChain, drumKit } from './instruments.js';
 // Agent Orchestra listener: draws the hall and plays the conductor's notes in sync.
 // One warm family under stage light: distinguishable sections, no rainbow.
 const COLORS = { piano: "#f3e9d6", strings: "#e6b45a", choir: "#c9a7d8", cello: "#d9785a", flute: "#8cc9b5", vibraphone: "#93b4d6", horn: "#f0cc7a", harp: "#e8a1a6", accordion: "#d96a5e" };
 const $ = (id) => document.getElementById(id);
-const amfi = createAmfi();   // the seats around the stage (see "seats for sale" below)
+const amfi = createAmfi({ t });   // the seats around the stage (see "seats for sale" below)
 const wide = matchMedia("(min-width: 960px)");
 
 // ---------- state from the server ----------
@@ -851,10 +851,31 @@ function showCard(holder, x, y) {
     }
     const meta = document.createElement("small"); meta.textContent = amfi.isDemo() ? `Demo örneği, gerçek alıcı değil · ${size}` : size; card.append(meta);
   }
+  placeCard(x, y);
+}
+function placeCard(x, y) {
   card.hidden = false;
   const box = card.getBoundingClientRect(), stage = card.parentElement.getBoundingClientRect();
   card.style.left = `${Math.min(Math.max(8, x + 14), stage.width - box.width - 8)}px`;
   card.style.top = `${Math.min(Math.max(8, y - box.height - 12), stage.height - box.height - 8)}px`;
+}
+// The front block while its auction takes bids: what it is, the price now, the time left, and the way to bid.
+let auctionView = null;
+addEventListener("auction", (event) => { auctionView = event.detail; });
+const { ring, col, width: aw, depth: ad } = AUCTION.block;
+const bidding = (place) => Boolean(place) && !place.holder && auctionView?.state === "open" && !amfi.isDemo()
+  && place.k >= ring && place.k < ring + ad && place.c >= col && place.c < col + aw;
+function showAuctionCard(x, y) {
+  clearTimeout(cardTimer);
+  cardFor = "auction";
+  const v = auctionView, ends = left(v.endsAt - Date.now());
+  const title = document.createElement("b"); title.textContent = "Sahnenin önü · 96 koltuk";
+  const price = document.createElement("small");
+  price.textContent = v.current ? `Şu an ${num(v.current)} $ · bitişe ${ends}` : `Açılış ${num(v.min)} $ · bitişe ${ends}`;
+  const go = document.createElement("button"); go.className = "link"; go.textContent = "Teklif ver";
+  go.onclick = () => { hideCard(false); document.querySelector('[data-open="seats"]')?.click(); };
+  card.replaceChildren(title, price, go);
+  placeCard(x, y);
 }
 function hideCard(later) {
   clearTimeout(cardTimer);
@@ -867,13 +888,13 @@ function pointAt(event) {
 canvas.addEventListener("pointermove", (event) => {
   if (event.pointerType !== "mouse" || document.body.classList.contains("is-placing")) return;
   const { x, y, place } = pointAt(event);
-  canvas.style.cursor = place?.holder ? "pointer" : "";
-  if (place?.holder) showCard(place.holder, x, y); else if (cardFor) hideCard(true);
+  canvas.style.cursor = place?.holder || bidding(place) ? "pointer" : "";
+  if (place?.holder) showCard(place.holder, x, y); else if (bidding(place)) showAuctionCard(x, y); else if (cardFor) hideCard(true);
 });
 canvas.addEventListener("pointerleave", () => { if (cardFor) hideCard(true); });
 canvas.addEventListener("click", (event) => {
   const { x, y, place } = pointAt(event);
-  if (place?.holder) showCard(place.holder, x, y); else hideCard(false);
+  if (place?.holder) showCard(place.holder, x, y); else if (bidding(place)) showAuctionCard(x, y); else hideCard(false);
 });
 card.addEventListener("pointerenter", () => clearTimeout(cardTimer));
 card.addEventListener("pointerleave", () => hideCard(true));
