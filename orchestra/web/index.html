@@ -165,6 +165,20 @@
   <section data-view="seats" hidden aria-labelledby="seats-title">
     <h2 id="seats-title" tabindex="-1">Koltuk al</h2>
     <p class="lead">Orkestranın etrafındaki koltuklara logonu ya da profil resmini koy. Üzerine gelen adını ve linkini görür, orkestra o yönde çaldıkça koltuğun parlar.</p>
+    <div id="auction" class="auction" hidden>
+      <h3>Açık artırma: sahnenin önü</h3>
+      <p class="auction-now"><b id="auction-price"></b> <span id="auction-left"></span></p>
+      <p class="note">96 koltuk, sahnenin tam önünde. Teklifin kartında bloke edilir, geçilirse hemen kaldırılır, kazanırsan bitişte tahsil edilir.</p>
+      <div id="auction-form">
+        <label for="auction-amount">Teklifin ($)</label>
+        <input id="auction-amount" type="number" inputmode="numeric" min="2400" step="100">
+        <small id="auction-min"></small>
+        <label class="check" for="auction-terms"><input id="auction-terms" type="checkbox"> <span>Okudum, kabul ediyorum: <a href="#" data-open="terms">Koltuk şartları</a></span></label>
+        <button id="auction-bid">Teklif ver</button>
+      </div>
+      <button id="auction-win" hidden>Logonu gönder</button>
+      <p id="auction-status" role="status"></p>
+    </div>
     <fieldset class="tiers" id="seat-tiers"><legend>Sıra</legend></fieldset>
     <div class="size">
       <label for="seat-width">Yan yana koltuk <input id="seat-width" type="number" min="1" max="12" value="1" inputmode="numeric"></label>

@@ -3,6 +3,7 @@ import { eventKey } from './moment.js';
 import { startDemo, demoFirst } from './demo.js';
 import { createAmfi, demoHolders } from './amfi.js';
 import { setupBuying, listHolders } from './buy.js';
+import { setupAuction, backFromBid } from './auction.js';
 import { t, getLang } from './i18n.js';
 import { PLAN, tierOf } from './seats.mjs';
 import { SECTIONS, SOUNDFONT, loadInstrument, voiceOfSection, hall, masterChain, drumKit } from './instruments.js';
@@ -812,6 +813,7 @@ async function loadHolders() {
     if (!stopDemo) { amfi.setHolders(liveHolders); amfi.setReserved(liveReserved); }
     dispatchEvent(new CustomEvent("holders", { detail: liveHolders }));
     dispatchEvent(new CustomEvent("shop", { detail: { checkout: data.checkout === true } }));
+    dispatchEvent(new CustomEvent("auction", { detail: data.auction || null }));
   } catch { /* the seats stay as they were */ }
 }
 addEventListener("holders", (event) => listHolders(event.detail));
@@ -819,7 +821,11 @@ addEventListener("seats-stale", loadHolders);
 loadHolders();
 setInterval(loadHolders, 60_000);
 // Placing a block can resize the hall (on a phone it grows wider than the screen): measure it again first.
-setupBuying({ canvas, geometry: () => { if (canvas.clientWidth !== width || canvas.clientHeight !== height) resize(); return geometry(); }, amfi });
+const buying = setupBuying({ canvas, geometry: () => { if (canvas.clientWidth !== width || canvas.clientHeight !== height) resize(); return geometry(); }, amfi });
+// The front-block auction (auction.js): its box in the seat panel, fed by the same /api/seats answer as the hall.
+const auction = setupAuction({ startWinner: (id) => buying.startWinner?.(id) });
+addEventListener("auction", (event) => { auction.show(event.detail); amfi.setAuction?.(event.detail); });
+auction.remembered(); backFromBid();
 
 // The title sits in the middle of the stage on a wide screen, over the orchestra it describes.
 function placeHero(G) {

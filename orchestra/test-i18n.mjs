@@ -20,7 +20,7 @@ test('every text and label written in the page has an English version', async ()
 
 test('every Turkish message the code writes has an English version', async () => {
   const missing = [];
-  for (const name of ['app.js', 'experience.js', 'buy.js', 'amfi.js', 'video.js', 'views.js']) {
+  for (const name of ['app.js', 'experience.js', 'buy.js', 'auction.js', 'amfi.js', 'video.js', 'views.js']) {
     const source = (await web(name)).replace(/^\s*\/\/.*$/gm, '');
     for (const m of source.matchAll(/'((?:[^'\\\n]|\\.)*)'|"((?:[^"\\\n]|\\.)*)"|`((?:[^`\\]|\\.)*)`/g)) {
       const raw = m[1] ?? m[2] ?? m[3];
@@ -55,7 +55,7 @@ test('the Turkish text keeps it too: no long dash in what the page or its code w
   const found = [];
   const html = (await web('index.html')).replace(/<!--[\s\S]*?-->/g, '');
   if (/[—–]/.test(html)) found.push('index.html');
-  for (const name of ['app.js', 'experience.js', 'buy.js', 'amfi.js', 'video.js', 'views.js', 'i18n.js', 'yonetim/yonetim.js']) {
+  for (const name of ['app.js', 'experience.js', 'buy.js', 'auction.js', 'amfi.js', 'video.js', 'views.js', 'i18n.js', 'yonetim/yonetim.js']) {
     const source = (await web(name)).replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
     for (const m of source.matchAll(/'((?:[^'\\\n]|\\.)*)'|"((?:[^"\\\n]|\\.)*)"|`((?:[^`\\]|\\.)*)`/g)) {
       if (/[—–]/.test(m[0])) found.push(`${name}: ${m[0]}`);
