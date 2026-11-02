@@ -173,6 +173,13 @@ body.is-demo #connection { color: var(--gold); }
 /* Desktop: one screen. The hall never moves; the panel scrolls on its own. */
 @media (min-width: 960px) {
   body { display: grid; grid-template-rows: var(--bar) minmax(0, 1fr); height: 100vh; height: 100svh; overflow: hidden; }
+  /* The sound controls sit right of the live score, so the hall keeps the height. */
+  .stage-foot { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 18px; row-gap: 2px; padding: 0 var(--pad) 10px 0; }
+  .score { grid-column: 1; grid-row: 1 / span 2; margin: 0; }
+  #controls { grid-column: 2; grid-row: 1; justify-self: end; }
+  #loading { grid-column: 2; grid-row: 2; justify-self: end; font-size: 12px; text-align: right; }
+  .dock { gap: 6px 10px; padding: 4px 4px 4px 14px; }
+  .dock button { padding: 0 12px; }
 }
 /* Phone and tablet: what this is, the hall, the controls; the menu folds into one button. */
 @media (max-width: 959px) {
