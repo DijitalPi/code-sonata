@@ -389,3 +389,36 @@ test('the auction winner sees no coupon: the box hides and a code does nothing u
   view('seats'); place(); key('Enter');
   assert.equal($('seat-coupon').hidden, false);
 });
+
+test('a coupon answer that comes after the winner form opened changes nothing', async () => {
+  shop(true);
+  $('seat-width').value = '1'; $('seat-depth').value = '1';
+  await fillForm({ terms: true });
+  let release; const slow = new Promise((resolve) => { release = resolve; });
+  answer = () => slow;
+  $('coupon-code').value = 'onsira';
+  const pending = $('coupon-apply').onclick();
+  buying.startWinner(`b-${'8'.repeat(24)}`);
+  const status = $('seat-status').textContent;
+  release({ status: 200, body: { code: 'ONSIRA', tier: 'front' } });
+  await pending;
+  assert.equal($('seat-status').textContent, status);
+  view('home');
+});
+
+test('a code checkout turned down stays off even if an older check answers later', async () => {
+  shop(true);
+  $('seat-width').value = '1'; $('seat-depth').value = '1';
+  answer = () => ({ status: 200, body: { code: 'HER', tier: 'any' } });
+  $('coupon-code').value = 'her'; await $('coupon-apply').onclick();
+  await fillForm({ terms: true });
+  assert.equal($('seat-price').textContent, '0 $');
+  let release; const slow = new Promise((resolve) => { release = resolve; });
+  answer = (url) => (url === '/api/seats/coupon' ? slow : { status: 409, body: { error: 'used' } });
+  const pending = $('coupon-apply').onclick();
+  await $('seat-pay').onclick();
+  assert.equal($('seat-price').textContent, '25 $');
+  release({ status: 200, body: { code: 'HER', tier: 'any' } });
+  await pending;
+  assert.deepEqual([$('seat-price').textContent, $('seat-pay-status').textContent], ['25 $', 'Bu kodun hakları bitti.']);
+});

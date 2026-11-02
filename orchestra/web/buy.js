@@ -78,6 +78,7 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
   let tier = 0, width = 1, depth = 1, used = new Set(), ghost = null, chosen = null, placing = false, image = null;
   let checkoutOpen = false, paying = false, winner = null;
   let coupon = null;   // { code, tier } once the server knows the code
+  let asked = 0;       // coupon checks sent; an answer counts only if nothing came after it
   addEventListener('shop', (event) => { checkoutOpen = Boolean(event.detail?.checkout); });
 
   // A coupon (coupons.mjs) makes one seat of its tier free; the server works the price out again.
@@ -202,7 +203,7 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
   // The auction winner (auction.js) uses this form for the logo: the block is the auction's, nothing is paid here.
   function startWinner(id) {
     if (placing) stopPlacing();
-    winner = id; chosen = { ...AUCTION.block };
+    winner = id; chosen = { ...AUCTION.block }; asked++;
     amfi.setGhost({ block: chosen, ok: true });
     $('seat-form').hidden = false; $('seat-again').hidden = true; $('seat-coupon').hidden = true;
     $('seat-status').textContent = 'Kazandığın blok: sahnenin önü, 96 koltuk.';
@@ -250,8 +251,8 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
   const couponProblem = (status, error) => (status === 429 ? 'Çok fazla deneme oldu. Birkaç dakika sonra yeniden dene.'
     : error === 'used' ? 'Bu kodun hakları bitti.' : error === 'code' ? 'Bu kod geçerli değil ya da süresi doldu.'
     : 'Kod şu an kontrol edilemedi. Birazdan yeniden dene.');
-  // The coupon checked before stays until the server answers, so the price shown is the one sent; only the last press counts.
-  let asked = 0;
+  // The coupon checked before stays until the server answers, so the price shown is the one sent. Only the last press counts,
+  // and none from before the winner form opened or checkout turned the code down.
   $('coupon-apply').onclick = async () => {
     if (winner) return;
     const code = $('coupon-code').value.trim().toUpperCase(), mine = ++asked;
@@ -330,7 +331,7 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
         return followOrder(data.id);
       }
       if (res.ok && data.url) { say('Ödeme sayfasına gidiliyor…'); return go(data.url); }
-      if (['used', 'code'].includes(data.error)) { coupon = null; price(); }
+      if (['used', 'code'].includes(data.error)) { coupon = null; asked++; price(); }
       if (res.status === 409 && data.error !== 'used') dispatchEvent(new CustomEvent('seats-stale'));
       say(data.error === 'again' ? 'Bu bağlantıdan bugün bir kupon kullanıldı. Yarın yeniden deneyebilirsin.'
         : data.error === 'used' ? 'Bu kodun hakları bitti.'
