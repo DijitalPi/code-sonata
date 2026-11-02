@@ -5,6 +5,7 @@
 //             └──▶ refunded ◀── problem         a payment that does not match its order, or comes after its seats
 //                                               went to someone else, is a problem: refunded from the panel
 import { validBlock, blockSeats, blockPrice, cleanHolder, taken, canPlace, AUCTION, isAuctionBlock } from "./web/seats.mjs";
+import { cleanCoupons } from "./coupons.mjs";
 
 export const HOLD_MS = 31 * 60_000;       // Stripe keeps a Checkout session at least 30 minutes
 export const GRACE_MS = 10 * 60_000;      // a payment made in the last second may be reported a little later
@@ -31,7 +32,7 @@ export function createBook(data) {
   const orders = (Array.isArray(data?.orders) ? data.orders : [])
     .filter((o) => o && typeof o === "object" && ID.test(o.id) && STATES.has(o.state) && validBlock(o)).map(cleanLines);
   const events = (Array.isArray(data?.events) ? data.events : []).filter((e) => e && typeof e.what === "string").slice(-EVENTS);
-  return { orders, events };
+  return { orders, events, coupons: cleanCoupons(data?.coupons) };
 }
 
 const find = (book, id) => book.orders.find((o) => o.id === id) || null;

@@ -163,7 +163,7 @@ test('a book read back keeps well-formed orders and the last 500 events only', (
   const copy = createBook(JSON.parse(JSON.stringify({ orders: [...book.orders, { id: 'bad' }, null, { ...order, id: 'o-x', state: 'odd' }], events })));
   assert.deepEqual(copy.orders, [order]);
   assert.deepEqual([copy.events.length, copy.events[0].at], [500, 100]);
-  assert.deepEqual(createBook(null), { orders: [], events: [] });
+  assert.deepEqual(createBook(null), { orders: [], events: [], coupons: [] });
 });
 
 test('the auction block is never held seat by seat', () => {
