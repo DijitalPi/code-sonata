@@ -247,7 +247,7 @@ body.is-demo #connection { color: var(--gold); }
 .tier small { color: var(--dim); font-size: 13px; }
 .size { display: flex; gap: 16px; }
 .size label { display: flex; flex-direction: column; gap: 6px; }
-.size input, #seat-name, #seat-link, #auction-amount { width: 100%; background: var(--field); border: 1px solid rgba(243, 233, 214, .2); border-radius: 8px; padding: 10px 12px; }
+.size input, #seat-name, #seat-about, #seat-city, #seat-link, #auction-amount { width: 100%; background: var(--field); border: 1px solid rgba(243, 233, 214, .2); border-radius: 8px; padding: 10px 12px; }
 .size input { width: 110px; }
 .price { display: flex; align-items: baseline; gap: 12px; margin: 16px 0 12px; }
 .price b { font: 400 40px/1 var(--serif); color: var(--gold); font-variant-numeric: tabular-nums; }
