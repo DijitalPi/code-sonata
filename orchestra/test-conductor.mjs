@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createConductor, DRUMS } from './web/conductor.mjs';
-import { startDemo, DEMO_MACHINES, demoFirst } from './web/demo.js';
+import { startDemo, DEMO_MACHINES, DEMO_SONGS, demoFirst } from './web/demo.js';
 import { readFile } from 'node:fs/promises';
 
 // Drives a conductor for `ms` of virtual time in 25 ms ticks, as the server's timer does.
@@ -52,6 +52,17 @@ test('the demo concert plays in the browser alone: labelled, local, never the se
   assert.ok(frames.every((f) => f.notes.every((n) => n[4] === DRUMS || (n[1] >= 0 && n[1] <= 127))));
   const source = await readFile(new URL('./web/demo.js', import.meta.url), 'utf8');
   assert.equal(/fetch\(|EventSource|sendBeacon|XMLHttpRequest/.test(source), false);
+});
+
+test('the demo plays tunes everyone knows, Mozart first, one after another and round again', async () => {
+  const { PLAYLIST, TITLES } = await import('./web/music.mjs');
+  assert.deepEqual(DEMO_SONGS, ['nachtmusik', 'bella-ciao', 'fur-elise', 'ode-to-joy', 'korobeiniki', 'mountain-king']);
+  assert.ok(DEMO_SONGS.every((id) => PLAYLIST.includes(id)), 'all in the score, with their sources');
+  const frames = [];
+  const stop = startDemo({ onFrame: (f) => frames.push(f), tickMs: 25, frameMs: 250 });
+  await new Promise((r) => setTimeout(r, 600));
+  stop();
+  assert.equal(frames[0].song, TITLES.nachtmusik, 'not the loops: a melody from the first note');
 });
 
 test('the page has one listen button: the demo concert while no agent works, the live hall otherwise', async () => {
