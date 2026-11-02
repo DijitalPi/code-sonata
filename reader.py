@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Agent Orchestra reader: your Claude Code, Codex and Gemini CLI steps join the shared orchestra.
+"""Agent Orchestra reader: your Claude Code, Codex, Gemini CLI and Grok Build steps join the shared orchestra.
 
     python3 reader.py 'https://orchestra.example/#pair=...'
 
-Reads the session logs on this computer (~/.claude/projects, ~/.codex/sessions, ~/.gemini/tmp) and sends only
+Reads the session logs on this computer (~/.claude/projects, ~/.codex/sessions, ~/.gemini/tmp,
+~/.grok/sessions; Grok sessions sit with the other agents) and sends only
 counts once a second: how many steps of each kind, whether an agent is working, how many sessions
 of each tool. Prompts, code, file paths and tool output never leave this computer; test and
 commit results are read only as yes/no. Needs Python 3 and nothing else. Stop with Ctrl+C.
@@ -26,7 +27,7 @@ import urllib.parse
 HOME = Path.home()
 CACHE = HOME / "Library/Caches/code-sonata" if sys.platform == "darwin" else \
     Path(os.environ.get("XDG_CACHE_HOME") or HOME / ".cache") / "code-sonata"
-ROOTS = (HOME / ".claude/projects", HOME / ".codex/sessions", HOME / ".gemini/tmp")
+ROOTS = (HOME / ".claude/projects", HOME / ".codex/sessions", HOME / ".gemini/tmp", HOME / ".grok/sessions")
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch", "write_file", "replace", "edit"}
 BASH_TOOLS = {"Bash", "BashOutput", "exec", "exec_command", "shell", "local_shell", "container.exec", "run_shell_command"}
 READ_TOOLS = {"Read", "Grep", "Glob", "LS", "WebFetch", "WebSearch", "ToolSearch",
@@ -47,6 +48,15 @@ def tool_kind(name):
     if name in READ_TOOLS or name.startswith(("mcp__codebase-memory", "mcp__context7")):
         return "read"
     return "tool"
+
+
+# Grok Build names a tool call by its ACP kind.
+GROK_KINDS = {"execute": "bash", "edit": "edit", "delete": "edit", "move": "edit", "read": "read", "search": "read", "fetch": "read"}
+
+
+def is_log(path, name):
+    # Grok Build keeps several .jsonl files in a session folder; only updates.jsonl is the conversation.
+    return name.endswith(".jsonl") and (name == "updates.jsonl" or "/.grok/" not in path)
 
 
 # Yes/no checks on a command's output (never on a file that was read). Nothing is kept.
@@ -168,6 +178,18 @@ def gemini_result(call):
     return "\n".join(parts)[:20000]
 
 
+def grok_result(update):
+    """Output text and failure of a Grok Build tool call: a command that exits non-zero is still "completed"."""
+    raw = update.get("rawOutput") if isinstance(update.get("rawOutput"), dict) else {}
+    text = raw.get("output_for_prompt")
+    if not isinstance(text, str) or not text:
+        parts = update.get("content") if isinstance(update.get("content"), list) else []
+        text = " ".join(str(part["content"].get("text", "")) for part in parts
+                        if isinstance(part, dict) and isinstance(part.get("content"), dict))
+    code = raw.get("exit_code")
+    return text[-4000:], update.get("status") == "failed" or (isinstance(code, int) and code != 0)
+
+
 class Classifier:
     """Step kinds of one session's log lines.
 
@@ -178,6 +200,7 @@ class Classifier:
 
     def __init__(self):
         self.calls = {}
+        self.streak = None   # Grok: the chunk kind being streamed, so one reply counts once
 
     def remember(self, call_id, kind, source=""):
         if call_id and isinstance(call_id, (str, int)):
@@ -200,10 +223,39 @@ class Classifier:
             out.append("ship")
         return out
 
+    def grok(self, params):
+        """One Grok Build session update (ACP, or xAI's own for the end of a turn)."""
+        update = params.get("update") if isinstance(params, dict) else None
+        if not isinstance(update, dict):
+            return []
+        kind = update.get("sessionUpdate")
+        if kind in ("agent_message_chunk", "agent_thought_chunk"):
+            again, self.streak = self.streak == kind, kind
+            return [] if again else ["text" if kind == "agent_message_chunk" else "think"]
+        if kind in ("user_message_chunk", "tool_call", "turn_completed"):
+            self.streak = None
+        if kind == "user_message_chunk":
+            return ["busy"]
+        if kind == "turn_completed":
+            return ["done"]
+        call_id = update.get("toolCallId")
+        if kind == "tool_call":
+            if isinstance(call_id, str) and call_id in self.calls:
+                return []
+            step = GROK_KINDS.get(update.get("kind")) if isinstance(update.get("kind"), str) else None
+            command = (update.get("rawInput") or {}).get("command") if isinstance(update.get("rawInput"), dict) else None
+            self.remember(call_id, step or "tool", command[:2000] if isinstance(command, str) else "")
+            return [step or "tool"]
+        if kind == "tool_call_update" and update.get("status") in ("completed", "failed"):
+            return self.judge(call_id, *grok_result(update))
+        return []
+
     def __call__(self, entry):
         """One transcript line -> list of step kinds. Unknown shapes are ignored."""
         if not isinstance(entry, dict):
             return []
+        if entry.get("method") in ("session/update", "_x.ai/session/update"):  # Grok Build
+            return self.grok(entry.get("params"))
         kind = entry.get("type")
         if kind == "user":  # Claude Code: a prompt or a tool result -> the model is working now
             content = (entry.get("message") or {}).get("content")
@@ -330,7 +382,7 @@ class AgentWatcher:
                 if entry.is_dir(follow_symlinks=False):
                     if deep or entry.path not in self.dirs:
                         self.scan_folder(entry.path, wall, initial, True)
-                elif entry.name.endswith(".jsonl"):
+                elif is_log(entry.path, entry.name):
                     self.consider(entry.path, entry.stat(), wall, initial)
             except OSError:
                 continue
@@ -437,7 +489,8 @@ class Activity:
     def tools(self):
         tools = {}
         for path in self.sessions:
-            tool = "codex" if "/.codex/" in str(path) else "gemini" if "/.gemini/" in str(path) else "claude"
+            tool = "codex" if "/.codex/" in str(path) else "gemini" if "/.gemini/" in str(path) else \
+                "other" if "/.grok/" in str(path) else "claude"
             tools[tool] = tools.get(tool, 0) + 1
         return tools
 

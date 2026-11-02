@@ -49,8 +49,9 @@ python3 demo.py              # zero-token demo: fake sessions drive the real lis
 
 ## What you hear
 
-The listener watches `~/.claude/projects/**/*.jsonl` and `~/.codex/sessions/**/*.jsonl`, so every
-session on the Mac joins, whatever window or project it runs in.
+The listener watches the session logs of Claude Code (`~/.claude/projects`), Codex (`~/.codex/sessions`),
+Gemini CLI (`~/.gemini/tmp`) and Grok Build (`~/.grok/sessions`), so every session on the Mac joins,
+whatever window or project it runs in.
 
 | Step | Sound |
 |---|---|

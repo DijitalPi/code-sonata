@@ -45,6 +45,30 @@ def gcall(name, call_id, command=None, status="success", output=""):
             "result": [{"functionResponse": {"id": call_id, "name": name, "response": {"error" if status == "error" else "output": output}}}]}
 
 
+# Grok Build appends ACP session updates to ~/.grok/sessions/<cwd>/<session>/updates.jsonl, one envelope a line:
+# chunks of the prompt, thoughts and reply (consecutive chunks are merged before writing), tool calls with an ACP
+# kind, their updates (a command's exit code is in rawOutput; the status stays "completed" when it is not 0) and
+# an xAI "turn_completed" when the turn ends. Shapes from the grok-build source (xai-grok-shell); the text is made up.
+def grok(update, method="session/update"):
+    return {"timestamp": 1793577600, "method": method, "params": {"sessionId": "s", "update": update}}
+
+
+def gtool(call_id, kind, command=None):
+    update = {"sessionUpdate": "tool_call", "toolCallId": call_id, "title": "t", "kind": kind, "status": "pending"}
+    if command is not None:
+        update["rawInput"] = {"command": command, "description": "d"}
+    return grok(update)
+
+
+def gdone(call_id, output="", exit_code=None, status="completed"):
+    update = {"sessionUpdate": "tool_call_update", "toolCallId": call_id, "status": status,
+              "content": [{"type": "content", "content": {"type": "text", "text": output}}]}
+    if exit_code is not None:
+        update["rawOutput"] = {"type": "Bash", "output_for_prompt": output, "exit_code": exit_code, "command": "c",
+                               "truncated": False, "signal": None, "timed_out": False}
+    return grok(update)
+
+
 class ClassifyTests(unittest.TestCase):
     def test_claude_steps(self):
         entry = claude({"type": "thinking"}, {"type": "tool_use", "name": "Edit"},
@@ -143,6 +167,45 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(classify(response, state), ["busy"])
         self.assertEqual(classify(gemini(thoughts=False, text="All done."), state), ["text", "done"])
         self.assertEqual(classify({"$set": {"lastUpdated": "t"}}, state), [])
+
+    def test_grok_steps_results_and_end_of_turn(self):
+        state = Classifier()
+
+        def chunk(kind):
+            return grok({"sessionUpdate": kind, "content": {"type": "text", "text": "x"}})
+
+        self.assertEqual(classify(chunk("user_message_chunk"), state), ["busy"])
+        # A thought or a reply that arrives in several chunks is one step.
+        self.assertEqual([classify(chunk(kind), state) for kind in ("agent_thought_chunk", "agent_thought_chunk",
+                                                                     "agent_message_chunk", "agent_message_chunk")],
+                         [["think"], [], ["text"], []])
+        self.assertEqual([classify(gtool(i, kind), state) for i, kind in (("r1", "read"), ("s1", "search"), ("e1", "edit"), ("m1", "other"))],
+                         [["read"], ["read"], ["edit"], ["tool"]])
+        self.assertEqual(classify(gtool("r1", "read"), state), [])   # the same call sent again is not a new step
+        self.assertEqual(classify(gtool("b1", "execute", "npm test"), state), ["bash"])
+        progress = grok({"sessionUpdate": "tool_call_update", "toolCallId": "b1", "status": "in_progress", "rawOutput": {"exit_code": 0}})
+        self.assertEqual(classify(progress, state), [])
+        self.assertEqual(classify(gdone("b1", "2 failed, 3 passed", exit_code=1), state), ["testfail"])
+        self.assertEqual(classify(gtool("b2", "execute", "git commit -m x"), state), ["bash"])
+        self.assertEqual(classify(gdone("b2", "[main 1a2b3c4] x", exit_code=0), state), ["ship"])
+        self.assertEqual(classify(gtool("b3", "execute", "ls yok"), state), ["bash"])
+        self.assertEqual(classify(gdone("b3", "No such file", exit_code=2), state), ["fail"])   # "completed", exit code 2
+        self.assertEqual(classify(gtool("b4", "execute", "pytest"), state), ["bash"])
+        passed = gdone("b4", "===== 3 passed in 0.1s =====", exit_code=0)
+        del passed["params"]["update"]["rawOutput"]["output_for_prompt"]   # the text is also in content
+        self.assertEqual(classify(passed, state), ["pass"])
+        self.assertEqual(classify(gdone("e1", "No match found", status="failed"), state), ["fail"])
+        self.assertEqual(classify(gdone("r1", "1 FAILED"), state), [])   # a file that was read is not a test result
+        self.assertEqual(classify(chunk("agent_message_chunk"), state), ["text"])   # a new reply after the tools
+        end = grok({"sessionUpdate": "turn_completed", "prompt_id": "p", "stop_reason": "end_turn"}, "_x.ai/session/update")
+        self.assertEqual(classify(end, state), ["done"])
+        for noise in (grok({"sessionUpdate": "available_commands_update", "availableCommands": []}),
+                      grok({"sessionUpdate": "auto_compact_started", "tokens_used": 1}, "_x.ai/session/update"),
+                      grok({"sessionUpdate": "tool_call_update", "toolCallId": "b9", "status": "completed", "rawOutput": [1]}),
+                      {"method": "session/update", "params": "x"}, {"method": "session/update", "params": {"update": []}}):
+            self.assertEqual(classify(noise, state), [])
+        odd = grok({"sessionUpdate": "tool_call", "toolCallId": ["x"], "kind": 3, "rawInput": "ls"})
+        self.assertEqual(classify(odd, state), ["tool"])
 
     def test_odd_shapes_inside_a_line_are_ignored_not_raised(self):
         state = Classifier()
@@ -257,6 +320,25 @@ class WatcherTests(unittest.TestCase):
         for path, kind in events:
             activity.see(path, kind, 2.0)
         self.assertEqual(activity.tools(), {"gemini": 1})
+
+    def test_grok_sessions_are_found_and_counted_with_other_agents(self):
+        self.assertIn(Path.home() / ".grok/sessions", reader.ROOTS)
+        session = self.root / ".grok/sessions/%2FUsers%2Fme%2Fproj/0199a0b0-0000-7000-8000-000000000001"
+        session.mkdir(parents=True)
+        watcher = AgentWatcher([self.root / "proj", self.root / ".grok/sessions"], rescan=0)
+        log, chat = session / "updates.jsonl", session / "chat_history.jsonl"
+        for path in (log, chat):
+            path.write_text("")
+        watcher.poll(1.0)
+        # The same conversation as sent to the model: its "user" lines would read as Claude Code prompts.
+        self.append(chat, {"type": "user", "content": "hi"}, {"type": "assistant", "content": "ok", "tool_calls": []})
+        self.append(log, grok({"sessionUpdate": "user_message_chunk", "content": {"type": "text", "text": "hi"}}), gtool("g1", "search"))
+        events = watcher.poll(2.0)
+        self.assertEqual(self.kinds(events), ["busy", "read"])
+        activity = reader.Activity()
+        for path, kind in events:
+            activity.see(path, kind, 2.0)
+        self.assertEqual(activity.tools(), {"other": 1})
 
     def test_a_line_the_parser_chokes_on_is_skipped_and_the_rest_still_heard(self):
         watcher = AgentWatcher([self.root], rescan=0)
