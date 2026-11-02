@@ -139,7 +139,7 @@ function waiting() {
     const stripe = o.payment && el('a', { href: `https://dashboard.stripe.com/payments/${encodeURIComponent(o.payment)}`, target: '_blank', rel: 'noopener noreferrer' }, 'Stripe\'ta gör ↗');
     return el('article', { className: 'order' }, canvas,
       el('div', { className: 'facts' }, logo,
-        el('h3', {}, o.name), link,
+        el('h3', {}, o.name), o.about && el('p', { className: 'about' }, o.about), o.city && el('p', { className: 'dim' }, o.city), link,
         el('p', {}, `${size(o)} · ${money(o.amount)}`),
         o.email && el('p', {}, el('a', { href: `mailto:${o.email}` }, o.email)),
         el('p', { className: 'dim' }, `Ödendi: ${when(o.paidAt)}`), stripe,

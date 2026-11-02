@@ -11,7 +11,7 @@ const order = (id, state, extra = {}) => ({ id, state, ring: 0, col: 10, width: 
   decidedAt: null, decidedBy: null, reason: null, refunded: false, ...extra });
 const STATE = {
   me: 'selim', checkout: true, seats: 10042, summary: { pending: 2, liveSeats: 6, revenue: 30000, month: 15000 },
-  orders: [order('o-a', 'paid'), order('o-b', 'problem', { name: 'Beta', col: 20, reason: 'amount' }), order('o-c', 'live', { name: 'Gamma', col: 40 }),
+  orders: [order('o-a', 'paid', { about: 'Kod yazan bir ekip', city: 'İzmir, Türkiye' }), order('o-b', 'problem', { name: 'Beta', col: 20, reason: 'amount' }), order('o-c', 'live', { name: 'Gamma', col: 40 }),
     order('o-d', 'held', { name: 'Delta', col: 60, paidAt: null, email: null })],
   events: [{ at: T, order: 'o-a', what: 'paid', by: null }, { at: T + 60_000, order: 'o-c', what: 'live', by: 'ozer' }],
 };
@@ -56,6 +56,8 @@ test('a waiting order shows who paid what; approving it asks the server once', a
   const cards = root.querySelectorAll('article');
   assert.equal(cards.length, 2);
   assert.ok(cards[0].textContent.includes('ali@acme.example') && cards[0].textContent.includes('150 $'));
+  assert.ok(cards[0].textContent.includes('Kod yazan bir ekip') && cards[0].textContent.includes('İzmir, Türkiye'), 'what the hall will show is read first');
+  assert.equal(cards[1].querySelector('.about'), null, 'no empty line when there is none');
   assert.match(cards[1].textContent, /Tutar tutmuyor/);
   assert.equal(buttons('Onayla').length, 1, 'a problem is refunded, never approved');
   assert.equal(cards[0].querySelector('img').getAttribute('src'), '/api/yonetim/image/o-a');
