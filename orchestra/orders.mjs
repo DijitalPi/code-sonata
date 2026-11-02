@@ -15,9 +15,21 @@ const STATES = new Set(["held", "paid", "problem", "live", "expired", "refunded"
 const BLOCKING = new Set(["held", "paid", "problem", "live"]);
 const ID = /^o-[0-9a-f]{24}$/;
 
+// An order's introduction and city are cleaned again when the file is read: a line a hand edit broke is left out,
+// so it cannot hide the whole seat once approved. The name and link keep the rule they were sold under.
+function cleanLines(o) {
+  const lines = {};
+  for (const k of ["about", "city"]) {
+    const one = cleanHolder({ name: "x", link: "https://x.example", [k]: o[k] });   // each line on its own
+    if (one?.[k]) lines[k] = one[k];
+  }
+  delete o.about; delete o.city;
+  return Object.assign(o, lines);
+}
+
 export function createBook(data) {
   const orders = (Array.isArray(data?.orders) ? data.orders : [])
-    .filter((o) => o && typeof o === "object" && ID.test(o.id) && STATES.has(o.state) && validBlock(o));
+    .filter((o) => o && typeof o === "object" && ID.test(o.id) && STATES.has(o.state) && validBlock(o)).map(cleanLines);
   const events = (Array.isArray(data?.events) ? data.events : []).filter((e) => e && typeof e.what === "string").slice(-EVENTS);
   return { orders, events };
 }

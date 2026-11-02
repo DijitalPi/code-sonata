@@ -196,6 +196,16 @@ test('a hold and a won auction keep the introduction and city; sent again withou
   assert.ok(!('about' in again) && !('city' in again), 'a field left empty the second time is gone');
 });
 
+test('read back, a line a hand edit broke is left out instead of hiding the whole seat; good ones are cleaned', () => {
+  const book = createBook();
+  const bad = ask(book, { block: block(40) }).order, good = ask(book, { block: block(50), ipKey: 'ip-c' }).order;
+  Object.assign(bad, { about: 'x'.repeat(121), city: 7 });
+  Object.assign(good, { about: '  A\u202eB\nC ', city: '  İzmir\tTR ' });
+  const again = createBook(JSON.parse(JSON.stringify(book)));
+  for (const o of again.orders) { pay(again, o, { payment: `pi_${o.id}` }); approve(again, o.id, 'selim', T0); }
+  assert.deepEqual(liveSeats(again).map((s) => [s.col, s.name, s.about, s.city]), [[40, 'Acme', undefined, undefined], [50, 'Acme', 'A B C', 'İzmir TR']]);
+});
+
 test('one order per auction payment: a logo sent under another id updates the order that payment already has', () => {
   const book = createBook(), first = nextId();
   won(book, { id: first, name: 'Acme', link: 'https://acme.example', amount: 310_000, payment: 'pi_w', email: null, now: T0 });
