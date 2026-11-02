@@ -5,18 +5,19 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createBook, hold, setSession, drop, paid, expire, sweep, approve, won, reject, remove, startRefund, stopRefund, liveSeats, reserved, summary, buyerState } from "./orders.mjs";
+import { createBook, hold, free, setSession, drop, paid, expire, sweep, approve, won, reject, remove, startRefund, stopRefund, liveSeats, reserved, summary, buyerState } from "./orders.mjs";
 import { createStripe, verifySignature } from "./stripe.mjs";
 import { parseKeys, whoHasKey, sessionSecret, makeCookie, readCookie, SESSION_MS } from "./admin.mjs";
 import { webpSize } from "./webp.mjs";
 import { createAuctions, start, minBid, openBid, setBidSession, expireBid, confirmBid, released, toRelease, due, end, captured,
   captureRefused, close, setOrder, leader, winner, blocking, sweepBids, publicView, bidView, panelView, findBid, PAGE_MS } from "./auction.mjs";
 import { PLAN, tierOf, cleanSeats, cleanHolder, AUCTION, taken } from "./web/seats.mjs";
-import { addCoupon, stopCoupon, couponView } from "./coupons.mjs";
+import { addCoupon, stopCoupon, couponView, check } from "./coupons.mjs";
 import { EN } from "./web/lang-en.mjs";
 
 const IMAGE_MAX = 300 * 1024, IMAGE_SIDE = 1024;
 const TRIES = 5, TRIES_MS = 10 * 60_000, LOGINS = 5, LOGINS_MS = 60_000;
+const WRONG = 10, WRONG_MS = 3_600_000, AGAIN_MS = 24 * 3_600_000;
 const ORDER = /^o-[0-9a-f]{24}$/, BID = /^b-[0-9a-f]{24}$/;
 
 // Up to `limit` bytes of a request body, or null once it is longer or breaks off.
@@ -75,6 +76,16 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
   const panelOpen = keys.size > 0 && readable && Boolean(ordersFile);
   const auctionOpen = open && Boolean(auctionFile) && auctionReadable;
   const tries = new Map(), logins = new Map(), deciding = new Set();
+  // Wrong codes count against an address (ten an hour), so codes cannot be guessed; an address uses one coupon a day.
+  // Both live only in memory, like the address digest.
+  const wrong = new Map(), couponAt = new Map();
+  const guessing = (key, now) => { const w = wrong.get(key); return Boolean(w) && now - w[0] <= WRONG_MS && w[1] >= WRONG; };
+  const missed = (key, now) => over(wrong, key, now, WRONG, WRONG_MS);
+  const usedCoupon = (key, now) => now - (couponAt.get(key) ?? -Infinity) < AGAIN_MS;
+  function tookCoupon(key, now) {
+    couponAt.set(key, now);
+    if (couponAt.size > 10_000) for (const [k, at] of couponAt) if (now - at >= AGAIN_MS) couponAt.delete(k);
+  }
   const pending = (id) => join(seatsDir, "pending", `${id}.webp`), shown = (id) => join(seatsDir, `${id}.webp`);
   const forget = (file) => { try { unlinkSync(file); } catch { /* already gone */ } };
 
@@ -164,34 +175,62 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     } catch (error) { log(`slack: ${error.message}`); }
   }
   function told(order, site) {
-    const what = `${order.name} · ${tierOf(order.ring).label} · ${order.width * order.depth} koltuk · ${order.amount / 100} $`;
+    const what = `${order.name} · ${tierOf(order.ring).label} · ${order.width * order.depth} koltuk · ${order.amount / 100} $${order.coupon ? ` · kupon ${order.coupon}` : ""}`;
     const where = `${env.PUBLIC_URL ? new URL(env.PUBLIC_URL).origin : site}/yonetim/#bekleyen`;
-    return order.state === "problem"
-      ? `Sorunlu koltuk ödemesi: ${what} (${order.reason === "amount" ? "tutar tutmuyor" : "yer artık dolu"}). İade için: ${where}`
-      : `Yeni koltuk satışı: ${what}. Onay bekliyor: ${where}`;
+    if (order.state === "problem") return `Sorunlu koltuk ödemesi: ${what} (${order.reason === "amount" ? "tutar tutmuyor" : "yer artık dolu"}). İade için: ${where}`;
+    return `${order.amount === 0 ? "Kuponla bedava koltuk" : "Yeni koltuk satışı"}: ${what}. Onay bekliyor: ${where}`;
   }
 
   // ---------- the buyer ----------
+  // A code asked about before paying: whether it works and on which tier. Nothing is held.
+  async function couponCheck(req, res, { foreign, key, now }) {
+    if (foreign) return send(res, 403, { error: "origin" });
+    if (guessing(key, now)) return send(res, 429, { error: "tries" });
+    const data = parse(await body(req, 1024));
+    if (!data) return send(res, 400, { error: "body" });
+    const found = check(book, data.code, null, now);
+    if (found.error === "code") missed(key, now);
+    if (found.error) return send(res, found.error === "used" ? 409 : 400, { error: found.error });
+    return send(res, 200, { code: found.coupon.code, tier: found.coupon.tier });
+  }
+
   async function checkout(req, res, { foreign, key, now, site }) {
     if (foreign) return send(res, 403, { error: "origin" });
     if (over(tries, key, now, TRIES, TRIES_MS)) return send(res, 429, { error: "tries" });
     const data = parse(await body(req, 450 * 1024));
     if (!data) return send(res, 400, { error: "body" });
     if (data.terms !== true) return send(res, 400, { error: "terms" });
+    const coupon = typeof data.coupon === "string" && data.coupon.trim() ? data.coupon : null;
+    if (coupon && guessing(key, now)) return send(res, 429, { error: "tries" });
+    if (coupon && usedCoupon(key, now)) return send(res, 429, { error: "again" });
     const image = logoOf(data.image);
     if (!image) return send(res, 400, { error: "image" });
     const id = `o-${randomBytes(12).toString("hex")}`;
     mkdirSync(join(seatsDir, "pending"), { recursive: true });
     writeFileSync(pending(id), image);
     let held;
-    try { held = commit(() => hold(book, { id, block: data.block, name: data.name, link: data.link, about: data.about, city: data.city, ipKey: key, now }, occupied())); }
-    catch (error) { forget(pending(id)); throw error; }
-    if (held.error) { forget(pending(id)); return send(res, { block: 400, holder: 400, taken: 409, busy: 429, full: 429 }[held.error], { error: held.error }); }
+    try {
+      held = commit(() => {
+        const h = hold(book, { id, block: data.block, name: data.name, link: data.link, about: data.about, city: data.city, coupon, ipKey: key, now }, occupied());
+        if (!h.error && h.order.amount === 0) free(book, id, now);   // a coupon's single seat: nothing to pay
+        return h;
+      });
+    } catch (error) { forget(pending(id)); throw error; }
+    if (held.error) {
+      forget(pending(id));
+      if (held.error === "code") missed(key, now);
+      return send(res, { block: 400, holder: 400, taken: 409, busy: 429, full: 429, code: 400, tier: 400, used: 409 }[held.error], { error: held.error });
+    }
+    if (coupon) tookCoupon(key, now);
+    if (held.order.state === "paid") { await tell(told(held.order, site)); return send(res, 200, { id, free: true }); }
     let session;
-    try { session = await stripe.checkout({ order: held.order, site: env.PUBLIC_URL ? new URL(env.PUBLIC_URL).origin : site, label: `Agent Orchestra · ${label(held.order)}` }); }
-    catch (error) {
+    try {
+      session = await stripe.checkout({ order: held.order, site: env.PUBLIC_URL ? new URL(env.PUBLIC_URL).origin : site,
+        label: `Agent Orchestra · ${label(held.order)}${held.order.coupon ? " (1 free)" : ""}` });
+    } catch (error) {
       log(`checkout: ${error.message}`);
       commit(() => drop(book, id, now)); forget(pending(id));
+      if (coupon) couponAt.delete(key);
       return send(res, 502, { error: "stripe" });
     }
     // The page is open: the buyer gets it even if its id cannot be written now (the payment event carries it).
@@ -346,7 +385,8 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     const reason = typeof data.reason === "string" ? data.reason : "";
     const allowed = { approve: ["paid"], reject: ["paid", "problem"], remove: ["live"] }[action];
     if (!order || !allowed.includes(order.state)) return send(res, 409, { error: "state" });
-    const refund = action === "reject" || (action === "remove" && (data.refund === true || order.refunding));
+    // A coupon's free seat has nothing to give back.
+    const refund = order.amount > 0 && (action === "reject" || (action === "remove" && (data.refund === true || order.refunding)));
     let refunded = null;
     if (refund) {
       if (!order.payment) return send(res, 409, { error: "payment" });
@@ -482,11 +522,12 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
       return true;
     }
     if (bidPath && auctionOpen && req.method === "POST" && bidPath[2]) { await giveUpBid(res, bidPath[1], ctx); return true; }
+    if (p === "/api/seats/coupon" && req.method === "POST") { if (!open) send(res, 404, { error: "closed" }); else await couponCheck(req, res, ctx); return true; }
     if (p === "/api/seats/checkout" && req.method === "POST") { if (!open) send(res, 404, { error: "closed" }); else await checkout(req, res, ctx); return true; }
     const order = p.match(/^\/api\/seats\/order\/(o-[0-9a-f]{24})$/);
     if (order && req.method === "GET") {
       const o = find(order[1]);
-      o ? send(res, 200, { state: buyerState(o) }) : send(res, 404, { error: "order" });
+      o ? send(res, 200, { state: buyerState(o), ...(o.amount === 0 && { free: true }) }) : send(res, 404, { error: "order" });
       return true;
     }
     const cancel = p.match(/^\/api\/seats\/order\/(o-[0-9a-f]{24})\/cancel$/);
