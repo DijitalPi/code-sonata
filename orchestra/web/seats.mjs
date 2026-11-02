@@ -79,13 +79,26 @@ export function litBlocks(blocks, angle, spread = 3) {
 // Holders as the server publishes them: anything malformed, off the plan, on a sold seat, with a remote image
 // (the page loads images from this site only) or a link that is not a web address is left out.
 const IMAGE = /^\/seat-images\/[a-z0-9-]{1,40}\.(webp|png|jpe?g)$/;
-// What a holder shows: a name of up to 40 characters and a web address, or null.
+// Someone's own line of text: control characters and the marks that turn text around become spaces, runs of space
+// one. Longer than `max` after that is refused like a long name; nothing written is no field at all.
+const ODD = /[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g;
+function oneLine(text, max) {
+  if (text == null) return '';
+  if (typeof text !== 'string') return null;
+  const line = text.replace(ODD, ' ').replace(/\s+/g, ' ').trim();
+  return line.length > max ? null : line;
+}
+// What a holder shows: a name of up to 40 characters, a web address, and if they like a line about them (120)
+// and their city (40); or null.
 export function cleanHolder(h) {
   const name = typeof h?.name === 'string' ? h.name.trim() : '';
   if (!name || name.length > 40) return null;
   let link = null;
   try { link = typeof h.link === 'string' && h.link.length <= 300 ? new URL(h.link) : null; } catch { link = null; }
-  return link && ['http:', 'https:'].includes(link.protocol) ? { name, link: link.href } : null;
+  if (!link || !['http:', 'https:'].includes(link.protocol)) return null;
+  const about = oneLine(h.about, 120), city = oneLine(h.city, 40);
+  if (about === null || city === null) return null;
+  return { name, link: link.href, ...(about && { about }), ...(city && { city }) };
 }
 export function cleanSeats(data) {
   const out = [], used = new Set(), ids = new Set();

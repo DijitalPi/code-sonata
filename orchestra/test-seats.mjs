@@ -108,6 +108,19 @@ test('a holder is a trimmed name of up to 40 characters and an http or https lin
     { name: 7, link: 'https://a.example' }, null]) assert.equal(cleanHolder(bad), null, JSON.stringify(bad));
 });
 
+test('a holder may add a one-line introduction of up to 120 characters and a city of up to 40', () => {
+  const base = { name: 'Acme', link: 'https://a.example' };
+  assert.deepEqual(cleanHolder({ ...base, about: '  Kod  yazan\nbir ekip ', city: ' İstanbul,\tTürkiye ' }),
+    { name: 'Acme', link: 'https://a.example/', about: 'Kod yazan bir ekip', city: 'İstanbul, Türkiye' });
+  assert.deepEqual(cleanHolder({ ...base, about: '   ', city: '' }), { name: 'Acme', link: 'https://a.example/' }, 'empty is no field');
+  assert.equal(cleanHolder({ ...base, about: 'a\u202eb\u2066c' }).about, 'a b c', 'no mark that turns the text around');
+  assert.equal(cleanHolder({ ...base, about: 'x'.repeat(120), city: 'y'.repeat(40) }).about.length, 120);
+  for (const bad of [{ about: 'x'.repeat(121) }, { city: 'y'.repeat(41) }, { about: 7 }, { city: {} }])
+    assert.equal(cleanHolder({ ...base, ...bad }), null, JSON.stringify(bad));
+  const [shown] = cleanSeats({ seats: [{ id: 'acme', ring: 0, col: 0, width: 1, depth: 1, ...base, about: 'Bir ekip', city: 'İzmir' }] });
+  assert.deepEqual([shown.about, shown.city], ['Bir ekip', 'İzmir']);
+});
+
 test('the hall keeps the blocks someone is paying for, well-formed ones only', async () => {
   const { createAmfi } = await import('./web/amfi.js');
   const hall = createAmfi(), b = { ring: TIERS[0].rings[0], col: 4, width: 2, depth: 1 };
