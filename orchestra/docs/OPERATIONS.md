@@ -95,6 +95,15 @@ Sahnenin önündeki 24×4 = 96 koltuk tek tek satılmaz; panelin "Açık artırm
 - `AUCTION_FILE`'da teklif tutarı, saati, Stripe kimlikleri ve Stripe'tan gelen e-posta durur; adres özeti dosyaya yazılmaz. Kazanmayanların e-postaları bitişten 30 gün sonra silinir; kazananınki kalır (siparişte de durur). Sayfa yalnız tutar ve saat görür.
 - Yerelde denemek için `AUCTION_FILE` ver, panelden başlat; bitişi denemek için dosyada `endsAt`'i geçmişe çekip sunucuyu yeniden başlat, ilk tarama bitirir.
 
+## Kupon (bedava koltuk)
+
+Bir kupon kodu bir koltuğu bedava yapar: tek koltuk seçilirse ödeme yoktur ve Stripe'a gidilmez; daha büyük blokta bloğun sırasındaki bir koltuğun bedeli düşer, kalanı Stripe'ta ödenir (ürün adı "… (1 free)"). Stripe ayarı ve kısıtlı anahtarın izinleri değişmez. Açık artırma bloğunda kupon geçmez.
+
+- Kodlar panelin "Kuponlar" sekmesinden açılır: kod (3-24 harf, rakam, tire; büyük harfe çevrilir), sıra (ön, orta, arka ya da her sıra), kullanım sınırı (1-1000) ve süre (1-90 gün). "Durdur" kodu o an kapatır; kod silinmez, aynı kod yeniden açılamaz.
+- Kullanılan, kodu taşıyan tutulan, onay bekleyen, sorunlu ve yayındaki siparişlerin sayısıdır: süresi dolan, reddedilen ya da kaldırılan sipariş hakkını kendiliğinden geri verir. Son hakka aynı anda gelen iki alıcıdan biri alır.
+- Bedava sipariş doğrudan "Onay bekleyenler"e düşer ("Kupon: KOD · bedava"); reddetmek ve kaldırmak iade aramaz. Alıcı sayfada "Koltuğun ayrıldı; onay bekliyor" ya da "Koltuğun onaylanmadı" okur. `SLACK_WEBHOOK_URL` varsa "Kuponla bedava koltuk: …" mesajı gider; indirimli ödemenin mesajında "kupon KOD" yazar.
+- Kodlar `ORDERS_FILE`'da (`coupons`) siparişlerle birlikte durur; kuponlu siparişte `coupon` ve `discount` (sent). Adres başına günde bir kupon ve saatte en çok 10 yanlış kod denemesi; ikisi de yalnız bellekte tutulur, sunucu yeniden başlayınca sıfırlanır.
+
 ## Yayın kontrol listesi
 
 1. Vekilin erişim kaydı kapalı ya da IP'siz olmalı. Sayfadaki gizlilik metni "IP kaydedilmez" diyor; etkinlik anahtarı da `/api/stream` adresinde gider.
