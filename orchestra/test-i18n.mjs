@@ -2,6 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { EN } from './web/lang-en.mjs';
+import { LANGS } from './web/langs.mjs';
+
+// The languages translated from English and Turkish (langs.mjs), each a dictionary keyed by the Turkish text.
+const OTHERS = Object.keys(LANGS).filter((code) => !['tr', 'en'].includes(code));
+const dicts = Object.fromEntries(await Promise.all(OTHERS.map(async (code) => [code, (await import(`./web/lang-${code}.mjs`))[code.toUpperCase()]])));
 
 // Text that is the same in every language (names, licences, addresses) or never shown.
 const SAME = new Set(['Agent', 'Orchestra', 'MIDI.js Soundfonts', 'CC BY 3.0', 'smplr', 'dijitalpi.com/iletisim', 'English', 'Türkçe', 'TR', 'EN', 'ĞÜŞİÖÇ', 'https://']);
@@ -44,6 +49,19 @@ test('English keeps every placeholder of its Turkish key and adds none', () => {
   for (const [key, value] of Object.entries(EN)) {
     const names = (s) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
     assert.deepEqual(names(value), names(key), key);
+  }
+});
+
+test('every other language has every key, in order, with its placeholders and without a long dash', () => {
+  const names = (s) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
+  assert.deepEqual(Object.keys(dicts), OTHERS);
+  for (const [code, dict] of Object.entries(dicts)) {
+    assert.deepEqual(Object.keys(dict), Object.keys(EN), code);
+    for (const [key, value] of Object.entries(dict)) {
+      assert.ok(typeof value === 'string' && value.trim(), `${code}: ${key}`);
+      assert.deepEqual(names(value), names(key), `${code}: ${key}`);
+      assert.ok(!/[—–]/.test(value), `${code}: ${value}`);
+    }
   }
 });
 
@@ -121,4 +139,20 @@ test('the suggested moment title follows the language until the listener types o
   i18n.setLang('en');
   assert.equal(input.value, 'Bugünkü çalışmanın sesi');
   i18n.setLang('tr');
+});
+
+test('another language loads its dictionary when chosen; Arabic turns the page right to left with Latin digits', async () => {
+  const { doc, i18n } = await loaded;
+  const title = doc.title;
+  await i18n.setLang('de');
+  assert.equal(doc.documentElement.lang, 'de');
+  assert.equal(i18n.t('Koltuk al'), dicts.de['Koltuk al']);
+  assert.equal(doc.title, dicts.de[title]);
+  await i18n.setLang('ar');
+  assert.equal(doc.documentElement.lang, 'ar'); assert.equal(doc.documentElement.dir, 'rtl');
+  assert.equal(i18n.num(1234567), '1,234,567');
+  await i18n.setLang('pt');
+  assert.equal(doc.documentElement.lang, 'pt-BR'); assert.equal(doc.documentElement.dir, 'ltr');
+  await i18n.setLang('tr');
+  assert.equal(doc.title, title);
 });

@@ -264,6 +264,14 @@ try {
       const file = await fetch(base + icon.split('href="')[1]); await file.arrayBuffer();
       assert.equal(file.status, 200, icon); assert.match(file.headers.get('content-type'), /^image\//);
     }
+    // A link in another language carries the page head in it; Arabic reads right to left; an unknown ?lang= is left alone.
+    const { DE } = await import('./web/lang-de.mjs');
+    const german = await (await fetch(base + '/?lang=de')).text();
+    const title = html.match(/<title>([^<]+)<\/title>/)[1];
+    assert.ok(german.includes('<html lang="de">'));
+    assert.ok(german.includes(`<title>${DE[title].replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}</title>`));
+    assert.ok((await (await fetch(base + '/?lang=ar')).text()).includes('<html lang="ar" dir="rtl">'));
+    assert.ok((await (await fetch(base + '/?lang=__proto__')).text()).includes(`<html lang="tr">`));
     // Keep every response: an unread fetch body that is garbage collected closes its stream (and frees its slot).
     const controllers=[], open=[];
     try {

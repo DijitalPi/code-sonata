@@ -14,6 +14,7 @@ import { createConductor } from "./web/conductor.mjs";
 import { cleanSeats } from "./web/seats.mjs";
 import { createShop } from "./shop.mjs";
 import { EN } from "./web/lang-en.mjs";
+import { LANGS } from "./web/langs.mjs";
 import { loadGeo, country } from "./geo.mjs";
 
 const PORT = Number(process.env.PORT || 4480);
@@ -495,6 +496,9 @@ const shop = createShop({ hand: () => seatHolders });
 setInterval(() => { shop.sweep(wall()); shop.auctionSweep(wall()); }, 60_000).unref();
 
 // ---------- http ----------
+// Every dictionary but Turkish (the page's own words), for the head of a ?lang= link.
+const DICTS = Object.fromEntries(await Promise.all(Object.keys(LANGS).filter((code) => code !== "tr")
+  .map(async (code) => [code, (await import(`./web/lang-${code}.mjs`))[code.toUpperCase()]])));
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".json": "application/json", ".py": "text/plain; charset=utf-8", ".txt": "text/plain; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2", ".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg": "image/jpeg" };
 const hits = new Map();         // ip key -> [windowStart, count]: pages and pairing
 const polls = new Map(), pollIPs = new Map();   // pairing / ip key -> [windowStart, count]: a page asking for its own view
@@ -673,10 +677,16 @@ const server = http.createServer({ connectionsCheckingInterval: 1000, requestTim
     let output = extname(path) === ".html" && PUBLIC_URL ? file.toString()
       .replaceAll('content="/og.png"', `content="${PUBLIC_URL}/og.png"`)
       .replace("</head>", `<meta property="og:url" content="${PUBLIC_URL}/"><link rel="canonical" href="${PUBLIC_URL}/"></head>`) : file;
-    // An English link (?lang=en) gets an English title and preview, so a shared link reads right before any script runs.
-    if (extname(path) === ".html" && url.searchParams.get("lang") === "en") {
-      output = output.toString().replace('<html lang="tr">', '<html lang="en">')
-        .replace(/(<title>|content=")([^<"]+)(<\/title>|")/g, (all, open, text, close) => EN[text] ? open + EN[text] + close : all);
+    // A link in another language (?lang=en, ?lang=de…) gets its title and preview in that language, so a shared
+    // link reads right before any script runs. A text a dictionary lacks goes out in English.
+    const asked = url.searchParams.get("lang");
+    if (extname(path) === ".html" && Object.hasOwn(DICTS, asked)) {
+      const { tag, dir } = LANGS[asked], dict = DICTS[asked];
+      output = output.toString().replace('<html lang="tr">', `<html lang="${tag}"${dir ? ` dir="${dir}"` : ""}>`)
+        .replace(/(<title>|content=")([^<"]+)(<\/title>|")/g, (all, open, text, close) => {
+          const to = dict[text] ?? EN[text];
+          return to ? open + to.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;") + close : all;
+        });
     }
     res.end(output);
   } catch {
