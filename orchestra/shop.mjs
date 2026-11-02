@@ -12,6 +12,7 @@ import { webpSize } from "./webp.mjs";
 import { createAuctions, start, minBid, openBid, setBidSession, expireBid, confirmBid, released, toRelease, due, end, captured,
   captureRefused, close, setOrder, leader, winner, blocking, sweepBids, publicView, bidView, panelView, findBid, PAGE_MS } from "./auction.mjs";
 import { PLAN, tierOf, cleanSeats, cleanHolder, AUCTION, taken } from "./web/seats.mjs";
+import { addCoupon, stopCoupon, couponView } from "./coupons.mjs";
 import { EN } from "./web/lang-en.mjs";
 
 const IMAGE_MAX = 300 * 1024, IMAGE_SIDE = 1024;
@@ -405,7 +406,7 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     if (!name) return send(res, 401, { error: "login" });
     if (path === "state" && req.method === "GET")
       return send(res, 200, { me: name, checkout: open, seats: PLAN.count, summary: summary(book, now), orders: book.orders.map(forPanel), events: book.events.slice(-100),
-        auction: auctionOpen ? panelView(ab) : null });
+        auction: auctionOpen ? panelView(ab) : null, coupons: couponView(book, now) });
     const image = path.match(/^image\/(o-[0-9a-f]{24})$/);
     if (image && req.method === "GET") {
       for (const file of [pending(image[1]), shown(image[1])]) {
@@ -413,6 +414,17 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
         catch { /* try the next place */ }
       }
       return send(res, 404, { error: "image" });
+    }
+    if (path === "coupon" && req.method === "POST") {
+      const data = parse(await body(req, 1024)) || {};
+      const made = commit(() => addCoupon(book, { code: data.code, tier: data.tier, max: data.max, days: data.days, by: name, now }));
+      if (made.error) return send(res, made.error === "exists" ? 409 : 400, { error: made.error });
+      return send(res, 200, { coupon: couponView(book, now).find((c) => c.code === made.coupon.code) });
+    }
+    const stop = path.match(/^coupon\/([A-Z0-9-]{3,24})\/stop$/);
+    if (stop && req.method === "POST") {
+      const done = commit(() => stopCoupon(book, stop[1]));
+      return done.error ? send(res, 404, { error: done.error }) : send(res, 200, { coupon: couponView(book, now).find((c) => c.code === done.coupon.code) });
     }
     const auctionStep = path.match(/^auction\/(start|capture|close)$/);
     if (auctionStep && req.method === "POST") return auctionPanel(res, auctionStep[1], name, now);
