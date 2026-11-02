@@ -409,7 +409,8 @@ class Conductor:
             self.position, self.song_beat = 0, 0
             self.turn += 1
             # The form over, the next song; when things heat up, a wild one at once (ending: the same song closes).
-            heating_up = i_ >= .7 and len(self.songs) > 1 and self.song not in self.moods["wild"]
+            # A queue has no wild one to jump to, so each of its songs plays its whole form.
+            heating_up = i_ >= .7 and not self.ordered and len(self.songs) > 1 and self.song not in self.moods["wild"]
             if not self.ending and (self.turn >= len(FORMS[self.melody]) or heating_up):
                 self.next_song(vel, beat_ms, key)
 
