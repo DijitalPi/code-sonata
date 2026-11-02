@@ -214,11 +214,14 @@ body.is-demo #connection { color: var(--gold); }
 @media (prefers-reduced-motion: reduce) { button, .pill, .announce, .hero, .stage::before { transition: none; } }
 @media (prefers-reduced-transparency: reduce) { .demo-banner, .dock { background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; } }
 
-/* A sold block's holder: name, link, size. */
-.seat-card { position: absolute; z-index: 4; display: flex; flex-direction: column; gap: 2px; max-width: 260px; padding: 10px 14px; border-radius: 12px; background: #efe6d4; color: #1a1208; box-shadow: 0 14px 36px rgba(0, 0, 0, .55); font-size: 13px; }
+/* A sold block's holder: logo, name, their line and city, link, size. */
+.seat-card { position: absolute; z-index: 4; display: flex; flex-direction: column; gap: 2px; max-width: 280px; padding: 10px 14px; border-radius: 12px; background: #efe6d4; color: #1a1208; box-shadow: 0 14px 36px rgba(0, 0, 0, .55); font-size: 13px; }
 .seat-card b { font: 500 16px/1.25 var(--serif); }
 .seat-card a { color: #6b4a12; font-weight: 600; overflow-wrap: anywhere; }
 .seat-card small { color: #6b5f4b; font-size: 11.5px; }
+.seat-card .seat-logo { display: block; margin: 2px 0 8px; border-radius: 6px; }
+.seat-card p { margin: 2px 0 0; color: #3a2f1c; line-height: 1.35; overflow-wrap: anywhere; }
+.seat-card .city { color: #6b5f4b; font-size: 12px; }
 .seat-card .link { color: #6b4a12; font-weight: 600; font-size: 13px; padding: 4px 0 0; }
 
 /* Buying a seat: tiers, size, price, and the bar that guides placing the block in the hall. */

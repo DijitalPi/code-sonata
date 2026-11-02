@@ -838,13 +838,31 @@ const card = document.createElement("div");
 card.className = "seat-card"; card.hidden = true; card.setAttribute("role", "status");
 document.querySelector(".stage").append(card);
 let cardFor = null, cardTimer = 0;
+// The holder's picture as the hall draws it, at card size: at most 252 × 96, its own shape kept.
+function cardLogo(holder) {
+  const pic = amfi.picture(holder), w0 = pic?.naturalWidth || pic?.width, h0 = pic?.naturalHeight || pic?.height;
+  if (!w0 || !h0) return null;
+  const scale = Math.min(252 / w0, 96 / h0), w = Math.round(w0 * scale), h = Math.round(h0 * scale), dpr = devicePixelRatio || 1;
+  const c = document.createElement("canvas");
+  c.className = "seat-logo"; c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+  c.style.width = `${w}px`; c.style.height = `${h}px`; c.setAttribute("aria-hidden", "true");
+  const g = c.getContext("2d"); g.scale(dpr, dpr); g.drawImage(pic, 0, 0, w, h);
+  return c;
+}
+// The holder's card: big logo, name, their line and city if they wrote one, link, seats. The block lights up behind it.
 function showCard(holder, x, y) {
   clearTimeout(cardTimer);
+  amfi.setHover(holder);
   if (holder !== cardFor) {
     cardFor = holder;
     const size = `${holder.width * holder.depth} koltuk · ${tierOf(holder.ring).label}`;
+    // Demo text is ours and is translated; a buyer's is shown as they wrote it.
+    const own = (tag, text, className) => { const e = document.createElement(tag); e.textContent = text; e.translate = amfi.isDemo(); if (className) e.className = className; return e; };
     card.replaceChildren();
-    const name = document.createElement("b"); name.textContent = holder.name; name.translate = amfi.isDemo(); card.append(name);   // demo names are ours; real ones are not translated
+    const logo = cardLogo(holder); if (logo) card.append(logo);
+    card.append(own("b", holder.name));
+    if (holder.about) card.append(own("p", holder.about));
+    if (holder.city) card.append(own("span", holder.city, "city"));
     if (holder.link) {
       const a = document.createElement("a"); a.href = holder.link; a.target = "_blank"; a.rel = "sponsored noopener noreferrer"; a.translate = false;
       a.textContent = holder.link.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "").slice(0, 48) + " ↗"; card.append(a);
@@ -867,7 +885,7 @@ const bidding = (place) => Boolean(place) && !place.holder && auctionView?.state
   && place.k >= ring && place.k < ring + ad && place.c >= col && place.c < col + aw;
 function showAuctionCard(x, y) {
   clearTimeout(cardTimer);
-  cardFor = "auction";
+  cardFor = "auction"; amfi.setHover(null);
   const v = auctionView, ends = left(v.endsAt - Date.now());
   const title = document.createElement("b"); title.textContent = "Sahnenin önü · 96 koltuk";
   const price = document.createElement("small");
@@ -879,7 +897,7 @@ function showAuctionCard(x, y) {
 }
 function hideCard(later) {
   clearTimeout(cardTimer);
-  cardTimer = setTimeout(() => { card.hidden = true; cardFor = null; }, later ? 350 : 0);
+  cardTimer = setTimeout(() => { card.hidden = true; cardFor = null; amfi.setHover(null); }, later ? 350 : 0);
 }
 function pointAt(event) {
   const rect = canvas.getBoundingClientRect(), x = event.clientX - rect.left, y = event.clientY - rect.top;
