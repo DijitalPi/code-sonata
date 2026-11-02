@@ -249,6 +249,17 @@ test('approving puts the block and its logo in the hall; rejecting refunds it on
   assert.equal(stripeCalls.filter((c) => c.path === '/v1/refunds').length, refunds + 1, 'removed without a refund');
 });
 
+test('the introduction and city go with the order to the hall; too long is refused', async () => {
+  const { cookie } = await login(SELIM, '10.9.9.40');   // logins are counted per address: a new test logs in from its own
+  const a = await (await buy({ block: block(50), name: 'Epsilon', about: 'Kod yazan bir ekip', city: 'İzmir, Türkiye' })).json();
+  await completed(a.id, blockPrice(block(50)) * 100);
+  assert.equal((await panel(`orders/${a.id}/approve`, { cookie, method: 'POST' })).status, 200);
+  const shown = (await seats()).seats.find((s) => s.id === a.id);
+  assert.deepEqual([shown.about, shown.city], ['Kod yazan bir ekip', 'İzmir, Türkiye']);
+  const bad = await buy({ block: block(54), about: 'x'.repeat(121) });   // refused before any seat is held
+  assert.deepEqual([bad.status, (await bad.json()).error], [400, 'holder']);
+});
+
 test('a refund Stripe refuses leaves the order as it was; one whose answer was lost keeps it from being approved', async () => {
   const { cookie } = await login();
   const c = await (await buy({ block: block(130) })).json();

@@ -206,10 +206,11 @@ test('only the winning bid sends the logo; it waits for approval, then the 24-wi
   assert.equal((await send(win.id, { terms: false })).status, 400);
   assert.equal((await send(win.id, { image: 'data:image/png;base64,iVBORw0KGgo=' })).status, 400);
   const first = await (await send(win.id)).json();
-  assert.equal((await send(win.id, { name: 'Acme Ltd' })).status, 200, 'sent again before approval');
+  assert.equal((await send(win.id, { name: 'Acme Ltd', about: 'Kod yazan bir ekip', city: 'İzmir, Türkiye' })).status, 200, 'sent again before approval');
   const s = await panel('state', { cookie }).then((r) => r.json());
   const order = s.orders.find((o) => o.id === first.order);
-  assert.deepEqual([order.state, order.name, order.amount, order.payment, order.width], ['paid', 'Acme Ltd', win.amount * 100, win.payment, 24]);
+  assert.deepEqual([order.state, order.name, order.about, order.city, order.amount, order.payment, order.width],
+    ['paid', 'Acme Ltd', 'Kod yazan bir ekip', 'İzmir, Türkiye', win.amount * 100, win.payment, 24]);
   assert.equal(s.auction.auction.order, first.order);
   assert.equal((await get(`/api/auction/bid/${win.id}`)).content, true);
   assert.equal(shop.seatsPayload().auction.state, 'won', 'the hall says sold, awaiting approval');

@@ -183,7 +183,7 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     mkdirSync(join(seatsDir, "pending"), { recursive: true });
     writeFileSync(pending(id), image);
     let held;
-    try { held = commit(() => hold(book, { id, block: data.block, name: data.name, link: data.link, ipKey: key, now }, occupied())); }
+    try { held = commit(() => hold(book, { id, block: data.block, name: data.name, link: data.link, about: data.about, city: data.city, ipKey: key, now }, occupied())); }
     catch (error) { forget(pending(id)); throw error; }
     if (held.error) { forget(pending(id)); return send(res, { block: 400, holder: 400, taken: 409, busy: 429, full: 429 }[held.error], { error: held.error }); }
     let session;
@@ -258,14 +258,14 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     const done = await serial(() => {
       const win = winner(ab), known = winnerOrder();
       if (!win || data.id !== win.id || (known && known.state !== "paid")) return { error: "state" };
-      if (!cleanHolder({ name: data.name, link: data.link })) return { error: "holder" };
+      if (!cleanHolder({ name: data.name, link: data.link, about: data.about, city: data.city })) return { error: "holder" };
       // The logo is written next to its place first: if that fails nothing changed; then the order, then the logo
       // takes its place. A logo that could not take it is not counted (`hasLogo`) and is sent again.
       const id = known?.id ?? winnerOrderId(), next = `${pending(id)}.new`;
       mkdirSync(join(seatsDir, "pending"), { recursive: true });
       writeFileSync(next, image);
       let made;
-      try { made = commit(() => won(book, { id, name: data.name, link: data.link, amount: win.amount * 100, payment: win.payment, email: win.email, now })); }
+      try { made = commit(() => won(book, { id, name: data.name, link: data.link, about: data.about, city: data.city, amount: win.amount * 100, payment: win.payment, email: win.email, now })); }
       catch (error) { forget(next); throw error; }
       if (made.error) { forget(next); return made; }
       const placed = made.order.id;   // the order the payment has, whatever id it was asked under

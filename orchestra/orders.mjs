@@ -38,10 +38,10 @@ function used(book, hand, except) {
   return seats;
 }
 
-export function hold(book, { id, block, name, link, ipKey, now }, hand = []) {
+export function hold(book, { id, block, name, link, about, city, ipKey, now }, hand = []) {
   const b = blockOf(block || {});
   if (!validBlock(b) || isAuctionBlock(b)) return { error: "block" };   // the auction block is sold only by auction
-  const holder = cleanHolder({ name, link });
+  const holder = cleanHolder({ name, link, about, city });
   if (!holder) return { error: "holder" };
   const held = book.orders.filter((o) => o.state === "held");
   if (held.filter((o) => o.ipKey === ipKey).length >= HELD_PER_IP) return { error: "busy" };
@@ -61,14 +61,15 @@ export function setSession(book, id, session) {
 }
 
 // The auction's winner (auction.mjs) has paid already: the block waits for approval like any paid order. Sent
-// again before approval, the name and link are replaced; the amount stays what was captured. One payment, one
+// again before approval, what it shows is replaced; the amount stays what was captured. One payment, one
 // order: an order that payment already has is the one updated, whatever id it was asked under.
-export function won(book, { id, name, link, amount, payment, email, now }) {
-  const holder = cleanHolder({ name, link });
+export function won(book, { id, name, link, about, city, amount, payment, email, now }) {
+  const holder = cleanHolder({ name, link, about, city });
   if (!holder) return { error: "holder" };
   const known = find(book, id) || book.orders.find((o) => o.auction && payment && o.payment === payment) || null;
   if (known) {
     if (known.state !== "paid") return { error: "state" };
+    delete known.about; delete known.city;   // a line left empty this time is gone, not kept from before
     Object.assign(known, holder);
     note(book, known, "content", null, now);
     return { order: known };
@@ -162,7 +163,7 @@ export function remove(book, id, by, reason, refunded, now) {
 }
 
 export const liveSeats = (book) => book.orders.filter((o) => o.state === "live")
-  .map((o) => ({ id: o.id, ...blockOf(o), name: o.name, link: o.link, image: `/seat-images/${o.id}.webp` }));
+  .map((o) => ({ id: o.id, ...blockOf(o), ...cleanHolder(o), image: `/seat-images/${o.id}.webp` }));
 export const reserved = (book) => book.orders.filter((o) => ["held", "paid", "problem"].includes(o.state)).map(blockOf);
 // What the buyer is told: a problem is still "waiting" to them until it is refunded.
 export const buyerState = (o) => (o.state === "problem" ? "paid" : o.state);

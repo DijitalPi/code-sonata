@@ -183,6 +183,19 @@ test('the auction winner becomes a paid order waiting for approval; sent again, 
   assert.equal(createBook(JSON.parse(JSON.stringify(book))).orders.length, 1, 'the 24-wide block survives a reload');
 });
 
+test('a hold and a won auction keep the introduction and city; sent again without them, the old ones go', () => {
+  const book = createBook();
+  const { order } = ask(book, { about: 'Kod yazan bir ekip', city: 'İzmir, Türkiye' });
+  assert.deepEqual([order.about, order.city], ['Kod yazan bir ekip', 'İzmir, Türkiye']);
+  pay(book, order); approve(book, order.id, 'selim', T0);
+  assert.deepEqual(liveSeats(book).map((s) => [s.about, s.city]), [['Kod yazan bir ekip', 'İzmir, Türkiye']]);
+  assert.deepEqual(ask(book, { block: block(30), about: 'x'.repeat(121) }), { error: 'holder' });
+  const id = nextId(), base = { id, name: 'Acme', link: 'https://acme.example', amount: 1, payment: 'pi_c', email: null, now: T0 };
+  assert.equal(won(book, { ...base, about: 'Eski', city: 'Ankara' }).order.about, 'Eski');
+  const again = won(book, base).order;
+  assert.ok(!('about' in again) && !('city' in again), 'a field left empty the second time is gone');
+});
+
 test('one order per auction payment: a logo sent under another id updates the order that payment already has', () => {
   const book = createBook(), first = nextId();
   won(book, { id: first, name: 'Acme', link: 'https://acme.example', amount: 310_000, payment: 'pi_w', email: null, now: T0 });
