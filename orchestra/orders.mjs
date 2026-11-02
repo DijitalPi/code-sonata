@@ -6,7 +6,7 @@
 //             └──▶ refunded ◀── problem         a payment that does not match its order, or comes after its seats
 //                                               went to someone else, is a problem: refunded from the panel
 import { validBlock, blockSeats, blockPrice, cleanHolder, taken, canPlace, AUCTION, isAuctionBlock } from "./web/seats.mjs";
-import { cleanCoupons, check, discount } from "./coupons.mjs";
+import { cleanCoupons, check, discount, usedOf } from "./coupons.mjs";
 
 export const HOLD_MS = 31 * 60_000;       // Stripe keeps a Checkout session at least 30 minutes
 export const GRACE_MS = 10 * 60_000;      // a payment made in the last second may be reported a little later
@@ -121,12 +121,19 @@ export function free(book, id, now) {
   return order;
 }
 
+// A hold that ran out gave its coupon use back; a late payment finds whether another buyer has it now.
+const spent = (book, order) => {
+  const coupon = order.coupon && book.coupons.find((c) => c.code === order.coupon);
+  return Boolean(coupon) && usedOf(book, coupon.code) >= coupon.max;
+};
+
 export function paid(book, { id, amount, currency, email, payment, session, now }, hand = []) {
   const order = find(book, id);
   if (!order || !["held", "expired"].includes(order.state)) return { order, changed: false };
   Object.assign(order, { email: typeof email === "string" ? email.slice(0, 200) : null, payment: payment ?? null,
     session: session ?? order.session, paidAt: now });
-  const problem = amount !== order.amount || currency !== order.currency ? "amount" : !canPlace(blockOf(order), used(book, hand, order)) ? "taken" : null;
+  const problem = amount !== order.amount || currency !== order.currency ? "amount" : !canPlace(blockOf(order), used(book, hand, order)) ? "taken"
+    : order.state === "expired" && spent(book, order) ? "coupon" : null;
   release(order, problem ? "problem" : "paid");
   order.reason = problem;
   note(book, order, order.state, null, now);

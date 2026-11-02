@@ -177,7 +177,7 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
   function told(order, site) {
     const what = `${order.name} · ${tierOf(order.ring).label} · ${order.width * order.depth} koltuk · ${order.amount / 100} $${order.coupon ? ` · kupon ${order.coupon}` : ""}`;
     const where = `${env.PUBLIC_URL ? new URL(env.PUBLIC_URL).origin : site}/yonetim/#bekleyen`;
-    if (order.state === "problem") return `Sorunlu koltuk ödemesi: ${what} (${order.reason === "amount" ? "tutar tutmuyor" : "yer artık dolu"}). İade için: ${where}`;
+    if (order.state === "problem") return `Sorunlu koltuk ödemesi: ${what} (${{ amount: "tutar tutmuyor", coupon: "kuponun hakkı dolmuştu" }[order.reason] || "yer artık dolu"}). İade için: ${where}`;
     return `${order.amount === 0 ? "Kuponla bedava koltuk" : "Yeni koltuk satışı"}: ${what}. Onay bekliyor: ${where}`;
   }
 
@@ -188,6 +188,7 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
     if (guessing(key, now)) return send(res, 429, { error: "tries" });
     const data = parse(await body(req, 1024));
     if (!data) return send(res, 400, { error: "body" });
+    if (guessing(key, now)) return send(res, 429, { error: "tries" });   // again: requests sent side by side waited for their bodies together
     const found = check(book, data.code, null, now);
     if (found.error === "code") missed(key, now);
     if (found.error) return send(res, found.error === "used" ? 409 : 400, { error: found.error });

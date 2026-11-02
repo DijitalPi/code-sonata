@@ -204,7 +204,7 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
     if (placing) stopPlacing();
     winner = id; chosen = { ...AUCTION.block };
     amfi.setGhost({ block: chosen, ok: true });
-    $('seat-form').hidden = false; $('seat-again').hidden = true;
+    $('seat-form').hidden = false; $('seat-again').hidden = true; $('seat-coupon').hidden = true;
     $('seat-status').textContent = 'Kazandığın blok: sahnenin önü, 96 koltuk.';
     $('seat-pay').textContent = 'Logoyu gönder';
     preview();
@@ -212,7 +212,7 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
   function leaveWinner() {
     if (!winner) return;
     winner = null;
-    $('seat-pay').textContent = payText(); $('seat-again').hidden = false;
+    $('seat-pay').textContent = payText(); $('seat-again').hidden = false; $('seat-coupon').hidden = false;
   }
   $('seat-place').onclick = startPlacing;
   $('seat-again').onclick = startPlacing;
@@ -250,15 +250,21 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
   const couponProblem = (status, error) => (status === 429 ? 'Çok fazla deneme oldu. Birkaç dakika sonra yeniden dene.'
     : error === 'used' ? 'Bu kodun hakları bitti.' : error === 'code' ? 'Bu kod geçerli değil ya da süresi doldu.'
     : 'Kod şu an kontrol edilemedi. Birazdan yeniden dene.');
+  // The coupon checked before stays until the server answers, so the price shown is the one sent; only the last press counts.
+  let asked = 0;
   $('coupon-apply').onclick = async () => {
-    const code = $('coupon-code').value.trim().toUpperCase();
-    coupon = null;
+    if (winner) return;
+    const code = $('coupon-code').value.trim().toUpperCase(), mine = ++asked;
+    let next = null, said = '';
     if (code) {
       const res = await fetch('/api/seats/coupon', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code }) }).catch(() => null);
       const data = (await res?.json().catch(() => null)) || {};
-      if (res?.ok) coupon = { code: data.code, tier: data.tier };
-      else $('coupon-status').textContent = couponProblem(res?.status, data.error);
-    } else $('coupon-status').textContent = '';
+      if (res?.ok) next = { code: data.code, tier: data.tier };
+      else said = couponProblem(res?.status, data.error);
+    }
+    if (mine !== asked) return;
+    coupon = next;
+    if (!next) $('coupon-status').textContent = said;
     price();
     if (chosen) $('seat-status').textContent = `Seçtiğin yer: ${tierOf(chosen.ring).label}, ${chosen.width * chosen.depth} koltuk, ${money(cost(chosen))}.`;
   };

@@ -248,3 +248,18 @@ test('rejecting a free order refunds nothing', () => {
   assert.equal(reject(book, one.id, 'selim', 'logo', T0).refunded, false);
   assert.equal(one.state, 'refunded');
 });
+
+test("a late payment whose coupon use went to someone else is a problem; with uses left it is paid", () => {
+  const book = createBook();
+  addCoupon(book, { code: 'TEK', tier: 'any', max: 1, days: 7, now: T0 });
+  addCoupon(book, { code: 'BOL', tier: 'any', max: 5, days: 7, now: T0 });
+  const late = ask(book, { block: block(40, 2, 1), coupon: 'TEK', ipKey: 'ip-b' }).order;
+  expire(book, late.id, T0 + HOLD_MS);
+  assert.ok(ask(book, { block: block(50, 1, 1), coupon: 'TEK', ipKey: 'ip-c' }).order, 'the use came back and went to another buyer');
+  pay(book, late);
+  assert.deepEqual([late.state, late.reason], ['problem', 'coupon']);
+  const slow = ask(book, { block: block(60, 2, 1), coupon: 'BOL', ipKey: 'ip-d' }).order;
+  expire(book, slow.id, T0 + HOLD_MS);
+  pay(book, slow);
+  assert.equal(slow.state, 'paid');
+});

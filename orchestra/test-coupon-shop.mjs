@@ -148,3 +148,30 @@ test('rejecting or removing a free order asks Stripe for no refund; its use come
   assert.deepEqual([gone.status, (await gone.json()).order.refunded], [200, false]);
   assert.equal(calls.length, before, 'Stripe is never asked');
 });
+
+test('a late payment for a code whose last use went to another buyer waits as a problem to refund', async () => {
+  await open('GEC', 'any', 1);
+  const block = seat(2, 70, 2, 1), amount = blockPrice(block) * 100 - TIERS[2].price * 100;
+  const { id } = await (await buy(block, 'GEC')).json();
+  clock += 2 * HOUR; shop.sweep(clock);
+  assert.equal((await buy(seat(2, 80), 'GEC')).status, 200, 'the use came back and went to another buyer');
+  assert.equal((await completed(id, amount)).status, 200);
+  const order = (await state()).orders.find((o) => o.id === id);
+  assert.deepEqual([order.state, order.reason], ['problem', 'coupon']);
+  assert.match(slack.at(-1), /^Sorunlu koltuk ödemesi: .* \(kuponun hakkı dolmuştu\)\. İade için: /);
+});
+
+test('wrong codes sent side by side still stop at ten: the limit is checked once the code is read', async () => {
+  const sent = Array.from({ length: 20 }, (_, i) => {
+    const raw = JSON.stringify({ code: `YAN-${i}` });
+    const req = http.request(`${base}/api/seats/coupon`, { method: 'POST',
+      headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(raw), 'x-ip': 'ip-side' } });
+    req.flushHeaders();
+    const status = new Promise((resolve, reject) => { req.on('response', (res) => { res.resume(); resolve(res.statusCode); }); req.on('error', reject); });
+    return { req, raw, status };
+  });
+  await new Promise((resolve) => setTimeout(resolve, 100));   // every request is waiting for its body
+  for (const { req, raw } of sent) req.end(raw);
+  const statuses = await Promise.all(sent.map((s) => s.status));
+  assert.deepEqual([statuses.filter((s) => s === 400).length, statuses.filter((s) => s === 429).length], [10, 10]);
+});

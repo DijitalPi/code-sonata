@@ -6,7 +6,7 @@ import { install, add } from './fake-dom.mjs';
 const doc = install();
 const panel = add(doc.body, 'aside', { id: 'panel' });
 for (const id of ['seats-title', 'seat-tiers', 'seat-price', 'seat-count', 'seat-place', 'seat-status', 'seat-form',
-  'seat-pay', 'seat-again', 'seat-pay-status', 'holders', 'holders-lead', 'coupon-open', 'coupon-box', 'coupon-apply', 'coupon-status', 'seat-note']) add(panel, 'div', { id });
+  'seat-pay', 'seat-again', 'seat-pay-status', 'holders', 'holders-lead', 'coupon-open', 'coupon-box', 'coupon-apply', 'coupon-status', 'seat-note', 'seat-coupon']) add(panel, 'div', { id });
 for (const id of ['seat-image', 'seat-name', 'seat-about', 'seat-city', 'seat-link', 'seat-terms', 'coupon-code']) add(panel, 'input', { id });
 Object.assign(add(panel, 'canvas', { id: 'seat-preview' }), { width: 480, height: 240 });
 add(panel, 'input', { id: 'seat-width' }).value = '3';
@@ -20,7 +20,7 @@ const calls = [], logos = [], went = [];
 let answer = () => ({ status: 200, body: {} });
 globalThis.fetch = async (url, init = {}) => {
   calls.push({ url, init });
-  const { status, body } = answer(url, init);
+  const { status, body } = await answer(url, init);   // an answer may come later
   return new Response(JSON.stringify(body), { status });
 };
 const { setupBuying, followOrder, backFromStripe } = await import('./web/buy.js');
@@ -348,4 +348,44 @@ test('back from a free seat the buyer reads that it waits, or was not approved',
   answer = () => ({ status: 200, body: { state: 'refunded' } });
   await followOrder('o-8', { wait: 0 });
   assert.equal($('seat-status').textContent, 'Bu sipariş iade edildi.');
+});
+
+test('pressing Apply again keeps the checked coupon until the answer comes, and only the last press counts', async () => {
+  shop(true);
+  $('seat-width').value = '1'; $('seat-depth').value = '1';
+  await fillForm({ terms: true });   // one front seat
+  let late; const older = new Promise((resolve) => { late = resolve; });
+  answer = () => older;
+  $('coupon-code').value = 'her';
+  const first = $('coupon-apply').onclick();
+  $('coupon-code').value = '';
+  await $('coupon-apply').onclick();   // an empty box takes the coupon off at once
+  late({ status: 200, body: { code: 'HER', tier: 'any' } });
+  await first;
+  assert.equal($('seat-price').textContent, '25 $', 'the older answer does not bring the coupon back');
+  answer = () => ({ status: 200, body: { code: 'HER', tier: 'any' } });
+  $('coupon-code').value = 'her'; await $('coupon-apply').onclick();
+  assert.equal($('seat-price').textContent, '0 $');
+  let release; const slow = new Promise((resolve) => { release = resolve; });
+  answer = (url) => (url === '/api/seats/coupon' ? slow : url === '/api/seats/checkout' ? { status: 200, body: { id: 'o-3', free: true } } : { status: 200, body: { state: 'paid', free: true } });
+  const again = $('coupon-apply').onclick();
+  assert.equal($('seat-price').textContent, '0 $');
+  calls.length = 0;
+  await $('seat-pay').onclick();
+  assert.equal(JSON.parse(calls.find((c) => c.url === '/api/seats/checkout').init.body).coupon, 'HER', 'what is shown is what is sent');
+  release({ status: 400, body: { error: 'code' } });
+  await again;
+});
+
+test('the auction winner sees no coupon: the box hides and a code does nothing until a normal place is chosen', async () => {
+  shop(true);
+  buying.startWinner(`b-${'7'.repeat(24)}`);
+  assert.equal($('seat-coupon').hidden, true);
+  const status = $('seat-status').textContent;
+  calls.length = 0;
+  answer = () => ({ status: 200, body: { code: 'ONSIRA', tier: 'front' } });
+  $('coupon-code').value = 'onsira'; await $('coupon-apply').onclick();
+  assert.deepEqual([calls.length, $('seat-status').textContent], [0, status]);
+  view('seats'); place(); key('Enter');
+  assert.equal($('seat-coupon').hidden, false);
 });

@@ -17,7 +17,7 @@ const when = (ms) => (ms ? new Date(ms).toLocaleString('tr-TR', { day: 'numeric'
 const STATE = { held: 'Tutuluyor', paid: 'Onay bekliyor', problem: 'Sorunlu', live: 'Yayında', expired: 'Süresi doldu', refunded: 'İade edildi', removed: 'Kaldırıldı' };
 const DONE = { held: 'yer tuttu', 'checkout-failed': 'ödeme sayfası açılamadı', paid: 'ödendi', problem: 'sorunlu ödeme', expired: 'süresi doldu',
   live: 'onayladı', refunded: 'iade etti', removed: 'kaldırdı', content: 'logosunu güncelledi', free: 'kuponla aldı' };
-const PROBLEM = { amount: 'Tutar tutmuyor', taken: 'Yer artık dolu' };
+const PROBLEM = { amount: 'Tutar tutmuyor', taken: 'Yer artık dolu', coupon: 'Kuponun hakkı dolmuştu' };
 const FILTERS = [['Tümü', () => true], ['Yayında', (o) => o.state === 'live'], ['Onay bekleyen', (o) => ['paid', 'problem'].includes(o.state)],
   ['Tutuluyor', (o) => o.state === 'held'], ['İade edildi', (o) => o.state === 'refunded' || o.refunded], ['Diğer', (o) => ['expired', 'removed'].includes(o.state)]];
 const VIEWS = { '#genel': 'Genel bakış', '#bekleyen': 'Onay bekleyenler', '#koltuklar': 'Koltuklar', '#artirma': 'Açık artırma', '#kuponlar': 'Kuponlar' };
