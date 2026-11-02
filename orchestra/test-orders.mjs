@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createBook, hold, setSession, drop, paid, expire, sweep, approve, reject, remove, liveSeats, reserved, summary, buyerState,
-  won, HOLD_MS, GRACE_MS } from './orders.mjs';
+  won, free, HOLD_MS, GRACE_MS } from './orders.mjs';
+import { addCoupon } from './coupons.mjs';
 import { TIERS, blockPrice, AUCTION } from './web/seats.mjs';
 
 const T0 = Date.UTC(2026, 9, 31, 10, 0);
@@ -211,4 +212,39 @@ test('one order per auction payment: a logo sent under another id updates the or
   won(book, { id: first, name: 'Acme', link: 'https://acme.example', amount: 310_000, payment: 'pi_w', email: null, now: T0 });
   const { order } = won(book, { id: nextId(), name: 'Acme Ltd', link: 'https://acme.example', amount: 310_000, payment: 'pi_w', email: null, now: T0 });
   assert.deepEqual([book.orders.length, order.id, order.name], [1, first, 'Acme Ltd']);
+});
+
+test("a coupon takes one seat of the block's tier off the price; a single seat costs nothing and waits for approval without Stripe", () => {
+  const book = createBook();
+  addCoupon(book, { code: 'ONSIRA', tier: 'front', max: 5, days: 7, now: T0 });
+  const big = ask(book, { coupon: 'onsira' }).order;   // block(0): 3 × 2 front seats
+  assert.equal(big.amount, blockPrice(block(0)) * 100 - TIERS[0].price * 100);
+  assert.deepEqual([big.coupon, big.discount, big.state], ['ONSIRA', TIERS[0].price * 100, 'held']);
+  const one = ask(book, { block: block(10, 1, 1), coupon: 'ONSIRA', ipKey: 'ip-b' }).order;
+  assert.equal(one.amount, 0);
+  assert.equal(free(book, big.id, T0), null, 'an order with something to pay is not free');
+  assert.equal(free(book, one.id, T0 + 1000).state, 'paid');
+  assert.deepEqual([one.paidAt, one.payment, one.ipKey], [T0 + 1000, null, null]);
+  assert.deepEqual(book.events.at(-1), { at: T0 + 1000, order: one.id, what: 'free', by: null });
+  assert.equal(free(book, one.id, T0), null, 'only once');
+});
+
+test('a hold with a code that does not work is refused and holds nothing', () => {
+  const book = createBook();
+  addCoupon(book, { code: 'ORTA', tier: 'middle', max: 1, days: 7, now: T0 });
+  assert.equal(ask(book, { coupon: 'ORTA' }).error, 'tier');   // block(0) is in the front tier
+  assert.equal(ask(book, { coupon: 'YOK' }).error, 'code');
+  const middle = { ring: TIERS[1].rings[0], col: 0, width: 1, depth: 1 };
+  assert.equal(ask(book, { block: middle, coupon: 'ORTA' }).order.amount, 0);
+  assert.equal(ask(book, { block: { ...middle, col: 5 }, coupon: 'ORTA', ipKey: 'ip-b' }).error, 'used');
+  assert.equal(book.orders.length, 1);
+});
+
+test('rejecting a free order refunds nothing', () => {
+  const book = createBook();
+  addCoupon(book, { code: 'HER', tier: 'any', max: 5, days: 7, now: T0 });
+  const one = ask(book, { block: block(20, 1, 1), coupon: 'HER' }).order;
+  free(book, one.id, T0);
+  assert.equal(reject(book, one.id, 'selim', 'logo', T0).refunded, false);
+  assert.equal(one.state, 'refunded');
 });

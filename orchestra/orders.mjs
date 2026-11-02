@@ -2,10 +2,11 @@
 // the hall. Pure: the server reads and writes the file, talks to Stripe and moves the images.
 //
 //   held ─▶ paid ─▶ live ─▶ removed            held ─▶ expired (runs out, or Stripe could not be reached)
+//   (a coupon's free seat: held ─▶ paid at once, without Stripe)
 //             └──▶ refunded ◀── problem         a payment that does not match its order, or comes after its seats
 //                                               went to someone else, is a problem: refunded from the panel
 import { validBlock, blockSeats, blockPrice, cleanHolder, taken, canPlace, AUCTION, isAuctionBlock } from "./web/seats.mjs";
-import { cleanCoupons } from "./coupons.mjs";
+import { cleanCoupons, check, discount } from "./coupons.mjs";
 
 export const HOLD_MS = 31 * 60_000;       // Stripe keeps a Checkout session at least 30 minutes
 export const GRACE_MS = 10 * 60_000;      // a payment made in the last second may be reported a little later
@@ -51,18 +52,21 @@ function used(book, hand, except) {
   return seats;
 }
 
-export function hold(book, { id, block, name, link, about, city, ipKey, now }, hand = []) {
+export function hold(book, { id, block, name, link, about, city, coupon, ipKey, now }, hand = []) {
   const b = blockOf(block || {});
   if (!validBlock(b) || isAuctionBlock(b)) return { error: "block" };   // the auction block is sold only by auction
   const holder = cleanHolder({ name, link, about, city });
   if (!holder) return { error: "holder" };
+  const use = coupon ? check(book, coupon, b, now) : null;   // gone, used up or another tier: nothing is held
+  if (use?.error) return use;
   const held = book.orders.filter((o) => o.state === "held");
   if (held.filter((o) => o.ipKey === ipKey).length >= HELD_PER_IP) return { error: "busy" };
   if (held.length >= HELD_TOTAL) return { error: "full" };
   if (!canPlace(b, used(book, hand))) return { error: "taken" };
-  const order = { id, state: "held", ...b, ...holder, amount: blockPrice(b) * 100, currency: "usd", email: null, session: null,
+  const off = use ? discount(b) : 0;
+  const order = { id, state: "held", ...b, ...holder, amount: blockPrice(b) * 100 - off, currency: "usd", email: null, session: null,
     payment: null, ipKey, created: now, heldUntil: now + HOLD_MS, paidAt: null, decidedAt: null, decidedBy: null, reason: null, refunded: false,
-    refunding: false, refund: null };
+    refunding: false, refund: null, ...(use && { coupon: use.coupon.code, discount: off }) };
   book.orders.push(order);
   note(book, order, "held", null, now);
   return { order };
@@ -104,6 +108,16 @@ export function drop(book, id, now) {
   if (order?.state !== "held") return null;
   release(order, "expired");
   note(book, order, "checkout-failed", null, now);
+  return order;
+}
+
+// A coupon made the order free: nothing to pay, it waits for approval at once, without Stripe.
+export function free(book, id, now) {
+  const order = find(book, id);
+  if (order?.state !== "held" || order.amount !== 0) return null;
+  order.paidAt = now;
+  release(order, "paid");
+  note(book, order, "free", null, now);
   return order;
 }
 
@@ -166,7 +180,7 @@ export function approve(book, id, by, now, hand = []) {
 }
 export function reject(book, id, by, reason, now) {
   const order = decide(book, id, ["paid", "problem"], "refunded", by, reason, now);
-  if (!order.error) order.refunded = true;
+  if (!order.error) order.refunded = order.amount > 0;   // a coupon's free seat had nothing to give back
   return order;
 }
 export function remove(book, id, by, reason, refunded, now) {
