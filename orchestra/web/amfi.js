@@ -16,6 +16,7 @@ export function createAmfi({ t = (text) => text } = {}) {
   let ghost = null;                  // { block, ok } while placing
   let auction = null;                // the front-block auction (auction.js) while it holds the block
   let reserved = [], reservedSeats = new Set();   // blocks someone is paying for or waiting to have approved
+  let hover = null;                  // id of the holder whose card is open
 
   function setHolders(list, options = {}) {
     holders = list; demo = Boolean(options.demo); bySeat = new Map(); version++;
@@ -133,6 +134,14 @@ export function createAmfi({ t = (text) => text } = {}) {
         g.fillText(t(auction.state === 'open' ? 'Açık artırma' : 'Satıldı, onay bekliyor'), mid.x, mid.y);
       }
     }
+    // The block whose card is open stands out a little: a glow and a gold edge on its own seats, not over a neighbour.
+    const lifted = hover && !ghost ? holders.find((h) => h.id === hover) : null;
+    if (lifted) {
+      sector(g, G, blockArc(lifted));
+      g.save(); g.shadowColor = 'rgba(243, 208, 140, .85)'; g.shadowBlur = 16;
+      g.fillStyle = 'rgba(243, 208, 140, .14)'; g.fill();
+      g.strokeStyle = '#f3d08c'; g.lineWidth = 2; g.stroke(); g.restore();
+    }
     if (ghost) {
       sector(g, G, blockArc(ghost.block));
       g.fillStyle = ghost.ok ? 'rgba(230, 180, 90, .45)' : 'rgba(217, 83, 79, .4)'; g.fill();
@@ -153,7 +162,8 @@ export function createAmfi({ t = (text) => text } = {}) {
     reservedSeats = new Set(reserved.flatMap(blockSeats)); version++;
   }
 
-  return { setHolders, setReserved, note, draw, hit, setGhost: (g) => { ghost = g; }, setAuction: (a) => { auction = a; }, holders: () => holders, reserved: () => reserved, isDemo: () => demo };
+  return { setHolders, setReserved, note, draw, hit, setGhost: (g) => { ghost = g; }, setAuction: (a) => { auction = a; },
+    setHover: (h) => { hover = h?.id ?? null; }, picture: (h) => images.get(h?.id) || null, holders: () => holders, reserved: () => reserved, isDemo: () => demo };
 }
 
 // A close-up of one block among the hall's others: what a buyer sees before paying, and the panel before approving.
@@ -168,7 +178,11 @@ export function closeUp(canvas, hall, holders, block) {
   hall.draw(g, G, { width: W, height: H, dpr: 1, heard: 0, dt: 0, still: true });
 }
 
-// The demo concert's full house: generated marks, never real names, clearly called examples.
+// The demo concert's full house: generated marks, never real names, clearly called examples. Their lines take turns
+// without drawing on the random numbers, so the house looks the same as before they had any.
+const DEMO_ABOUT = ['Demo örneği: firmanın tek cümlelik tanıtımı burada durur.', 'Demo örneği: kodlama ajanlarıyla çalışan küçük bir ekip.',
+  'Demo örneği: açık kaynak bir proje.'];
+const DEMO_CITY = ['İstanbul, Türkiye', 'Berlin, Almanya', 'Stockholm, İsveç', 'Toronto, Kanada', 'Tokyo, Japonya', 'São Paulo, Brezilya'];
 export function demoHolders(count = 140) {
   let seed = 20261031; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const colors = ['#d9534f', '#4a90d9', '#5cb85c', '#9b59b6', '#f39c12', '#1abc9c', '#e84393', '#2d3436', '#0984e3', '#e6b45a'];
@@ -183,7 +197,7 @@ export function demoHolders(count = 140) {
     if (ring + depth - 1 > tier.rings[1] || ids.some((id) => used.has(id))) continue;
     ids.forEach((id) => used.add(id));
     const n = out.length + 1, mark = letters[Math.floor(rnd() * letters.length)] + letters[Math.floor(rnd() * letters.length)];
-    out.push({ id: `demo-${n}`, ...block, name: `Örnek koltuk ${n}`, link: null, image: null, drawable: demoMark(mark, colors[Math.floor(rnd() * colors.length)], width, depth, rnd) });
+    out.push({ id: `demo-${n}`, ...block, name: `Örnek koltuk ${n}`, about: DEMO_ABOUT[n % DEMO_ABOUT.length], city: DEMO_CITY[n % DEMO_CITY.length], link: null, image: null, drawable: demoMark(mark, colors[Math.floor(rnd() * colors.length)], width, depth, rnd) });
   }
   return out;
 }

@@ -129,6 +129,27 @@ test('the hall keeps the blocks someone is paying for, well-formed ones only', a
   assert.deepEqual(hall.reserved(), [b]);
 });
 
+test('demo holders carry an example introduction and city; the hall lights the block whose card is open', async () => {
+  const { install } = await import('./fake-dom.mjs'); install();
+  const { createAmfi, demoHolders } = await import('./web/amfi.js');
+  const demo = demoHolders();
+  assert.ok(demo.every((h) => h.about && h.city));
+  assert.deepEqual(demo.slice(0, 3).map(({ ring, col, width, depth }) => [ring, col, width, depth]), [[14, 201, 3, 4], [19, 8, 4, 2], [5, 119, 1, 1]],
+    'the demo hall looks as it did');
+  const hall = createAmfi();
+  hall.setHolders(demo, { demo: true });
+  assert.equal(hall.picture(demo[0]), demo[0].drawable);
+  assert.equal(hall.picture({ id: 'none' }), null);
+  // A context that remembers the colour of every edge drawn.
+  const edges = [], g = new Proxy({}, { get: (t, k) => (k in t ? t[k] : k === 'stroke' ? () => edges.push(t.strokeStyle) : () => {}),
+    set: (t, k, v) => { t[k] = v; return true; } });
+  const G = { cx: 400, cy: 400, R: 200 }, frame = { width: 800, height: 450, dpr: 1, heard: 0, dt: 0, still: true };
+  hall.setHover(demo[0]); hall.draw(g, G, frame);
+  assert.ok(edges.includes('#f3d08c'), 'a gold edge round the block');
+  edges.length = 0; hall.setHover(null); hall.draw(g, G, frame);
+  assert.ok(!edges.includes('#f3d08c'), 'gone with the card');
+});
+
 test('the auction block alone may be larger than the size limit, and sits in front of the stage', () => {
   const b = AUCTION.block;
   assert.deepEqual(b, { ring: 0, col: 88, width: 24, depth: 4 });
