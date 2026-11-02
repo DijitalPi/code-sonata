@@ -43,6 +43,7 @@ class Element_ extends Node_ {
   nodeType = 1;
   childNodes = [];
   attributes = new Map();
+  style = {};
   constructor(tag) {
     super(); this.tagName = tag.toUpperCase();
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(this.tagName)) Object.assign(this, { value: '', checked: false, disabled: false });

@@ -5,7 +5,8 @@ import { createAmfi, demoHolders } from './amfi.js';
 import { setupBuying, listHolders } from './buy.js';
 import { setupAuction, backFromBid, left } from './auction.js';
 import { t, getLang, num } from './i18n.js';
-import { PLAN, tierOf, AUCTION } from './seats.mjs';
+import { PLAN, AUCTION } from './seats.mjs';
+import { createCard } from './card.js';
 import { SECTIONS, SOUNDFONT, loadInstrument, voiceOfSection, hall, masterChain, drumKit } from './instruments.js';
 // Agent Orchestra listener: draws the hall and plays the conductor's notes in sync.
 // One warm family under stage light: distinguishable sections, no rainbow.
@@ -833,52 +834,8 @@ function placeHero(G) {
   if (hero && wide.matches) hero.style.top = `${Math.round(G.cy - G.R * .7)}px`;
 }
 
-// Pointing at a sold block shows who holds it; a tap does the same on a phone. The card holds the link.
-const card = document.createElement("div");
-card.className = "seat-card"; card.hidden = true; card.setAttribute("role", "status");
-document.querySelector(".stage").append(card);
-let cardFor = null, cardTimer = 0;
-// The holder's picture as the hall draws it, at card size: at most 252 × 96, its own shape kept.
-function cardLogo(holder) {
-  const pic = amfi.picture(holder), w0 = pic?.naturalWidth || pic?.width, h0 = pic?.naturalHeight || pic?.height;
-  if (!w0 || !h0) return null;
-  const scale = Math.min(252 / w0, 96 / h0), w = Math.round(w0 * scale), h = Math.round(h0 * scale), dpr = devicePixelRatio || 1;
-  const c = document.createElement("canvas");
-  c.className = "seat-logo"; c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
-  c.style.width = `${w}px`; c.style.height = `${h}px`; c.setAttribute("aria-hidden", "true");
-  const g = c.getContext("2d"); g.scale(dpr, dpr); g.drawImage(pic, 0, 0, w, h);
-  return c;
-}
-// The holder's card: big logo, name, their line and city if they wrote one, link, seats. The block lights up behind it.
-function showCard(holder, x, y) {
-  clearTimeout(cardTimer);
-  amfi.setHover(holder);
-  if (holder !== cardFor) {
-    cardFor = holder;
-    const size = `${holder.width * holder.depth} koltuk · ${tierOf(holder.ring).label}`;
-    // Demo text is ours and is translated; a buyer's is shown as they wrote it.
-    const own = (tag, text, className) => { const e = document.createElement(tag); e.textContent = text; e.translate = amfi.isDemo(); if (className) e.className = className; return e; };
-    card.replaceChildren();
-    const logo = cardLogo(holder); if (logo) card.append(logo);
-    card.append(own("b", holder.name));
-    if (holder.about) card.append(own("p", holder.about));
-    if (holder.city) card.append(own("span", holder.city, "city"));
-    if (holder.link) {
-      const a = document.createElement("a"); a.href = holder.link; a.target = "_blank"; a.rel = "sponsored noopener noreferrer"; a.translate = false;
-      a.textContent = holder.link.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "").slice(0, 48) + " ↗"; card.append(a);
-    }
-    const meta = document.createElement("small"); meta.textContent = amfi.isDemo() ? `Demo örneği, gerçek alıcı değil · ${size}` : size; card.append(meta);
-  }
-  placeCard(x, y);
-}
-function placeCard(x, y) {
-  card.hidden = false;
-  const box = card.getBoundingClientRect(), stage = card.parentElement.getBoundingClientRect();
-  card.style.left = `${Math.min(Math.max(8, x + 14), stage.width - box.width - 8)}px`;
-  // Above the pointer, or below it when there is no room above: never over the block it is about.
-  const above = y - box.height - 12;
-  card.style.top = `${above >= 8 ? above : Math.max(8, Math.min(y + 18, stage.height - box.height - 8))}px`;
-}
+// Pointing at a sold block shows who holds it; a tap does the same on a phone. The card (card.js) holds the link.
+const card = createCard({ stage: document.querySelector(".stage"), canvas, amfi });
 // The front block while its auction takes bids: what it is, the price now, the time left, and the way to bid.
 let auctionView = null;
 addEventListener("auction", (event) => { auctionView = event.detail; });
@@ -886,20 +843,13 @@ const { ring, col, width: aw, depth: ad } = AUCTION.block;
 const bidding = (place) => Boolean(place) && !place.holder && auctionView?.state === "open" && !amfi.isDemo()
   && place.k >= ring && place.k < ring + ad && place.c >= col && place.c < col + aw;
 function showAuctionCard(x, y) {
-  clearTimeout(cardTimer);
-  cardFor = "auction"; amfi.setHover(null);
   const v = auctionView, ends = left(v.endsAt - Date.now());
   const title = document.createElement("b"); title.textContent = "Sahnenin önü · 96 koltuk";
   const price = document.createElement("small");
   price.textContent = v.current ? `Şu an ${num(v.current)} $ · bitişe ${ends}` : `Açılış ${num(v.min)} $ · bitişe ${ends}`;
   const go = document.createElement("button"); go.className = "link"; go.textContent = "Teklif ver";
-  go.onclick = () => { hideCard(false); document.querySelector('[data-open="seats"]')?.click(); };
-  card.replaceChildren(title, price, go);
-  placeCard(x, y);
-}
-function hideCard(later) {
-  clearTimeout(cardTimer);
-  cardTimer = setTimeout(() => { card.hidden = true; cardFor = null; amfi.setHover(null); }, later ? 350 : 0);
+  go.onclick = () => { card.hide(false); document.querySelector('[data-open="seats"]')?.click(); };
+  card.other([title, price, go], x, y);
 }
 function pointAt(event) {
   const rect = canvas.getBoundingClientRect(), x = event.clientX - rect.left, y = event.clientY - rect.top;
@@ -909,12 +859,10 @@ canvas.addEventListener("pointermove", (event) => {
   if (event.pointerType !== "mouse" || document.body.classList.contains("is-placing")) return;
   const { x, y, place } = pointAt(event);
   canvas.style.cursor = place?.holder || bidding(place) ? "pointer" : "";
-  if (place?.holder) showCard(place.holder, x, y); else if (bidding(place)) showAuctionCard(x, y); else if (cardFor) hideCard(true);
+  if (place?.holder) card.holder(place.holder, x, y); else if (bidding(place)) showAuctionCard(x, y); else if (card.open()) card.hide(true);
 });
-canvas.addEventListener("pointerleave", () => { if (cardFor) hideCard(true); });
+canvas.addEventListener("pointerleave", () => { if (card.open()) card.hide(true); });
 canvas.addEventListener("click", (event) => {
   const { x, y, place } = pointAt(event);
-  if (place?.holder) showCard(place.holder, x, y); else if (bidding(place)) showAuctionCard(x, y); else hideCard(false);
+  if (place?.holder) card.holder(place.holder, x, y); else if (bidding(place)) showAuctionCard(x, y); else card.hide(false);
 });
-card.addEventListener("pointerenter", () => clearTimeout(cardTimer));
-card.addEventListener("pointerleave", () => hideCard(true));
