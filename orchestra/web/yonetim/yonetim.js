@@ -16,11 +16,11 @@ const money = (cents) => `${num(cents / 100)} $`;
 const when = (ms) => (ms ? new Date(ms).toLocaleString('tr-TR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
 const STATE = { held: 'Tutuluyor', paid: 'Onay bekliyor', problem: 'Sorunlu', live: 'Yayında', expired: 'Süresi doldu', refunded: 'İade edildi', removed: 'Kaldırıldı' };
 const DONE = { held: 'yer tuttu', 'checkout-failed': 'ödeme sayfası açılamadı', paid: 'ödendi', problem: 'sorunlu ödeme', expired: 'süresi doldu',
-  live: 'onayladı', refunded: 'iade etti', removed: 'kaldırdı', content: 'logosunu güncelledi' };
+  live: 'onayladı', refunded: 'iade etti', removed: 'kaldırdı', content: 'logosunu güncelledi', free: 'kuponla aldı' };
 const PROBLEM = { amount: 'Tutar tutmuyor', taken: 'Yer artık dolu' };
 const FILTERS = [['Tümü', () => true], ['Yayında', (o) => o.state === 'live'], ['Onay bekleyen', (o) => ['paid', 'problem'].includes(o.state)],
   ['Tutuluyor', (o) => o.state === 'held'], ['İade edildi', (o) => o.state === 'refunded' || o.refunded], ['Diğer', (o) => ['expired', 'removed'].includes(o.state)]];
-const VIEWS = { '#genel': 'Genel bakış', '#bekleyen': 'Onay bekleyenler', '#koltuklar': 'Koltuklar', '#artirma': 'Açık artırma' };
+const VIEWS = { '#genel': 'Genel bakış', '#bekleyen': 'Onay bekleyenler', '#koltuklar': 'Koltuklar', '#artirma': 'Açık artırma', '#kuponlar': 'Kuponlar' };
 
 let data = null, filter = 'Tümü';
 const hall = createAmfi();
@@ -102,7 +102,7 @@ function render() {
     return link;
   }));
   const closed = !data.checkout && el('p', { className: 'warn' }, 'Ödeme kapalı: Stripe ayarları eksik. Alıcılar şu an ödeme yapamaz.');
-  view.replaceChildren(...[closed, ...({ '#genel': overview, '#bekleyen': waiting, '#koltuklar': seats, '#artirma': auctionTab }[current])()].filter(Boolean));
+  view.replaceChildren(...[closed, ...({ '#genel': overview, '#bekleyen': waiting, '#koltuklar': seats, '#artirma': auctionTab, '#kuponlar': couponsTab }[current])()].filter(Boolean));
 }
 addEventListener('hashchange', render);
 
@@ -133,7 +133,8 @@ function waiting() {
     const reason = el('textarea', { rows: 2, maxLength: 300 });
     const ask = el('div', { className: 'ask', hidden: true },
       el('label', {}, 'Gerekçe (isteğe bağlı; alıcıya e-postayla sen iletirsin)', reason),
-      el('div', { className: 'row' }, el('button', { type: 'button', className: 'danger', onclick: () => act(o, 'reject', { reason: reason.value.trim() }, `İade edildi: ${o.name}.`) }, 'Reddet ve iade et'),
+      el('div', { className: 'row' }, el('button', { type: 'button', className: 'danger', onclick: () => act(o, 'reject', { reason: reason.value.trim() },
+        o.amount === 0 ? `Reddedildi: ${o.name}.` : `İade edildi: ${o.name}.`) }, o.amount === 0 ? 'Reddet (iade yok)' : 'Reddet ve iade et'),
         el('button', { type: 'button', className: 'quiet', onclick: () => { ask.hidden = true; } }, 'Vazgeç')));
     const link = el('a', { href: o.link, target: '_blank', rel: 'noopener noreferrer' }, `${o.link} ↗`);
     const stripe = o.payment && el('a', { href: `https://dashboard.stripe.com/payments/${encodeURIComponent(o.payment)}`, target: '_blank', rel: 'noopener noreferrer' }, 'Stripe\'ta gör ↗');
@@ -141,8 +142,9 @@ function waiting() {
       el('div', { className: 'facts' }, logo,
         el('h3', {}, o.name), o.about && el('p', { className: 'about' }, o.about), o.city && el('p', { className: 'dim' }, o.city), link,
         el('p', {}, `${size(o)} · ${money(o.amount)}`),
+        o.coupon && el('p', {}, `Kupon: ${o.coupon}${o.amount === 0 ? ' · bedava' : ''}`),
         o.email && el('p', {}, el('a', { href: `mailto:${o.email}` }, o.email)),
-        el('p', { className: 'dim' }, `Ödendi: ${when(o.paidAt)}`), stripe,
+        el('p', { className: 'dim' }, `${o.amount === 0 ? 'Kuponla alındı' : 'Ödendi'}: ${when(o.paidAt)}`), stripe,
         o.state === 'problem' && el('p', { className: 'warn' }, `${PROBLEM[o.reason] || 'Sorunlu'}; iade edilmeli.`),
         o.refunding && el('p', { className: 'warn' }, 'İadesi başladı, kaydı tamamlanmadı. Reddet ile bitir.'),
         el('div', { className: 'row' },
@@ -160,13 +162,16 @@ function seats() {
       // A refund already started is owed: the server makes it whatever the box says, so the box says so too.
       const refund = el('input', { type: 'checkbox', checked: Boolean(o.refunding), disabled: Boolean(o.refunding) });
       const why = el('input', { type: 'text', placeholder: 'Gerekçe', maxLength: 300 });
-      const ask = el('div', { className: 'ask', hidden: true }, el('label', { className: 'check' }, refund, 'Ücreti iade et'), why,
+      // A coupon's free seat has nothing to give back.
+      const box = o.amount > 0 && el('label', { className: 'check' }, refund, 'Ücreti iade et');
+      const ask = el('div', { className: 'ask', hidden: true }, box, why,
         el('div', { className: 'row' }, el('button', { type: 'button', className: 'danger', onclick: () => act(o, 'remove', { refund: refund.checked, reason: why.value.trim() }, `Kaldırıldı: ${o.name}.`) }, 'Kaldır'),
           el('button', { type: 'button', className: 'quiet', onclick: () => { ask.hidden = true; } }, 'Vazgeç')));
       action.append(el('button', { type: 'button', className: 'quiet', onclick: () => { ask.hidden = false; } }, 'Kaldır'), ask);
     }
     const note = o.refunding ? `, iadesi yarım kaldı: ${o.state === 'live' ? 'Kaldır' : 'Reddet'} ile bitir` : o.refunded && o.state !== 'refunded' ? ', iade' : '';
-    return el('tr', {}, el('td', {}, o.name), el('td', {}, STATE[o.state] + note),
+    const shown = o.state === 'refunded' && o.amount === 0 ? 'Reddedildi' : STATE[o.state];
+    return el('tr', {}, el('td', {}, o.name), el('td', {}, shown + note + (o.coupon ? `, kupon ${o.coupon}` : '')),
       el('td', {}, tierOf(o.ring).label), el('td', {}, String(o.width * o.depth)), el('td', {}, money(o.amount)), el('td', {}, when(o.paidAt || o.created)), action);
   });
   return [
@@ -219,5 +224,47 @@ function auctionTab() {
       el('tbody', {}, ...[...[...bids].sort((x, y) => y.amount - x.amount), ...old].map((b) => el('tr', {}, el('td', {}, money(b.amount * 100)),
         el('td', {}, BID_STATE[b.state] + (b.releasing ? ', bloke kaldırılıyor' : '') + (old.includes(b) ? ' · önceki açık artırma' : '')),
         el('td', {}, b.email || ''), el('td', {}, when(b.settledAt || b.createdAt)))))),
+  ];
+}
+
+// ---------- coupons (coupons.mjs): a code makes one seat free; given out by hand, e.g. to a post's commenters ----------
+const COUPON_STATE = { open: 'Açık', stopped: 'Durduruldu', expired: 'Süresi doldu', used: 'Tükendi' };
+const TIER = { front: 'Ön sıra', middle: 'Orta', back: 'Arka', any: 'Her sıra' };
+const COUPON_ERROR = { exists: 'Bu kod zaten var; başka bir kod yaz.', code: 'Kod 3 ile 24 arası harf, rakam ya da tire olmalı.',
+  tier: 'Bir sıra seç.', max: 'Kullanım sayısı 1 ile 1000 arasında olmalı.', days: 'Süre 1 ile 90 gün arasında olmalı.' };
+
+async function couponStep(path, body, done) {
+  const res = await fetch(`/api/yonetim/${path}`, { method: 'POST', headers: { 'x-yonetim': '1', 'content-type': 'application/json' },
+    body: JSON.stringify(body || {}) }).catch(() => null);
+  if (res?.status === 401) return showLogin();
+  const why = !res?.ok && (await res?.json().catch(() => ({})))?.error;
+  say(res?.ok ? done : COUPON_ERROR[why] || 'Bir sorun oldu. Yeniden dene.');
+  await load();
+}
+
+function couponsTab() {
+  const code = el('input', { maxLength: 24, autocomplete: 'off', spellcheck: false });
+  const tier = el('select', {}, ...Object.entries(TIER).map(([value, label]) => el('option', { value }, label)));
+  const max = el('input', { type: 'number', min: 1, max: 1000, value: '50' });
+  const days = el('input', { type: 'number', min: 1, max: 90, value: '7' });
+  const form = el('form', { className: 'coupon-form' }, el('label', {}, 'Kod', code), el('label', {}, 'Sıra', tier),
+    el('label', {}, 'Kullanım', max), el('label', {}, 'Gün', days), el('button', { type: 'submit' }, 'Kodu aç'));
+  form.onsubmit = (event) => {
+    event.preventDefault();
+    return couponStep('coupon', { code: code.value, tier: tier.value, max: Number(max.value), days: Number(days.value) },
+      `Kod açıldı: ${code.value.trim().toUpperCase()}.`);
+  };
+  const list = data.coupons || [];
+  return [
+    el('h2', {}, 'Kuponlar'),
+    el('p', { className: 'dim' }, 'Bir kod bir koltuğu bedava yapar: tek koltuk ödemesiz, büyük blokta bir koltuğun bedeli düşer. Kuponlu koltuk da onaydan geçer.'),
+    form,
+    list.length ? el('div', { className: 'table' }, el('table', {},
+      el('thead', {}, el('tr', {}, ...['Kod', 'Sıra', 'Kullanılan', 'Bitiş', 'Durum', ''].map((h) => el('th', {}, h)))),
+      el('tbody', {}, ...list.map((c) => el('tr', {}, el('td', {}, c.code), el('td', {}, TIER[c.tier]), el('td', {}, `${num(c.used)} / ${num(c.max)}`),
+        el('td', {}, when(c.until)), el('td', {}, COUPON_STATE[c.state]),
+        el('td', {}, c.state !== 'stopped' && el('button', { type: 'button', className: 'quiet',
+          onclick: () => couponStep(`coupon/${c.code}/stop`, null, `Durduruldu: ${c.code}.`) }, 'Durdur')))))))
+      : el('p', { className: 'dim' }, 'Henüz kod yok.'),
   ];
 }

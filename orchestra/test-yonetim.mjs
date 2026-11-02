@@ -184,3 +184,43 @@ test('the auction tab shows bids of the last auction still holding money (B3)', 
   assert.match(text(), /2\.400 \$.*Geçildi, bloke kaldırılıyor · önceki açık artırma.*old@x\.example/);
   STATE.auction = null;
 });
+
+test('the coupons tab opens a code, lists codes with their uses, and stops one', async () => {
+  STATE.coupons = [{ code: 'LINKEDIN', tier: 'middle', max: 50, until: T + 7 * 86_400_000, stopped: false, created: T, by: 'selim', used: 12, state: 'open' },
+    { code: 'ESKI', tier: 'any', max: 5, until: T, stopped: true, created: T, by: 'ozer', used: 5, state: 'stopped' }];
+  await go('#kuponlar'); button('Yenile').onclick(); await settle();
+  for (const shown of ['Kuponlar', 'LINKEDIN', 'Orta', '12 / 50', 'Açık', 'ESKI', 'Her sıra', 'Durduruldu']) assert.ok(text().includes(shown), shown);
+  assert.equal(buttons('Durdur').length, 1, 'a stopped code has no stop button');
+  let form = root.querySelector('.coupon-form');
+  const [code, max, days] = form.querySelectorAll('input');
+  form.querySelector('select').value = 'front';
+  code.value = ' ozel '; max.value = '10'; days.value = '3';
+  await form.onsubmit({ preventDefault() {} }); await settle();
+  const made = calls.find((c) => c.url === '/api/yonetim/coupon');
+  assert.deepEqual([made.method, made.headers['x-yonetim'], made.body], ['POST', '1', { code: ' ozel ', tier: 'front', max: 10, days: 3 }]);
+  assert.match(text(), /Kod açıldı: OZEL\./);
+  await button('Durdur').onclick(); await settle();
+  assert.ok(calls.some((c) => c.url === '/api/yonetim/coupon/LINKEDIN/stop' && c.method === 'POST'));
+  refuse = 409; refusal = 'exists';
+  form = root.querySelector('.coupon-form');
+  await form.onsubmit({ preventDefault() {} }); await settle();
+  assert.match(text(), /Bu kod zaten var/);
+  refuse = null;
+});
+
+test('a free order says so on its card, is rejected without a refund, and reads as rejected in the list', async () => {
+  STATE.orders.push(order('o-f', 'paid', { name: 'Zeta', col: 80, amount: 0, coupon: 'LINKEDIN', discount: 1000, payment: null, email: null }));
+  await go('#bekleyen'); button('Yenile').onclick(); await settle();
+  const card = root.querySelectorAll('article').find((a) => a.textContent.includes('Zeta'));
+  assert.ok(card.textContent.includes('Kupon: LINKEDIN · bedava') && card.textContent.includes('Kuponla alındı'));
+  card.querySelectorAll('button').find((b) => b.textContent === 'Reddet').onclick();
+  await card.querySelectorAll('button').find((b) => b.textContent === 'Reddet (iade yok)').onclick(); await settle();
+  assert.ok(calls.some((c) => c.url === '/api/yonetim/orders/o-f/reject'));
+  assert.match(text(), /Reddedildi: Zeta\./);
+  STATE.orders.at(-1).state = 'refunded';
+  await go('#koltuklar'); button('Yenile').onclick(); await settle();
+  button('Tümü').onclick(); await settle();
+  const row = root.querySelectorAll('tr').find((r) => r.textContent.includes('Zeta'));
+  assert.ok(row.textContent.includes('Reddedildi') && row.textContent.includes('kupon LINKEDIN'), row.textContent);
+  STATE.orders.pop(); delete STATE.coupons;
+});
