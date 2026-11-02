@@ -319,8 +319,10 @@ def doctor():
         if folder.is_dir():
             link = folder / 'skills/code-sonata/SKILL.md'
             check(link.exists(), f'{tool} skill bağlı', f'{tool} skill bağlı değil: ./install.sh')
-    roots = [r for r in (Path.home() / '.claude/projects', Path.home() / '.codex/sessions') if r.is_dir()]
-    check(bool(roots), f'Dinlenecek oturum kayıtları: {", ".join(str(r) for r in roots)}', 'Claude Code ya da Codex oturum kaydı bulunamadı')
+    roots = [Path.home() / r for r in ('.claude/projects', '.codex/sessions', '.gemini/tmp', '.grok/sessions')]
+    roots = [r for r in roots if r.is_dir()]
+    check(bool(roots), f'Dinlenecek oturum kayıtları: {", ".join(str(r) for r in roots)}',
+          'Claude Code, Codex, Gemini CLI ya da Grok Build oturum kaydı bulunamadı')
     protected = any(str(APP).startswith(str(Path.home() / d)) for d in ('Desktop', 'Documents', 'Downloads', 'Library/Mobile Documents'))
     check(not protected, f'Uygulama konumu: {APP}', f'Uygulama korunan bir klasörde ({APP}); arka planda izin sorabilir: ./install.sh')
     loaded, running = state()
