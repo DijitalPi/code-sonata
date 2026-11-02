@@ -258,6 +258,12 @@ try {
     assert.equal(page.headers.get('x-frame-options'),'DENY'); assert.equal(page.headers.get('x-content-type-options'),'nosniff');
     assert.equal((await fetch(base+'/%2e%2e/agents.py')).status,404);
     assert.equal((await fetch(base+'/og.png')).status,200);
+    const icons = html.match(/rel="(?:icon|apple-touch-icon)" href="[^"]+/g) || [];
+    assert.equal(icons.length, 2);
+    for (const icon of icons) {
+      const file = await fetch(base + icon.split('href="')[1]); await file.arrayBuffer();
+      assert.equal(file.status, 200, icon); assert.match(file.headers.get('content-type'), /^image\//);
+    }
     // Keep every response: an unread fetch body that is garbage collected closes its stream (and frees its slot).
     const controllers=[], open=[];
     try {

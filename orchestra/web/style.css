@@ -26,6 +26,7 @@ a { color: var(--gold); text-underline-offset: 4px; }
 .topbar { position: relative; z-index: 6; display: flex; align-items: center; justify-content: space-between; gap: 18px; height: var(--bar); padding: 0 var(--pad); background: var(--bg); border-bottom: 1px solid var(--line); }
 .wordmark { font: 500 24px/1 var(--serif); color: var(--ink); text-decoration: none; letter-spacing: -.01em; white-space: nowrap; }
 .wordmark em, h1 em { font-style: normal; color: var(--gold); }
+.wordmark .mark { width: 1.6em; height: .92em; margin-right: .42em; vertical-align: -.12em; }
 .menu { display: flex; align-items: center; gap: 2px; }
 .nav, .more summary { all: unset; box-sizing: border-box; display: block; cursor: pointer; padding: 10px 15px; border-radius: 999px; font-size: 18.5px; font-weight: 600; color: var(--ink); white-space: nowrap; }
 .nav:hover, .more summary:hover, .more[open] summary { color: var(--ink); background: rgba(243, 233, 214, .06); }
@@ -284,4 +285,9 @@ body.is-placing .hero, body.is-placing .now, body.is-placing .live { visibility:
 @media (min-width: 960px) and (max-width: 1120px) {
   .nav, .more summary { padding: 8px 9px; font-size: 16.5px; }
   .wordmark { font-size: 21px; }
+}
+/* Narrow phones keep the name and the seat button on one bar; the mark returns once there is room. */
+@media (max-width: 419px) {
+  .wordmark .mark { display: none; }
+  .topbar { gap: 6px; padding-left: 12px; }
 }
