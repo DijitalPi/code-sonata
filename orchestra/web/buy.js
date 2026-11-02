@@ -47,12 +47,15 @@ export async function followOrder(id, { cancelled = false, wait = 3000, tries = 
   say('Ödemen kontrol ediliyor…');
   const done = { paid: 'Ödemen alındı. Koltuğun onay bekliyor; onaylanınca salonda görünecek.', live: 'Koltuğun salonda. Teşekkürler!',
     refunded: 'Bu sipariş iade edildi.', expired: 'Bu ödemenin süresi doldu. Ayırdığın yer bırakıldı.' };
+  // A coupon's free seat: nothing was paid, so nothing is refunded.
+  const free = { paid: 'Koltuğun ayrıldı; onay bekliyor, onaylanınca salonda görünecek.', refunded: 'Koltuğun onaylanmadı.' };
   for (let i = 0; i < tries; i++) {
     try {
       const res = await fetch(`/api/seats/order/${id}`, { cache: 'no-store' });
       if (res.status === 404) return say('Bu sipariş bulunamadı.');
-      const { state } = await res.json();
-      if (done[state]) return say(done[state]);
+      const { state, free: gift } = await res.json();
+      const text = (gift && free[state]) || done[state];
+      if (text) return say(text);
     } catch { /* asked again below */ }
     await new Promise((resolve) => setTimeout(resolve, wait));
   }
@@ -74,7 +77,20 @@ export async function backFromStripe() {
 export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (url) => location.assign(url) }) {
   let tier = 0, width = 1, depth = 1, used = new Set(), ghost = null, chosen = null, placing = false, image = null;
   let checkoutOpen = false, paying = false, winner = null;
+  let coupon = null;   // { code, tier } once the server knows the code
   addEventListener('shop', (event) => { checkoutOpen = Boolean(event.detail?.checkout); });
+
+  // A coupon (coupons.mjs) makes one seat of its tier free; the server works the price out again.
+  const off = (b) => (coupon && (coupon.tier === 'any' || tierOf(b.ring).name === coupon.tier) ? tierOf(b.ring).price : 0);
+  const cost = (b) => blockPrice(b) - off(b);
+  const where = (name) => TIERS.find((tr) => tr.name === name)?.label || 'her sıra';
+  const payText = () => (winner ? 'Logoyu gönder' : chosen && coupon && cost(chosen) === 0 ? 'Koltuğu ayır' : 'Ödemeye geç');
+  function showCoupon() {
+    $('seat-pay').textContent = payText();
+    if (!coupon) return;
+    const b = chosen || { ring: TIERS[tier].rings[0], col: 0, width, depth };
+    $('coupon-status').textContent = off(b) ? `Kupon ${coupon.code}: bir koltuk bedava (${where(coupon.tier)}).` : `Bu kod bu sırada geçmez; geçtiği sıra: ${where(coupon.tier)}.`;
+  }
 
   // ---------- tier, size and price ----------
   // Seats sold, and seats someone is paying for or waiting to have approved, are all taken.
@@ -104,8 +120,9 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
     $('seat-depth').max = String(Math.min(SEAT_LIMITS.depth, rows));
   }
   function price() {
-    $('seat-price').textContent = money(blockPrice({ ring: TIERS[tier].rings[0], col: 0, width, depth }));
+    $('seat-price').textContent = money(cost({ ring: TIERS[tier].rings[0], col: 0, width, depth }));
     $('seat-count').textContent = width * depth === 1 ? '1 koltuk' : `${width * depth} koltuk · ${width} yan yana, ${depth} sıra`;
+    showCoupon();
   }
   for (const id of ['seat-width', 'seat-depth']) {
     $(id).addEventListener('input', () => { clampSize(); price(); });
@@ -141,8 +158,8 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
     ghost = { block, ok: canPlace(block, used) };
     amfi.setGhost(ghost);
     ok.disabled = !ghost.ok;
-    const where = `${tierOf(block.ring).label}, ${block.ring - TIERS[tier].rings[0] + 1}. sıradan ${width * depth} koltuk · ${money(blockPrice(block))}.`;
-    text.textContent = !ghost.ok ? 'Bu koltuklardan bazıları dolu. Bloğu boş bir yere götür.' : suggested ? `En iyi boş yer: ${where}` : where;
+    const at = `${tierOf(block.ring).label}, ${block.ring - TIERS[tier].rings[0] + 1}. sıradan ${width * depth} koltuk · ${money(cost(block))}.`;
+    text.textContent = !ghost.ok ? 'Bu koltuklardan bazıları dolu. Bloğu boş bir yere götür.' : suggested ? `En iyi boş yer: ${at}` : at;
     hint.textContent = touch() ? "Başka bir yere dokun ya da Burayı seç'e bas." : "Tıkla ya da Enter'a bas.";
   }
   // On a phone the hall is drawn wider than the screen while placing (style.css), so a seat is big enough
@@ -171,8 +188,9 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
     chosen = ghost.block;
     stopPlacing();
     $('seat-form').hidden = false;
-    $('seat-status').textContent = `Seçtiğin yer: ${tierOf(chosen.ring).label}, ${width * depth} koltuk, ${money(blockPrice(chosen))}.`;
+    $('seat-status').textContent = `Seçtiğin yer: ${tierOf(chosen.ring).label}, ${width * depth} koltuk, ${money(cost(chosen))}.`;
     $('seat-place').textContent = 'Başka bir yer seç';
+    showCoupon();
     preview();
     $('seat-image').focus();
   }
@@ -189,7 +207,7 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
   function leaveWinner() {
     if (!winner) return;
     winner = null;
-    $('seat-pay').textContent = 'Ödemeye geç'; $('seat-again').hidden = false;
+    $('seat-pay').textContent = payText(); $('seat-again').hidden = false;
   }
   $('seat-place').onclick = startPlacing;
   $('seat-again').onclick = startPlacing;
@@ -221,6 +239,24 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
     else if (event.key === 'Enter') { event.preventDefault(); choose(); }
     else if (event.key === 'Escape') { event.preventDefault(); stopPlacing(); $('seats-title').focus(); }
   });
+
+  // ---------- a coupon code ----------
+  $('coupon-open').onclick = () => { $('coupon-box').hidden = false; $('coupon-open').hidden = true; $('coupon-code').focus(); };
+  const couponProblem = (status, error) => (status === 429 ? 'Çok fazla deneme oldu. Birkaç dakika sonra yeniden dene.'
+    : error === 'used' ? 'Bu kodun hakları bitti.' : error === 'code' ? 'Bu kod geçerli değil ya da süresi doldu.'
+    : 'Kod şu an kontrol edilemedi. Birazdan yeniden dene.');
+  $('coupon-apply').onclick = async () => {
+    const code = $('coupon-code').value.trim().toUpperCase();
+    coupon = null;
+    if (code) {
+      const res = await fetch('/api/seats/coupon', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code }) }).catch(() => null);
+      const data = (await res?.json().catch(() => null)) || {};
+      if (res?.ok) coupon = { code: data.code, tier: data.tier };
+      else $('coupon-status').textContent = couponProblem(res?.status, data.error);
+    } else $('coupon-status').textContent = '';
+    price();
+    if (chosen) $('seat-status').textContent = `Seçtiğin yer: ${tierOf(chosen.ring).label}, ${chosen.width * chosen.depth} koltuk, ${money(cost(chosen))}.`;
+  };
 
   // ---------- image, name, link, and how it will look ----------
   const previewHall = createAmfi();
@@ -268,16 +304,28 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
     }
     if (!checkoutOpen) return say('Ödeme henüz açık değil. Satış başladığında bu adımda ödeme sayfası açılacak. Seçtiğin yer ayrılmadı, hiçbir bilgi gönderilmedi.');
     paying = true; $('seat-pay').disabled = true;
-    say('Ödeme sayfası hazırlanıyor…');
+    say(coupon && cost(chosen) === 0 ? 'Koltuğun ayrılıyor…' : 'Ödeme sayfası hazırlanıyor…');
     try {
       const logo = await encode(image);
       if (!logo) return say('Tarayıcın bu resmi hazırlayamadı. Başka bir tarayıcı dene.');
       const res = await fetch('/api/seats/checkout', { method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ block: { ring: chosen.ring, col: chosen.col, width: chosen.width, depth: chosen.depth }, name, about, city, link: url.href, image: logo, terms: true }) });
+        body: JSON.stringify({ block: { ring: chosen.ring, col: chosen.col, width: chosen.width, depth: chosen.depth }, name, about, city, link: url.href, image: logo, terms: true,
+          coupon: coupon && off(chosen) ? coupon.code : undefined }) });
       const data = await res.json().catch(() => ({}));
+      // A free seat is set aside here and waits for approval; its news comes like a return from Stripe.
+      if (res.ok && data.free) {
+        say(''); chosen = null; amfi.setGhost(null); $('seat-form').hidden = true;
+        dispatchEvent(new CustomEvent('seats-stale'));
+        return followOrder(data.id);
+      }
       if (res.ok && data.url) { say('Ödeme sayfasına gidiliyor…'); return go(data.url); }
-      if (res.status === 409) dispatchEvent(new CustomEvent('seats-stale'));
-      say(res.status === 409 ? 'Bu yer az önce başkası tarafından tutuldu. Başka bir yer seç.'
+      if (['used', 'code'].includes(data.error)) { coupon = null; price(); }
+      if (res.status === 409 && data.error !== 'used') dispatchEvent(new CustomEvent('seats-stale'));
+      say(data.error === 'again' ? 'Bu bağlantıdan bugün bir kupon kullanıldı. Yarın yeniden deneyebilirsin.'
+        : data.error === 'used' ? 'Bu kodun hakları bitti.'
+        : data.error === 'code' ? 'Bu kod geçerli değil ya da süresi doldu.'
+        : data.error === 'tier' ? 'Bu kod seçtiğin sırada geçmez.'
+        : res.status === 409 ? 'Bu yer az önce başkası tarafından tutuldu. Başka bir yer seç.'
         : res.status === 429 ? 'Çok fazla deneme oldu. Birkaç dakika sonra yeniden dene.'
         : res.status === 400 && data.error === 'image' ? 'Resim kabul edilmedi. Başka bir resim dene.'
         : res.status === 400 && data.error === 'holder' ? 'Ad, link, tanıtım ya da şehir kabul edilmedi. Kontrol edip yeniden dene.'

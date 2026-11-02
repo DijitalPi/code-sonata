@@ -6,8 +6,8 @@ import { install, add } from './fake-dom.mjs';
 const doc = install();
 const panel = add(doc.body, 'aside', { id: 'panel' });
 for (const id of ['seats-title', 'seat-tiers', 'seat-price', 'seat-count', 'seat-place', 'seat-status', 'seat-form',
-  'seat-pay', 'seat-again', 'seat-pay-status', 'holders', 'holders-lead']) add(panel, 'div', { id });
-for (const id of ['seat-image', 'seat-name', 'seat-about', 'seat-city', 'seat-link', 'seat-terms']) add(panel, 'input', { id });
+  'seat-pay', 'seat-again', 'seat-pay-status', 'holders', 'holders-lead', 'coupon-open', 'coupon-box', 'coupon-apply', 'coupon-status']) add(panel, 'div', { id });
+for (const id of ['seat-image', 'seat-name', 'seat-about', 'seat-city', 'seat-link', 'seat-terms', 'coupon-code']) add(panel, 'input', { id });
 Object.assign(add(panel, 'canvas', { id: 'seat-preview' }), { width: 480, height: 240 });
 add(panel, 'input', { id: 'seat-width' }).value = '3';
 add(panel, 'input', { id: 'seat-depth' }).value = '2';
@@ -276,4 +276,71 @@ test('choosing a normal place, or leaving the panel, ends the winner mode', () =
   buying.startWinner(`b-${'6'.repeat(24)}`);
   view('home');
   assert.deepEqual([$('seat-pay').textContent, $('seat-again').hidden], ['Ödemeye geç', false]);
+});
+
+const checkoutOr = (coupon, other) => (url) => (url === '/api/seats/coupon' ? coupon : other);
+test('a coupon code takes one seat off the price; one seat costs nothing and is set aside without Stripe', async () => {
+  shop(true);
+  $('seat-width').value = '2'; $('seat-depth').value = '2';
+  await fillForm({ terms: true });   // front tier, 2 × 2
+  answer = checkoutOr({ status: 200, body: { code: 'ONSIRA', tier: 'front' } }, { status: 200, body: { id: 'o-1', url: 'https://checkout.stripe.test/c/1' } });
+  $('coupon-open').onclick();
+  assert.equal($('coupon-box').hidden, false);
+  $('coupon-code').value = ' onsira ';
+  await $('coupon-apply').onclick();
+  assert.deepEqual(JSON.parse(calls.at(-1).init.body), { code: 'ONSIRA' });
+  assert.equal($('seat-price').textContent, '75 $');
+  assert.equal($('coupon-status').textContent, 'Kupon ONSIRA: bir koltuk bedava (Ön sıra).');
+  calls.length = 0;
+  await $('seat-pay').onclick();
+  assert.equal(JSON.parse(calls[0].init.body).coupon, 'ONSIRA');
+  $('seat-width').value = '1'; $('seat-depth').value = '1';
+  await fillForm({ terms: true });
+  assert.equal($('seat-price').textContent, '0 $');
+  assert.equal($('seat-pay').textContent, 'Koltuğu ayır');
+  answer = (url) => (url === '/api/seats/checkout' ? { status: 200, body: { id: 'o-2', free: true } } : { status: 200, body: { state: 'paid', free: true } });
+  went.length = 0;
+  await $('seat-pay').onclick();
+  assert.deepEqual(went, [], 'no Stripe page');
+  assert.equal($('seat-status').textContent, 'Koltuğun ayrıldı; onay bekliyor, onaylanınca salonda görünecek.');
+  assert.equal($('seat-form').hidden, true);
+});
+
+test('a code for another tier says where it works and leaves the price whole; a code that does not work is said plainly', async () => {
+  await fillForm({ terms: true });   // one front seat
+  for (const [reply, said] of [[{ status: 200, body: { code: 'ARKA', tier: 'back' } }, 'Bu kod bu sırada geçmez; geçtiği sıra: Arka.'],
+    [{ status: 400, body: { error: 'code' } }, 'Bu kod geçerli değil ya da süresi doldu.'], [{ status: 409, body: { error: 'used' } }, 'Bu kodun hakları bitti.'],
+    [{ status: 429, body: { error: 'tries' } }, 'Çok fazla deneme oldu. Birkaç dakika sonra yeniden dene.'], [{ status: 502, body: {} }, 'Kod şu an kontrol edilemedi. Birazdan yeniden dene.']]) {
+    answer = () => reply;
+    $('coupon-code').value = 'kod';
+    await $('coupon-apply').onclick();
+    assert.equal($('coupon-status').textContent, said);
+    assert.equal($('seat-price').textContent, '25 $');
+    assert.equal($('seat-pay').textContent, 'Ödemeye geç');
+  }
+  $('coupon-code').value = '';
+  await $('coupon-apply').onclick();
+  assert.equal($('coupon-status').textContent, '', 'an empty box takes the coupon off');
+});
+
+test('checkout turning the code down says why and drops the coupon', async () => {
+  answer = () => ({ status: 200, body: { code: 'HER', tier: 'any' } });
+  $('coupon-code').value = 'her'; await $('coupon-apply').onclick();
+  await fillForm({ terms: true });
+  for (const [reply, said] of [[{ status: 429, body: { error: 'again' } }, 'Bu bağlantıdan bugün bir kupon kullanıldı. Yarın yeniden deneyebilirsin.'],
+    [{ status: 400, body: { error: 'tier' } }, 'Bu kod seçtiğin sırada geçmez.'], [{ status: 409, body: { error: 'used' } }, 'Bu kodun hakları bitti.']]) {
+    answer = () => reply;
+    await $('seat-pay').onclick();
+    assert.equal($('seat-pay-status').textContent, said);
+  }
+  assert.equal($('seat-price').textContent, '25 $', 'a code used up is taken off');
+});
+
+test('back from a free seat the buyer reads that it waits, or was not approved', async () => {
+  answer = () => ({ status: 200, body: { state: 'refunded', free: true } });
+  await followOrder('o-9', { wait: 0 });
+  assert.equal($('seat-status').textContent, 'Koltuğun onaylanmadı.');
+  answer = () => ({ status: 200, body: { state: 'refunded' } });
+  await followOrder('o-8', { wait: 0 });
+  assert.equal($('seat-status').textContent, 'Bu sipariş iade edildi.');
 });

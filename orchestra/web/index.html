@@ -185,6 +185,11 @@
       <label for="seat-depth">Sıra sayısı <input id="seat-depth" type="number" min="1" max="6" value="1" inputmode="numeric"></label>
     </div>
     <p class="price"><b id="seat-price">0 $</b> <span id="seat-count"></span></p>
+    <div class="coupon">
+      <button id="coupon-open" class="link" type="button">Kuponun var mı?</button>
+      <div id="coupon-box" class="coupon-box" hidden><input id="coupon-code" maxlength="24" autocomplete="off" spellcheck="false" aria-label="Kupon kodu"><button id="coupon-apply" class="quiet" type="button">Uygula</button></div>
+      <p id="coupon-status" role="status"></p>
+    </div>
     <button id="seat-place">Salonda yer seç</button>
     <p id="seat-status" role="status">Önce boyutu seç, sonra bloğu salonda boş bir yere yerleştir.</p>
     <div id="seat-form" hidden>
@@ -214,6 +219,7 @@
       <li><b>Onay.</b> Her koltuk yayına girmeden önce elle kontrol edilir. Yasa dışı, yanıltıcı, nefret ya da yetişkin içerik taşıyan, başkasının markasını izinsiz kullanan logo, metin ve linkler kabul edilmez.</li>
       <li><b>İade.</b> Onaylanmayan koltuğun ücreti tamamen iade edilir. Yayındaki bir koltuk bu kurallara sonradan aykırı hale gelirse kaldırılabilir.</li>
       <li><b>Ödeme.</b> Fiyatlar ABD doları. Ödeme Stripe'ta yapılır; kart bilgin bu siteye gelmez. Makbuzu Stripe e-posta adresine gönderir.</li>
+      <li><b>Kupon.</b> Kupon kodu bir koltuğun bedelini düşer: tek koltukta ödeme yoktur, büyük blokta kalanı ödenir. Kodlar sınırlı sayıda ve sürelidir, durdurulabilir. Aynı bağlantıdan günde bir kupon kullanılır. Kuponla alınan koltuk da onaydan geçer ve reddedilebilir. Kuponun parasal karşılığı yoktur.</li>
       <li><b>Açık artırma.</b> Sahnenin önündeki blok açık artırmayla satılır. Teklifin kartında bloke edilir, çekilmez; daha yüksek teklif gelince bloke hemen kaldırılır. Bitişte en yüksek teklif tahsil edilir. Kazanan logo, ad ve link gönderir; içerik onaylanmazsa ücret tamamen iade edilir. Son 10 dakikada gelen teklif bitişi 10 dakika uzatır, açık artırma en çok 6 gün sürer.</li>
       <li><b>Değişiklik.</b> Logonu, adını, linkini, tanıtımını ya da şehrini değiştirmek istersen bize yaz.</li>
       <li><b>Gizlilik.</b> Ad, link, logo, tanıtım ve şehir herkese açıktır. E-posta adresin yalnız sipariş, onay ve iade için kullanılır, paylaşılmaz.</li>

@@ -252,6 +252,12 @@ body.is-demo #connection { color: var(--gold); }
 .price { display: flex; align-items: baseline; gap: 12px; margin: 16px 0 12px; }
 .price b { font: 400 40px/1 var(--serif); color: var(--gold); font-variant-numeric: tabular-nums; }
 .price span { color: var(--dim); font-size: 13px; }
+.coupon { margin: -4px 0 12px; }
+.coupon-box { display: flex; gap: 8px; margin: 6px 0; }
+.coupon-box[hidden] { display: none; }
+.coupon-box input { flex: 1; text-transform: uppercase; }
+#coupon-status { margin: 4px 0 0; font-size: 13.5px; }
+#coupon-status:empty { display: none; }
 #seat-status, #seat-pay-status { color: var(--gold); font-size: 14px; margin-top: 14px; }
 #seat-pay-status:empty { display: none; }
 #seat-form { align-self: stretch; margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); }

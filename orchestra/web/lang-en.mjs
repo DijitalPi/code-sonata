@@ -258,4 +258,20 @@ export const EN = {
   'Açık artırma.': 'Auction.',
   'Sahnenin önündeki blok açık artırmayla satılır. Teklifin kartında bloke edilir, çekilmez; daha yüksek teklif gelince bloke hemen kaldırılır. Bitişte en yüksek teklif tahsil edilir. Kazanan logo, ad ve link gönderir; içerik onaylanmazsa ücret tamamen iade edilir. Son 10 dakikada gelen teklif bitişi 10 dakika uzatır, açık artırma en çok 6 gün sürer.': 'The block in front of the stage is sold by auction. Your bid is held on your card, not charged; when a higher bid comes in, the hold is released at once. At the end the highest bid is charged. The winner sends a logo, name and link; if the content is not approved, the payment is refunded in full. A bid in the last 10 minutes moves the end 10 minutes later; the auction lasts at most 6 days.',
   'Logon onay bekliyor. Değiştirmek istersen yeniden gönderebilirsin.': 'Your logo is awaiting approval. To change it, send it again.',
+  // Coupons
+  'Kuponun var mı?': 'Have a coupon?', 'Kupon kodu': 'Coupon code', 'Uygula': 'Apply',
+  'Kupon {a}: bir koltuk bedava ({b}).': 'Coupon {a}: one seat free ({b}).',
+  'Bu kod bu sırada geçmez; geçtiği sıra: {a}.': 'This code does not work in this section; it works in: {a}.',
+  'her sıra': 'any section',
+  'Bu kod geçerli değil ya da süresi doldu.': 'This code is not valid or has expired.',
+  'Bu kodun hakları bitti.': 'This code has been used up.',
+  'Kod şu an kontrol edilemedi. Birazdan yeniden dene.': 'The code could not be checked right now. Try again shortly.',
+  'Koltuğu ayır': 'Reserve the seat', 'Koltuğun ayrılıyor…': 'Reserving your seat…',
+  'Koltuğun ayrıldı; onay bekliyor, onaylanınca salonda görünecek.': 'Your seat is reserved and awaiting approval; once approved it will appear in the hall.',
+  'Koltuğun onaylanmadı.': 'Your seat was not approved.',
+  'Bu kod seçtiğin sırada geçmez.': 'This code does not work in the section you chose.',
+  'Bu bağlantıdan bugün bir kupon kullanıldı. Yarın yeniden deneyebilirsin.': 'A coupon was already used from this connection today. You can try again tomorrow.',
+  'Kupon.': 'Coupon.',
+  'Kupon kodu bir koltuğun bedelini düşer: tek koltukta ödeme yoktur, büyük blokta kalanı ödenir. Kodlar sınırlı sayıda ve sürelidir, durdurulabilir. Aynı bağlantıdan günde bir kupon kullanılır. Kuponla alınan koltuk da onaydan geçer ve reddedilebilir. Kuponun parasal karşılığı yoktur.':
+    'A coupon code takes the price of one seat off: a single seat costs nothing, for a bigger block you pay the rest. Codes are limited in number and time and may be stopped. One coupon a day can be used from the same connection. A seat taken with a coupon is approved like any other and may be refused. A coupon has no cash value.',
 };
