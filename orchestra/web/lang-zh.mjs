@@ -197,6 +197,7 @@ export const ZH = {
   // ---------- buying a seat: payment, return from Stripe, terms ----------
   'Okudum, kabul ediyorum:': '我已阅读并接受：', 'Koltuk şartları': '座位条款',
   'Resim, ad ve link yayından önce elle onaylanır; onaylanmazsa ödemen tamamen iade edilir. Link Google için "sponsorlu" işaretlenir. Ödeme Stripe\'ta yapılır, kart bilgin bu siteye gelmez.': '图片、名称和链接会在展示前进行人工审核；若未获批准，你将获得全额退款。链接会标记为“赞助”，供 Google 识别。付款在 Stripe 上进行，你的银行卡信息不会传到本站。',
+  'Resim, ad ve link yayından önce elle onaylanır. Link Google için "sponsorlu" işaretlenir.': '图片、名称和链接会在展示前进行人工审核。链接会标记为“赞助”，供 Google 识别。',
   'Koltuk almadan önce bilmen gerekenler.': '购买座位前须知。',
   'Ne alıyorsun.': '你将获得什么。',
   'Salonda seçtiğin blok; üzerinde logon, adın ve linkin durur. Koltuk, salon yayında olduğu sürece kalır. Yıllık ücret yoktur.': '你在音乐厅选择的座位区块，用于展示你的标志、名称和链接。只要音乐厅在线，座位就会保留。不收年费。',

@@ -84,9 +84,14 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
   const off = (b) => (coupon && (coupon.tier === 'any' || tierOf(b.ring).name === coupon.tier) ? tierOf(b.ring).price : 0);
   const cost = (b) => blockPrice(b) - off(b);
   const where = (name) => TIERS.find((tr) => tr.name === name)?.label || 'her sıra';
-  const payText = () => (winner ? 'Logoyu gönder' : chosen && coupon && cost(chosen) === 0 ? 'Koltuğu ayır' : 'Ödemeye geç');
+  const freeSeat = () => !winner && chosen && coupon && cost(chosen) === 0;
+  const payText = () => (winner ? 'Logoyu gönder' : freeSeat() ? 'Koltuğu ayır' : 'Ödemeye geç');
+  // A free seat pays nothing, so the note under the button says neither refund nor Stripe.
+  const noteText = () => (freeSeat() ? 'Resim, ad ve link yayından önce elle onaylanır. Link Google için "sponsorlu" işaretlenir.'
+    : 'Resim, ad ve link yayından önce elle onaylanır; onaylanmazsa ödemen tamamen iade edilir. Link Google için "sponsorlu" işaretlenir. Ödeme Stripe\'ta yapılır, kart bilgin bu siteye gelmez.');
   function showCoupon() {
     $('seat-pay').textContent = payText();
+    $('seat-note').textContent = noteText();
     if (!coupon) return;
     const b = chosen || { ring: TIERS[tier].rings[0], col: 0, width, depth };
     $('coupon-status').textContent = off(b) ? `Kupon ${coupon.code}: bir koltuk bedava (${where(coupon.tier)}).` : `Bu kod bu sırada geçmez; geçtiği sıra: ${where(coupon.tier)}.`;

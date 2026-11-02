@@ -6,7 +6,7 @@ import { install, add } from './fake-dom.mjs';
 const doc = install();
 const panel = add(doc.body, 'aside', { id: 'panel' });
 for (const id of ['seats-title', 'seat-tiers', 'seat-price', 'seat-count', 'seat-place', 'seat-status', 'seat-form',
-  'seat-pay', 'seat-again', 'seat-pay-status', 'holders', 'holders-lead', 'coupon-open', 'coupon-box', 'coupon-apply', 'coupon-status']) add(panel, 'div', { id });
+  'seat-pay', 'seat-again', 'seat-pay-status', 'holders', 'holders-lead', 'coupon-open', 'coupon-box', 'coupon-apply', 'coupon-status', 'seat-note']) add(panel, 'div', { id });
 for (const id of ['seat-image', 'seat-name', 'seat-about', 'seat-city', 'seat-link', 'seat-terms', 'coupon-code']) add(panel, 'input', { id });
 Object.assign(add(panel, 'canvas', { id: 'seat-preview' }), { width: 480, height: 240 });
 add(panel, 'input', { id: 'seat-width' }).value = '3';
@@ -279,6 +279,8 @@ test('choosing a normal place, or leaving the panel, ends the winner mode', () =
 });
 
 const checkoutOr = (coupon, other) => (url) => (url === '/api/seats/coupon' ? coupon : other);
+const PAID_NOTE = 'Resim, ad ve link yayından önce elle onaylanır; onaylanmazsa ödemen tamamen iade edilir. Link Google için "sponsorlu" işaretlenir. Ödeme Stripe\'ta yapılır, kart bilgin bu siteye gelmez.';
+const FREE_NOTE = 'Resim, ad ve link yayından önce elle onaylanır. Link Google için "sponsorlu" işaretlenir.';
 test('a coupon code takes one seat off the price; one seat costs nothing and is set aside without Stripe', async () => {
   shop(true);
   $('seat-width').value = '2'; $('seat-depth').value = '2';
@@ -291,6 +293,7 @@ test('a coupon code takes one seat off the price; one seat costs nothing and is 
   assert.deepEqual(JSON.parse(calls.at(-1).init.body), { code: 'ONSIRA' });
   assert.equal($('seat-price').textContent, '75 $');
   assert.equal($('coupon-status').textContent, 'Kupon ONSIRA: bir koltuk bedava (Ön sıra).');
+  assert.equal($('seat-note').textContent, PAID_NOTE, 'the rest is still paid on Stripe');
   calls.length = 0;
   await $('seat-pay').onclick();
   assert.equal(JSON.parse(calls[0].init.body).coupon, 'ONSIRA');
@@ -298,6 +301,7 @@ test('a coupon code takes one seat off the price; one seat costs nothing and is 
   await fillForm({ terms: true });
   assert.equal($('seat-price').textContent, '0 $');
   assert.equal($('seat-pay').textContent, 'Koltuğu ayır');
+  assert.equal($('seat-note').textContent, FREE_NOTE, 'nothing is paid, so no refund and no Stripe');
   answer = (url) => (url === '/api/seats/checkout' ? { status: 200, body: { id: 'o-2', free: true } } : { status: 200, body: { state: 'paid', free: true } });
   went.length = 0;
   await $('seat-pay').onclick();
@@ -317,6 +321,7 @@ test('a code for another tier says where it works and leaves the price whole; a 
     assert.equal($('coupon-status').textContent, said);
     assert.equal($('seat-price').textContent, '25 $');
     assert.equal($('seat-pay').textContent, 'Ödemeye geç');
+    assert.equal($('seat-note').textContent, PAID_NOTE);
   }
   $('coupon-code').value = '';
   await $('coupon-apply').onclick();

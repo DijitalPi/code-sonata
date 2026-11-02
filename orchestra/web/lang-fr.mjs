@@ -197,6 +197,7 @@ export const FR = {
   // ---------- buying a seat: payment, return from Stripe, terms ----------
   'Okudum, kabul ediyorum:': 'J’ai lu et j’accepte :', 'Koltuk şartları': "Conditions d’achat des fauteuils",
   'Resim, ad ve link yayından önce elle onaylanır; onaylanmazsa ödemen tamamen iade edilir. Link Google için "sponsorlu" işaretlenir. Ödeme Stripe\'ta yapılır, kart bilgin bu siteye gelmez.': 'L’image, le nom et le lien sont approuvés manuellement avant publication ; en cas de refus, votre paiement est intégralement remboursé. Le lien est signalé comme "sponsorisé" pour Google. Le paiement s’effectue sur Stripe ; vos données de carte bancaire ne sont pas transmises à ce site.',
+  'Resim, ad ve link yayından önce elle onaylanır. Link Google için "sponsorlu" işaretlenir.': 'L’image, le nom et le lien sont approuvés manuellement avant publication. Le lien est signalé comme "sponsorisé" pour Google.',
   'Koltuk almadan önce bilmen gerekenler.': "Ce qu’il faut savoir avant d’acheter un fauteuil.",
   'Ne alıyorsun.': 'Ce que vous achetez.',
   'Salonda seçtiğin blok; üzerinde logon, adın ve linkin durur. Koltuk, salon yayında olduğu sürece kalır. Yıllık ücret yoktur.': "Le bloc choisi dans la salle, affichant votre logo, votre nom et votre lien. Le fauteuil reste en place tant que la salle est en ligne. Il n’y a pas de frais annuels.",

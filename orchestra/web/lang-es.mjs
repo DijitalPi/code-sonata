@@ -197,6 +197,7 @@ export const ES = {
   // ---------- buying a seat: payment, return from Stripe, terms ----------
   'Okudum, kabul ediyorum:': 'He leído y acepto:', 'Koltuk şartları': 'Condiciones de las butacas',
   'Resim, ad ve link yayından önce elle onaylanır; onaylanmazsa ödemen tamamen iade edilir. Link Google için "sponsorlu" işaretlenir. Ödeme Stripe\'ta yapılır, kart bilgin bu siteye gelmez.': 'La imagen, el nombre y el enlace se aprueban manualmente antes de publicarse; si no se aprueban, se te devuelve el importe íntegro. El enlace se marca como "patrocinado" para Google. El pago se realiza en Stripe; los datos de tu tarjeta no llegan a este sitio.',
+  'Resim, ad ve link yayından önce elle onaylanır. Link Google için "sponsorlu" işaretlenir.': 'La imagen, el nombre y el enlace se aprueban manualmente antes de publicarse. El enlace se marca como "patrocinado" para Google.',
   'Koltuk almadan önce bilmen gerekenler.': 'Lo que debes saber antes de comprar una butaca.',
   'Ne alıyorsun.': 'Qué compras.',
   'Salonda seçtiğin blok; üzerinde logon, adın ve linkin durur. Koltuk, salon yayında olduğu sürece kalır. Yıllık ücret yoktur.': 'El bloque que elijas en la sala, donde se muestran tu logo, tu nombre y tu enlace. La butaca permanece mientras la sala siga en línea. No hay cuota anual.',

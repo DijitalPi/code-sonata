@@ -197,6 +197,7 @@ export const EN = {
   // ---------- buying a seat: payment, return from Stripe, terms ----------
   'Okudum, kabul ediyorum:': 'I have read and accept:', 'Koltuk şartları': 'Seat terms',
   'Resim, ad ve link yayından önce elle onaylanır; onaylanmazsa ödemen tamamen iade edilir. Link Google için "sponsorlu" işaretlenir. Ödeme Stripe\'ta yapılır, kart bilgin bu siteye gelmez.': 'The image, name and link are checked by hand before they go up; if they are not approved, you get a full refund. The link is marked "sponsored" for Google. You pay on Stripe; your card details never reach this site.',
+  'Resim, ad ve link yayından önce elle onaylanır. Link Google için "sponsorlu" işaretlenir.': 'The image, name and link are checked by hand before they go up. The link is marked "sponsored" for Google.',
   'Koltuk almadan önce bilmen gerekenler.': 'What to know before you buy a seat.',
   'Ne alıyorsun.': 'What you get.',
   'Salonda seçtiğin blok; üzerinde logon, adın ve linkin durur. Koltuk, salon yayında olduğu sürece kalır. Yıllık ücret yoktur.': 'The block you chose in the hall, showing your logo, your name and your link. The seat stays for as long as the hall is online. There is no yearly fee.',

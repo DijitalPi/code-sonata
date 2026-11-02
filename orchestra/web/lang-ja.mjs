@@ -197,6 +197,7 @@ export const JA = {
   // ---------- buying a seat: payment, return from Stripe, terms ----------
   'Okudum, kabul ediyorum:': '以下を読み、同意します:', 'Koltuk şartları': '座席利用規約',
   'Resim, ad ve link yayından önce elle onaylanır; onaylanmazsa ödemen tamamen iade edilir. Link Google için "sponsorlu" işaretlenir. Ödeme Stripe\'ta yapılır, kart bilgin bu siteye gelmez.': '画像・名前・リンクは公開前に担当者が審査します。承認されなかった場合は全額返金します。リンクはGoogle向けに「スポンサー付き」としてマークされます。支払いはStripeで行い、カード情報がこのサイトに届くことはありません。',
+  'Resim, ad ve link yayından önce elle onaylanır. Link Google için "sponsorlu" işaretlenir.': '画像・名前・リンクは公開前に担当者が審査します。リンクはGoogle向けに「スポンサー付き」としてマークされます。',
   'Koltuk almadan önce bilmen gerekenler.': '座席の購入前にご確認ください。',
   'Ne alıyorsun.': '購入内容。',
   'Salonda seçtiğin blok; üzerinde logon, adın ve linkin durur. Koltuk, salon yayında olduğu sürece kalır. Yıllık ücret yoktur.': 'ホールで選んだブロックに、ロゴ・名前・リンクが表示されます。座席はホールの公開が続く限り残ります。年額料金はありません。',

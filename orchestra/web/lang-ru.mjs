@@ -197,6 +197,7 @@ export const RU = {
   // ---------- buying a seat: payment, return from Stripe, terms ----------
   'Okudum, kabul ediyorum:': 'Подтверждаю прочтение и согласие:', 'Koltuk şartları': 'Условия покупки мест',
   'Resim, ad ve link yayından önce elle onaylanır; onaylanmazsa ödemen tamamen iade edilir. Link Google için "sponsorlu" işaretlenir. Ödeme Stripe\'ta yapılır, kart bilgin bu siteye gelmez.': 'Изображение, имя и ссылка проверяются вручную перед публикацией; если их не одобрят, оплата будет полностью возвращена. Ссылка помечается для Google как спонсорская. Оплата проходит в Stripe; данные вашей карты не поступают на этот сайт.',
+  'Resim, ad ve link yayından önce elle onaylanır. Link Google için "sponsorlu" işaretlenir.': 'Изображение, имя и ссылка проверяются вручную перед публикацией. Ссылка помечается для Google как спонсорская.',
   'Koltuk almadan önce bilmen gerekenler.': 'Что нужно знать перед покупкой места.',
   'Ne alıyorsun.': 'Что вы покупаете.',
   'Salonda seçtiğin blok; üzerinde logon, adın ve linkin durur. Koltuk, salon yayında olduğu sürece kalır. Yıllık ücret yoktur.': 'Выбранный блок в зале с вашим логотипом, именем и ссылкой. Место сохраняется, пока зал доступен в сети. Ежегодной платы нет.',

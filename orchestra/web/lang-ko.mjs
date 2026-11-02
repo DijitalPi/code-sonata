@@ -197,6 +197,7 @@ export const KO = {
   // ---------- buying a seat: payment, return from Stripe, terms ----------
   'Okudum, kabul ediyorum:': '읽었으며 동의해요:', 'Koltuk şartları': '좌석 이용 약관',
   'Resim, ad ve link yayından önce elle onaylanır; onaylanmazsa ödemen tamamen iade edilir. Link Google için "sponsorlu" işaretlenir. Ödeme Stripe\'ta yapılır, kart bilgin bu siteye gelmez.': '이미지, 이름, 링크는 게시 전에 사람이 직접 검토해 승인해요. 승인되지 않으면 결제 금액을 전액 환불해요. 링크는 Google에 "스폰서" 링크로 표시돼요. 결제는 Stripe에서 진행되며 카드 정보는 이 사이트에 전달되지 않아요.',
+  'Resim, ad ve link yayından önce elle onaylanır. Link Google için "sponsorlu" işaretlenir.': '이미지, 이름, 링크는 게시 전에 사람이 직접 검토해 승인해요. 링크는 Google에 "스폰서" 링크로 표시돼요.',
   'Koltuk almadan önce bilmen gerekenler.': '좌석 구매 전에 알아두세요.',
   'Ne alıyorsun.': '구매 내용.',
   'Salonda seçtiğin blok; üzerinde logon, adın ve linkin durur. Koltuk, salon yayında olduğu sürece kalır. Yıllık ücret yoktur.': '공연장에서 선택한 좌석 블록에 내 로고, 이름, 링크가 표시돼요. 공연장이 온라인으로 운영되는 동안 좌석이 유지돼요. 연간 요금은 없어요.',

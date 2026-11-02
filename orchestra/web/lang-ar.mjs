@@ -197,6 +197,7 @@ export const AR = {
   // ---------- buying a seat: payment, return from Stripe, terms ----------
   'Okudum, kabul ediyorum:': 'قرأت وأوافق على:', 'Koltuk şartları': 'شروط شراء المقاعد',
   'Resim, ad ve link yayından önce elle onaylanır; onaylanmazsa ödemen tamamen iade edilir. Link Google için "sponsorlu" işaretlenir. Ödeme Stripe\'ta yapılır, kart bilgin bu siteye gelmez.': 'تُراجع الصورة والاسم والرابط يدويًا للموافقة عليها قبل النشر؛ وإذا لم تُعتمد، يُردّ مبلغك بالكامل. يُعلَّم الرابط بأنه "إعلان مدفوع" لدى Google. يتم الدفع عبر Stripe؛ ولا تصل بيانات بطاقتك إلى هذا الموقع.',
+  'Resim, ad ve link yayından önce elle onaylanır. Link Google için "sponsorlu" işaretlenir.': 'تُراجع الصورة والاسم والرابط يدويًا للموافقة عليها قبل النشر. يُعلَّم الرابط بأنه "إعلان مدفوع" لدى Google.',
   'Koltuk almadan önce bilmen gerekenler.': 'ما يجب معرفته قبل شراء مقعد.',
   'Ne alıyorsun.': 'ما تحصل عليه.',
   'Salonda seçtiğin blok; üzerinde logon, adın ve linkin durur. Koltuk, salon yayında olduğu sürece kalır. Yıllık ücret yoktur.': 'مجموعة المقاعد التي اخترتها في القاعة، وعليها شعارك واسمك ورابطك. يبقى المقعد ما دامت القاعة متاحة على الإنترنت. لا رسوم سنوية.',

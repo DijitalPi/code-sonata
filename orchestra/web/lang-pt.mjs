@@ -197,6 +197,7 @@ export const PT = {
   // ---------- buying a seat: payment, return from Stripe, terms ----------
   'Okudum, kabul ediyorum:': 'Li e aceito:', 'Koltuk şartları': 'Termos das poltronas',
   'Resim, ad ve link yayından önce elle onaylanır; onaylanmazsa ödemen tamamen iade edilir. Link Google için "sponsorlu" işaretlenir. Ödeme Stripe\'ta yapılır, kart bilgin bu siteye gelmez.': 'A imagem, o nome e o link são aprovados manualmente antes da publicação; se não forem aprovados, seu pagamento será reembolsado integralmente. O link é marcado como "patrocinado" para o Google. O pagamento é feito no Stripe; os dados do seu cartão não chegam a este site.',
+  'Resim, ad ve link yayından önce elle onaylanır. Link Google için "sponsorlu" işaretlenir.': 'A imagem, o nome e o link são aprovados manualmente antes da publicação. O link é marcado como "patrocinado" para o Google.',
   'Koltuk almadan önce bilmen gerekenler.': 'O que você precisa saber antes de comprar uma poltrona.',
   'Ne alıyorsun.': 'O que você compra.',
   'Salonda seçtiğin blok; üzerinde logon, adın ve linkin durur. Koltuk, salon yayında olduğu sürece kalır. Yıllık ücret yoktur.': 'O bloco que você escolheu na sala de concertos, com seu logo, nome e link. A poltrona permanece enquanto a sala de concertos estiver no ar. Não há taxa anual.',
