@@ -291,3 +291,10 @@ body.is-placing .hero, body.is-placing .now, body.is-placing .live { visibility:
   .wordmark .mark { display: none; }
   .topbar { gap: 6px; padding-left: 12px; }
 }
+/* Wide screens: the name and the menu grow with the screen, so the bar reads from across the room. */
+@media (min-width: 1440px) {
+  :root { --bar: 78px; }
+  .wordmark { font-size: 29px; }
+  .nav, .more summary { padding: 11px 18px; font-size: 22px; }
+  .lang { padding: 9px 12px; font-size: 16px; }
+}
