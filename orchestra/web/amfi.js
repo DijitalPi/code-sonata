@@ -34,8 +34,8 @@ export function createAmfi({ t = (text) => text } = {}) {
   // Screen point of a plan point (radius in R, angle in degrees) for the hall geometry G.
   const point = (G, r, a) => ({ x: G.cx + Math.sin(rad(a)) * r * G.R, y: G.cy - Math.cos(rad(a)) * r * G.R });
   // An annular sector in canvas angles (0 = right, clockwise): plan angle a is canvas angle a - 90.
-  function sector(g, G, { r1, r2, a1, a2 }) {
-    g.beginPath();
+  function sector(g, G, { r1, r2, a1, a2 }, fresh = true) {
+    if (fresh) g.beginPath();
     g.arc(G.cx, G.cy, r2 * G.R, rad(a1 - 90), rad(a2 - 90));
     g.arc(G.cx, G.cy, r1 * G.R, rad(a2 - 90), rad(a1 - 90), true);
     g.closePath();
@@ -134,13 +134,16 @@ export function createAmfi({ t = (text) => text } = {}) {
         g.fillText(t(auction.state === 'open' ? 'Açık artırma' : 'Satıldı, onay bekliyor'), mid.x, mid.y);
       }
     }
-    // The block whose card is open stands out a little: a glow and a gold edge on its own seats, not over a neighbour.
+    // The block whose card is open stands out: the rest of the seats dim a little and it gets a glow and a gold
+    // edge, on its own seats only, never grown over a neighbour.
     const lifted = hover && !ghost ? holders.find((h) => h.id === hover) : null;
     if (lifted) {
-      sector(g, G, blockArc(lifted));
-      g.save(); g.shadowColor = 'rgba(243, 208, 140, .85)'; g.shadowBlur = 16;
-      g.fillStyle = 'rgba(243, 208, 140, .14)'; g.fill();
-      g.strokeStyle = '#f3d08c'; g.lineWidth = 2; g.stroke(); g.restore();
+      const arc = blockArc(lifted);
+      sector(g, G, { r1: PLAN.inner, r2: PLAN.outer, a1: -90, a2: 90 }); sector(g, G, arc, false);
+      g.fillStyle = 'rgba(11, 9, 7, .45)'; g.fill('evenodd');
+      sector(g, G, arc);
+      g.save(); g.shadowColor = 'rgba(243, 208, 140, .9)'; g.shadowBlur = 20;
+      g.strokeStyle = '#f3d08c'; g.lineWidth = 2.5; g.stroke(); g.restore();
     }
     if (ghost) {
       sector(g, G, blockArc(ghost.block));

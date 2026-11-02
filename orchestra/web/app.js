@@ -875,7 +875,9 @@ function placeCard(x, y) {
   card.hidden = false;
   const box = card.getBoundingClientRect(), stage = card.parentElement.getBoundingClientRect();
   card.style.left = `${Math.min(Math.max(8, x + 14), stage.width - box.width - 8)}px`;
-  card.style.top = `${Math.min(Math.max(8, y - box.height - 12), stage.height - box.height - 8)}px`;
+  // Above the pointer, or below it when there is no room above: never over the block it is about.
+  const above = y - box.height - 12;
+  card.style.top = `${above >= 8 ? above : Math.max(8, Math.min(y + 18, stage.height - box.height - 8))}px`;
 }
 // The front block while its auction takes bids: what it is, the price now, the time left, and the way to bid.
 let auctionView = null;
