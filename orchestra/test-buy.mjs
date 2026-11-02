@@ -7,7 +7,7 @@ const doc = install();
 const panel = add(doc.body, 'aside', { id: 'panel' });
 for (const id of ['seats-title', 'seat-tiers', 'seat-price', 'seat-count', 'seat-place', 'seat-status', 'seat-form',
   'seat-pay', 'seat-again', 'seat-pay-status', 'holders', 'holders-lead']) add(panel, 'div', { id });
-for (const id of ['seat-image', 'seat-name', 'seat-link', 'seat-terms']) add(panel, 'input', { id });
+for (const id of ['seat-image', 'seat-name', 'seat-about', 'seat-city', 'seat-link', 'seat-terms']) add(panel, 'input', { id });
 Object.assign(add(panel, 'canvas', { id: 'seat-preview' }), { width: 480, height: 240 });
 add(panel, 'input', { id: 'seat-width' }).value = '3';
 add(panel, 'input', { id: 'seat-depth' }).value = '2';
@@ -53,6 +53,7 @@ async function fillForm({ terms }) {
   $('seat-image').dispatchEvent(new Event('change'));
   await tick();
   $('seat-name').value = 'Acme'; $('seat-link').value = 'https://acme.example'; $('seat-terms').checked = terms;
+  $('seat-about').value = ' Kod yazan bir ekip '; $('seat-city').value = 'İzmir';
 }
 
 test('seats someone is paying for count as taken while placing', () => {
@@ -90,8 +91,8 @@ test('with payment open the terms come first, then the logo goes to checkout and
   assert.equal(calls[0].url, '/api/seats/checkout');
   assert.equal(calls[0].init.method, 'POST');
   const sent = JSON.parse(calls[0].init.body);
-  assert.deepEqual(Object.keys(sent).sort(), ['block', 'image', 'link', 'name', 'terms']);
-  assert.deepEqual([sent.name, sent.link, sent.image, sent.terms], ['Acme', 'https://acme.example/', 'data:image/webp;base64,UklGRg==', true]);
+  assert.deepEqual(Object.keys(sent).sort(), ['about', 'block', 'city', 'image', 'link', 'name', 'terms']);
+  assert.deepEqual([sent.name, sent.about, sent.city, sent.link, sent.image, sent.terms], ['Acme', 'Kod yazan bir ekip', 'İzmir', 'https://acme.example/', 'data:image/webp;base64,UklGRg==', true]);
   assert.deepEqual(Object.keys(sent.block).sort(), ['col', 'depth', 'ring', 'width']);
   assert.equal(logos.length, 1);
   assert.deepEqual(went, ['https://checkout.stripe.test/c/1']);
@@ -109,6 +110,9 @@ test('a place taken a moment ago, or a server that cannot open Stripe, is said p
   answer = () => ({ status: 429, body: { error: 'busy' } });
   await $('seat-pay').onclick();
   assert.equal($('seat-pay-status').textContent, 'Çok fazla deneme oldu. Birkaç dakika sonra yeniden dene.');
+  answer = () => ({ status: 400, body: { error: 'holder' } });
+  await $('seat-pay').onclick();
+  assert.equal($('seat-pay-status').textContent, 'Ad, link, tanıtım ya da şehir kabul edilmedi. Kontrol edip yeniden dene.');
 });
 
 test('back from Stripe the buyer reads what became of the order', async () => {
@@ -259,7 +263,7 @@ test('the auction winner sends the logo with the same form: no payment, the bid 
   const pages = went.length;
   await $('seat-pay').onclick();
   assert.equal(calls[0].url, '/api/auction/content');
-  assert.deepEqual(Object.keys(JSON.parse(calls[0].init.body)).sort(), ['id', 'image', 'link', 'name', 'terms']);
+  assert.deepEqual(Object.keys(JSON.parse(calls[0].init.body)).sort(), ['about', 'city', 'id', 'image', 'link', 'name', 'terms']);
   assert.equal(JSON.parse(calls[0].init.body).id, id);
   assert.equal($('seat-pay-status').textContent, 'Logon onaya gönderildi. Onaylanınca blok salonda görünür.');
   assert.equal(went.length, pages, 'no payment page');

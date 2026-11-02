@@ -245,6 +245,7 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
     if (paying) return;
     const say = (text) => { $('seat-pay-status').textContent = text; };
     const name = $('seat-name').value.trim(), link = $('seat-link').value.trim();
+    const about = $('seat-about').value.trim(), city = $('seat-city').value.trim();
     let url = null; try { url = new URL(link); } catch { url = null; }
     const problem = !chosen ? 'Önce salonda bir yer seç.' : !image ? 'Bir logo ya da profil resmi ekle.' : !name ? 'Görünecek adı yaz.'
       : !url || !['http:', 'https:'].includes(url.protocol) ? 'Link https:// ile başlayan bir adres olmalı.'
@@ -257,7 +258,7 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
         const logo = await encode(image);
         if (!logo) return say('Tarayıcın bu resmi hazırlayamadı. Başka bir tarayıcı dene.');
         const res = await fetch('/api/auction/content', { method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ id: winner, name, link: url.href, image: logo, terms: true }) });
+          body: JSON.stringify({ id: winner, name, about, city, link: url.href, image: logo, terms: true }) });
         say(res.ok ? 'Logon onaya gönderildi. Onaylanınca blok salonda görünür.'
           : res.status === 400 ? 'Logo ya da ad kabul edilmedi. Başka bir resim ya da ad dene.'
           : 'Bu teklif kazanan değil ya da logo artık değiştirilemez.');
@@ -272,13 +273,14 @@ export function setupBuying({ canvas, geometry, amfi, encode = webpLogo, go = (u
       const logo = await encode(image);
       if (!logo) return say('Tarayıcın bu resmi hazırlayamadı. Başka bir tarayıcı dene.');
       const res = await fetch('/api/seats/checkout', { method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ block: { ring: chosen.ring, col: chosen.col, width: chosen.width, depth: chosen.depth }, name, link: url.href, image: logo, terms: true }) });
+        body: JSON.stringify({ block: { ring: chosen.ring, col: chosen.col, width: chosen.width, depth: chosen.depth }, name, about, city, link: url.href, image: logo, terms: true }) });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.url) { say('Ödeme sayfasına gidiliyor…'); return go(data.url); }
       if (res.status === 409) dispatchEvent(new CustomEvent('seats-stale'));
       say(res.status === 409 ? 'Bu yer az önce başkası tarafından tutuldu. Başka bir yer seç.'
         : res.status === 429 ? 'Çok fazla deneme oldu. Birkaç dakika sonra yeniden dene.'
         : res.status === 400 && data.error === 'image' ? 'Resim kabul edilmedi. Başka bir resim dene.'
+        : res.status === 400 && data.error === 'holder' ? 'Ad, link, tanıtım ya da şehir kabul edilmedi. Kontrol edip yeniden dene.'
         : 'Ödeme sayfası açılamadı. Birazdan yeniden dene.');
     } catch { say('Ödeme sayfası açılamadı. Birazdan yeniden dene.'); }
     finally { paying = false; $('seat-pay').disabled = false; }
