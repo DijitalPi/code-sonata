@@ -50,8 +50,10 @@ def tool_kind(name):
     return "tool"
 
 
-# Grok Build names a tool call by its ACP kind.
-GROK_KINDS = {"execute": "bash", "edit": "edit", "delete": "edit", "move": "edit", "read": "read", "search": "read", "fetch": "read"}
+# Grok Build's own tool kinds (in the call's _meta), and the ACP kinds a later update adds.
+GROK_KINDS = {"execute": "bash", "edit": "edit", "write": "edit", "delete": "edit", "move": "edit",
+              "read": "read", "list": "read", "list_dir": "read", "search": "read", "fetch": "read",
+              "web_search": "read", "web_fetch": "read", "search_tool": "read"}
 
 
 def is_log(path, name):
@@ -242,7 +244,9 @@ class Classifier:
         if kind == "tool_call":
             if isinstance(call_id, str) and call_id in self.calls:
                 return []
-            step = GROK_KINDS.get(update.get("kind")) if isinstance(update.get("kind"), str) else None
+            meta = (update.get("_meta") or {}).get("x.ai/tool") if isinstance(update.get("_meta"), dict) else None
+            named = meta.get("kind") if isinstance(meta, dict) else update.get("kind")
+            step = GROK_KINDS.get(named) if isinstance(named, str) else None
             command = (update.get("rawInput") or {}).get("command") if isinstance(update.get("rawInput"), dict) else None
             self.remember(call_id, step or "tool", command[:2000] if isinstance(command, str) else "")
             return [step or "tool"]

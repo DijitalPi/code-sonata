@@ -46,15 +46,17 @@ def gcall(name, call_id, command=None, status="success", output=""):
 
 
 # Grok Build appends ACP session updates to ~/.grok/sessions/<cwd>/<session>/updates.jsonl, one envelope a line:
-# chunks of the prompt, thoughts and reply (consecutive chunks are merged before writing), tool calls with an ACP
-# kind, their updates (a command's exit code is in rawOutput; the status stays "completed" when it is not 0) and
-# an xAI "turn_completed" when the turn ends. Shapes from the grok-build source (xai-grok-shell); the text is made up.
+# chunks of the prompt, thoughts and reply (consecutive chunks are merged before writing), tool calls (the first
+# line names the tool only in Grok's own _meta; an update without a status adds the ACP kind), their results (a
+# command's exit code is in rawOutput; the status stays "completed" when it is not 0) and an xAI "turn_completed"
+# when the turn ends. Shapes as written by Grok Build 1.0.70 on the maintainer's Mac; the text is made up.
 def grok(update, method="session/update"):
     return {"timestamp": 1793577600, "method": method, "params": {"sessionId": "s", "update": update}}
 
 
 def gtool(call_id, kind, command=None):
-    update = {"sessionUpdate": "tool_call", "toolCallId": call_id, "title": "t", "kind": kind, "status": "pending"}
+    update = {"sessionUpdate": "tool_call", "toolCallId": call_id, "title": "t",
+              "_meta": {"x.ai/tool": {"version": 1, "name": "t", "kind": kind, "namespace": "grok_build"}}}
     if command is not None:
         update["rawInput"] = {"command": command, "description": "d"}
     return grok(update)
@@ -179,9 +181,13 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual([classify(chunk(kind), state) for kind in ("agent_thought_chunk", "agent_thought_chunk",
                                                                      "agent_message_chunk", "agent_message_chunk")],
                          [["think"], [], ["text"], []])
-        self.assertEqual([classify(gtool(i, kind), state) for i, kind in (("r1", "read"), ("s1", "search"), ("e1", "edit"), ("m1", "other"))],
+        self.assertEqual([classify(gtool(i, kind), state) for i, kind in (("r1", "read"), ("l1", "list"), ("e1", "edit"), ("m1", "memory_get"))],
                          [["read"], ["read"], ["edit"], ["tool"]])
         self.assertEqual(classify(gtool("r1", "read"), state), [])   # the same call sent again is not a new step
+        named = grok({"sessionUpdate": "tool_call_update", "toolCallId": "r1", "kind": "read", "title": "Read `x`"})
+        self.assertEqual(classify(named, state), [])
+        acp = grok({"sessionUpdate": "tool_call", "toolCallId": "a1", "kind": "search", "status": "pending"})
+        self.assertEqual(classify(acp, state), ["read"])   # an ACP kind alone is enough
         self.assertEqual(classify(gtool("b1", "execute", "npm test"), state), ["bash"])
         progress = grok({"sessionUpdate": "tool_call_update", "toolCallId": "b1", "status": "in_progress", "rawOutput": {"exit_code": 0}})
         self.assertEqual(classify(progress, state), [])
