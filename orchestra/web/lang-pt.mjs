@@ -62,7 +62,7 @@ export const PT = {
   'okuyucunun kodunu oku': 'leia o código do leitor',
   'Bu tarayıcıya özel komut': 'Comando exclusivo deste navegador', 'Komutu kopyala': 'Copiar comando', 'Eşleştirmeyi kaldır': 'Remover pareamento',
   "Komut sana özel bir anahtar içerir, paylaşma. Anahtar bir saat sonra silinir. Eşleştirmeyi kaldırmak ortak çalmayı durdurmaz; okuyucuyu durdurmak için Terminal'de Ctrl+C.": 'O comando contém uma chave exclusiva sua; não a compartilhe. A chave é excluída após uma hora. Remover o pareamento não interrompe sua participação na orquestra compartilhada; para parar o leitor, pressione Ctrl+C no Terminal.',
-  'Henüz ajan bağlamadın.': 'Você ainda não conectou um agente.', 'Kendi sesin nasıl duyulur: örneği dinle': 'Como soa sua camada: ouça o exemplo',
+  'Henüz ajan bağlamadın.': 'Você ainda não conectou um agente.', 'Kendi sesin nasıl duyulur: örneği dinle': 'Como soa seu próprio som: ouça o exemplo',
   'adım bu bağlantıdan geldi': 'passos vieram desta conexão',
   'Salonda bölümün bir katman çalar; koltuğun o katmanın notalarıyla yanar. Katmanını öne almak için alttaki Dinleme seçiminden "Ortak · katmanım önde"yi seç. "Yalnız benim sesim" ise yalnız kendi motifini çalar: düzenleme melodiyi, komut bası, okuma ince notaları, düşünme akoru, bitiş kapanışı.': 'Sua seção toca uma camada na sala de concertos; sua poltrona acende com as notas dessa camada. Para destacá-la, escolha "Compartilhada · minha camada em destaque" em Escuta abaixo. "Só o meu som" toca apenas seu motivo musical: edições tocam a melodia, comandos o baixo, leituras as notas agudas, o pensamento um acorde e a conclusão o encerramento.',
   'Neler gönderiliyor, neler saklanıyor': 'O que é enviado e armazenado', 'Bağlanmazsa ne yapmalı': 'O que fazer se não conectar',
@@ -157,11 +157,11 @@ export const PT = {
   'Soru ve silme talepleri için': 'Para dúvidas e pedidos de exclusão:',
   // seats
   'Orkestranın etrafındaki koltuklara logonu ya da profil resmini koy. Üzerine gelen adını ve linkini görür, orkestra o yönde çaldıkça koltuğun parlar.': 'Coloque seu logo ou foto de perfil nas poltronas ao redor da orquestra. Quem passa o cursor vê seu nome e link, e sua poltrona brilha quando a orquestra toca naquela direção.',
-  'Sıra': 'Fileiras', 'Ön sıra': 'Fileiras da frente', 'Orta': 'Meio', 'Arka': 'Fundo', 'Yan yana koltuk': 'Poltronas lado a lado', 'Sıra sayısı': 'Número de fileiras',
+  'Sıra': 'Fileiras', 'Ön sıra': 'Fileiras da frente', 'Orta': 'Fileiras do meio', 'Arka': 'Fileiras do fundo', 'Yan yana koltuk': 'Poltronas lado a lado', 'Sıra sayısı': 'Número de fileiras',
   'Salonda yer seç': 'Escolher lugar na sala de concertos', 'Başka bir yer seç': 'Escolher outro lugar', 'Önce boyutu seç, sonra bloğu salonda boş bir yere yerleştir.': 'Escolha o tamanho primeiro e depois posicione o bloco em um lugar livre na sala de concertos.',
   'Logo ya da profil resmi (PNG, JPG ya da WebP)': 'Logo ou foto de perfil (PNG, JPG ou WebP)', 'Görünecek ad': 'Nome exibido', 'Kısa tanıtım (isteğe bağlı)': 'Breve apresentação (opcional)', 'Şehir, ülke (isteğe bağlı)': 'Cidade, país (opcional)',
   'Link (site, Instagram, X…)': 'Link (site, Instagram, X…)',
-  'Ödemeye geç': 'Ir para o pagamento', 'Yeri değiştir': 'Mudar lugar', 'Koltuğunun salondaki önizlemesi': 'Prévia das suas poltronas na sala de concertos',
+  'Ödemeye geç': 'Ir para o pagamento', 'Yeri değiştir': 'Mudar lugar', 'Koltuğunun salondaki önizlemesi': 'Prévia da sua poltrona na sala de concertos',
   'Henüz satılmış koltuk yok.': 'Nenhuma poltrona vendida ainda.',
   '{a} · koltuğu {b}': '{a} · {b} por poltrona', '{a} boş koltuk · {b} sıra': '{a} poltronas livres · {b} fileiras', '{a} koltuk · {b} yan yana, {c} sıra': '{a} poltronas · {b} lado a lado, {c} fileiras',
   // One seat: the sentences above with the number written in, so English says "1 seat", not "1 seats".
@@ -257,7 +257,7 @@ export const PT = {
   'Açık artırma': 'Leilão', 'Satıldı, onay bekliyor': 'Vendido, aguardando aprovação', 'Sahnenin önü · 96 koltuk': 'Em frente ao palco · 96 poltronas',
   'Şu an {a} $ · bitişe {b}': 'Agora US$ {a} · termina em {b}', 'Açılış {a} $ · bitişe {b}': 'Lance inicial US$ {a} · termina em {b}',
   'Açık artırma.': 'Leilão.',
-  'Sahnenin önündeki blok açık artırmayla satılır. Teklifin kartında bloke edilir, çekilmez; daha yüksek teklif gelince bloke hemen kaldırılır. Bitişte en yüksek teklif tahsil edilir. Kazanan logo, ad ve link gönderir; içerik onaylanmazsa ücret tamamen iade edilir. Son 10 dakikada gelen teklif bitişi 10 dakika uzatır, açık artırma en çok 6 gün sürer.': 'O bloco em frente ao palco é vendido em leilão. O valor do seu lance é bloqueado no cartão, sem cobrança; quando chega um lance maior, o bloqueio é removido imediatamente. No encerramento, o maior lance é cobrado. O vencedor envia logo, nome e link; se o conteúdo não for aprovado, o valor será reembolsado integralmente. Um lance nos últimos 10 minutos adia o encerramento em 10 minutos; o leilão dura no máximo 6 dias.',
+  'Sahnenin önündeki blok açık artırmayla satılır. Teklifin kartında bloke edilir, çekilmez; daha yüksek teklif gelince bloke hemen kaldırılır. Bitişte en yüksek teklif tahsil edilir. Kazanan logo, ad ve link gönderir; içerik onaylanmazsa ücret tamamen iade edilir. Son 10 dakikada gelen teklif bitişi 10 dakika uzatır, açık artırma en çok 6 gün sürer.': 'O bloco em frente ao palco é vendido em leilão. O valor do seu lance é bloqueado no cartão, sem cobrança; quando chega um lance maior, o valor bloqueado é liberado imediatamente. No encerramento, o maior lance é cobrado. O vencedor envia logo, nome e link; se o conteúdo não for aprovado, o valor será reembolsado integralmente. Um lance nos últimos 10 minutos adia o encerramento em 10 minutos; o leilão dura no máximo 6 dias.',
   'Logon onay bekliyor. Değiştirmek istersen yeniden gönderebilirsin.': 'Seu logo aguarda aprovação. Se quiser alterá-lo, você pode enviá-lo de novo.',
   // Coupons
   'Kuponun var mı?': 'Tem um cupom?', 'Kupon kodu': 'Código do cupom', 'Uygula': 'Aplicar',
@@ -265,7 +265,7 @@ export const PT = {
   'Bu kod bu sırada geçmez; geçtiği sıra: {a}.': 'Este código não vale nesta fileira; ele vale em: {a}.',
   'her sıra': 'qualquer fileira',
   'Bu kod geçerli değil ya da süresi doldu.': 'Este código não é válido ou expirou.',
-  'Bu kodun hakları bitti.': 'Os usos deste código se esgotaram.',
+  'Bu kodun hakları bitti.': 'Este código atingiu o limite de usos.',
   'Kod şu an kontrol edilemedi. Birazdan yeniden dene.': 'Não foi possível verificar o código agora. Tente novamente daqui a pouco.',
   'Koltuğu ayır': 'Reservar a poltrona', 'Koltuğun ayrılıyor…': 'Reservando sua poltrona…',
   'Koltuğun ayrıldı; onay bekliyor, onaylanınca salonda görünecek.': 'Sua poltrona está reservada e aguarda aprovação; ela aparecerá na sala de concertos quando for aprovada.',
@@ -273,5 +273,5 @@ export const PT = {
   'Bu kod seçtiğin sırada geçmez.': 'Este código não vale na fileira que você escolheu.',
   'Bu bağlantıdan bugün bir kupon kullanıldı. Yarın yeniden deneyebilirsin.': 'Já foi usado um cupom nesta conexão hoje. Você pode tentar novamente amanhã.',
   'Kupon.': 'Cupom.',
-  'Kupon kodu bir koltuğun bedelini düşer: tek koltukta ödeme yoktur, büyük blokta kalanı ödenir. Kodlar sınırlı sayıda ve sürelidir, durdurulabilir. Aynı bağlantıdan günde bir kupon kullanılır. Kuponla alınan koltuk da onaydan geçer ve reddedilebilir. Kuponun parasal karşılığı yoktur.': 'O código de cupom desconta o preço de uma poltrona: para uma única poltrona, não há pagamento; para um bloco maior, você paga o restante. Os códigos têm quantidade e prazo de validade limitados e podem ser desativados. É possível usar um cupom por dia na mesma conexão. Uma poltrona obtida com cupom também passa por aprovação e pode ser recusada. O cupom não tem valor em dinheiro.',
+  'Kupon kodu bir koltuğun bedelini düşer: tek koltukta ödeme yoktur, büyük blokta kalanı ödenir. Kodlar sınırlı sayıda ve sürelidir, durdurulabilir. Aynı bağlantıdan günde bir kupon kullanılır. Kuponla alınan koltuk da onaydan geçer ve reddedilebilir. Kuponun parasal karşılığı yoktur.': 'O código de cupom desconta o preço de uma poltrona: para uma única poltrona, não há pagamento; para um bloco maior, você paga o restante. Os códigos têm limite de usos e prazo de validade e podem ser desativados. É possível usar um cupom por dia na mesma conexão. Uma poltrona obtida com cupom também passa por aprovação e pode ser recusada. O cupom não tem valor em dinheiro.',
 };

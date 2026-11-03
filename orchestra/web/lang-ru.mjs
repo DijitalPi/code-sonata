@@ -157,15 +157,15 @@ export const RU = {
   'Soru ve silme talepleri için': 'Вопросы и запросы на удаление:',
   // seats
   'Orkestranın etrafındaki koltuklara logonu ya da profil resmini koy. Üzerine gelen adını ve linkini görür, orkestra o yönde çaldıkça koltuğun parlar.': 'Разместите логотип или фото профиля на местах вокруг оркестра. При наведении видны ваше имя и ссылка, а когда звучит ближайшая к месту часть оркестра, оно подсвечивается.',
-  'Sıra': 'Ряд', 'Ön sıra': 'Передний ряд', 'Orta': 'Середина', 'Arka': 'Задние ряды', 'Yan yana koltuk': 'Мест в ряду', 'Sıra sayısı': 'Число рядов',
+  'Sıra': 'Ряд', 'Ön sıra': 'Передний ряд', 'Orta': 'Средние ряды', 'Arka': 'Задние ряды', 'Yan yana koltuk': 'Мест рядом', 'Sıra sayısı': 'Число рядов',
   'Salonda yer seç': 'Выбрать место в зале', 'Başka bir yer seç': 'Выбрать другое место', 'Önce boyutu seç, sonra bloğu salonda boş bir yere yerleştir.': 'Сначала выберите размер, затем разместите блок на свободных местах в зале.',
   'Logo ya da profil resmi (PNG, JPG ya da WebP)': 'Логотип или фото профиля (PNG, JPG или WebP)', 'Görünecek ad': 'Отображаемое имя', 'Kısa tanıtım (isteğe bağlı)': 'Краткое описание (необязательно)', 'Şehir, ülke (isteğe bağlı)': 'Город, страна (необязательно)',
   'Link (site, Instagram, X…)': 'Ссылка (сайт, Instagram, X…)',
-  'Ödemeye geç': 'К оплате', 'Yeri değiştir': 'Изменить место', 'Koltuğunun salondaki önizlemesi': 'Предпросмотр ваших мест в зале',
+  'Ödemeye geç': 'К оплате', 'Yeri değiştir': 'Изменить место', 'Koltuğunun salondaki önizlemesi': 'Предпросмотр вашего места в зале',
   'Henüz satılmış koltuk yok.': 'Проданных мест пока нет.',
   '{a} · koltuğu {b}': '{a} · {b} за место', '{a} boş koltuk · {b} sıra': 'Свободных мест: {a} · рядов: {b}', '{a} koltuk · {b} yan yana, {c} sıra': 'Мест: {a} · в ряду: {b}, рядов: {c}',
   // One seat: the sentences above with the number written in, so English says "1 seat", not "1 seats".
-  '1 koltuk': '1 место', '{a} · 1 koltuk': '{a} · 1 место', '1 koltuk · {a}': '1 место · {a}', 'Seçtiğin yer: {a}, 1 koltuk, {b}.': 'Ваше место: {a}, 1 место, {b}.',
+  '1 koltuk': '1 место', '{a} · 1 koltuk': '{a} · 1 место', '1 koltuk · {a}': '1 место · {a}', 'Seçtiğin yer: {a}, 1 koltuk, {b}.': 'Ваш выбор: {a}, 1 место, {b}.',
   '{a}, {b}. sıradan 1 koltuk · {c}.': '{a}, начиная с ряда {b}: 1 место · {c}.',
   'Burayı seç': 'Выбрать здесь', 'Vazgeç': 'Отмена',
   '{a}, {b}. sıradan {c} koltuk · {d}.': '{a}, начиная с ряда {b} · мест: {c} · {d}.', 'En iyi boş yer: {a}': 'Лучшее свободное место: {a}',
@@ -196,8 +196,8 @@ export const RU = {
   'Okuyucu şu ajanların kayıtlarını okur: Claude Code, Codex, Gemini CLI ve Grok Build. GitHub Copilot CLI, Cursor ve OpenCode, kayıt biçimleri doğrulanınca eklenecek.': 'Программа читает журналы Claude Code, Codex, Gemini CLI и Grok Build. GitHub Copilot CLI, Cursor и OpenCode будут добавлены после проверки форматов их журналов.',
   // ---------- buying a seat: payment, return from Stripe, terms ----------
   'Okudum, kabul ediyorum:': 'Подтверждаю прочтение и согласие:', 'Koltuk şartları': 'Условия покупки мест',
-  'Resim, ad ve link yayından önce elle onaylanır; onaylanmazsa ödemen tamamen iade edilir. Link Google için "sponsorlu" işaretlenir. Ödeme Stripe\'ta yapılır, kart bilgin bu siteye gelmez.': 'Изображение, имя и ссылка проверяются вручную перед публикацией; если их не одобрят, оплата будет полностью возвращена. Ссылка помечается для Google как спонсорская. Оплата проходит в Stripe; данные вашей карты не поступают на этот сайт.',
-  'Resim, ad ve link yayından önce elle onaylanır. Link Google için "sponsorlu" işaretlenir.': 'Изображение, имя и ссылка проверяются вручную перед публикацией. Ссылка помечается для Google как спонсорская.',
+  'Resim, ad ve link yayından önce elle onaylanır; onaylanmazsa ödemen tamamen iade edilir. Link Google için "sponsorlu" işaretlenir. Ödeme Stripe\'ta yapılır, kart bilgin bu siteye gelmez.': 'Изображение, имя и ссылка одобряются вручную перед публикацией; если их не одобрят, оплата будет полностью возвращена. Ссылка помечается для Google как спонсорская. Оплата проходит в Stripe; данные вашей карты не поступают на этот сайт.',
+  'Resim, ad ve link yayından önce elle onaylanır. Link Google için "sponsorlu" işaretlenir.': 'Изображение, имя и ссылка одобряются вручную перед публикацией. Ссылка помечается для Google как спонсорская.',
   'Koltuk almadan önce bilmen gerekenler.': 'Что нужно знать перед покупкой места.',
   'Ne alıyorsun.': 'Что вы покупаете.',
   'Salonda seçtiğin blok; üzerinde logon, adın ve linkin durur. Koltuk, salon yayında olduğu sürece kalır. Yıllık ücret yoktur.': 'Выбранный блок в зале с вашим логотипом, именем и ссылкой. Место сохраняется, пока зал доступен в сети. Ежегодной платы нет.',
@@ -262,7 +262,7 @@ export const RU = {
   // Coupons
   'Kuponun var mı?': 'У вас есть купон?', 'Kupon kodu': 'Код купона', 'Uygula': 'Применить',
   'Kupon {a}: bir koltuk bedava ({b}).': 'Купон {a}: одно место бесплатно ({b}).',
-  'Bu kod bu sırada geçmez; geçtiği sıra: {a}.': 'Этот код не действует в этом ряду; он действует в: {a}.',
+  'Bu kod bu sırada geçmez; geçtiği sıra: {a}.': 'Этот код не действует в этом ряду. Доступный ряд: {a}.',
   'her sıra': 'любой ряд',
   'Bu kod geçerli değil ya da süresi doldu.': 'Этот код недействителен или срок его действия истёк.',
   'Bu kodun hakları bitti.': 'Лимит использований этого кода исчерпан.',
@@ -273,5 +273,5 @@ export const RU = {
   'Bu kod seçtiğin sırada geçmez.': 'Этот код не действует в выбранном вами ряду.',
   'Bu bağlantıdan bugün bir kupon kullanıldı. Yarın yeniden deneyebilirsin.': 'Сегодня с этого подключения уже использовали купон. Вы можете попробовать снова завтра.',
   'Kupon.': 'Купон.',
-  'Kupon kodu bir koltuğun bedelini düşer: tek koltukta ödeme yoktur, büyük blokta kalanı ödenir. Kodlar sınırlı sayıda ve sürelidir, durdurulabilir. Aynı bağlantıdan günde bir kupon kullanılır. Kuponla alınan koltuk da onaydan geçer ve reddedilebilir. Kuponun parasal karşılığı yoktur.': 'Код купона вычитает стоимость одного места: за одно место платить не нужно, за блок большего размера вы оплачиваете остаток. Коды ограничены по количеству и сроку действия и могут быть отключены. С одного подключения можно использовать один купон в день. Место, полученное по купону, также проходит одобрение и может быть отклонено. Купон не имеет денежного эквивалента.',
+  'Kupon kodu bir koltuğun bedelini düşer: tek koltukta ödeme yoktur, büyük blokta kalanı ödenir. Kodlar sınırlı sayıda ve sürelidir, durdurulabilir. Aynı bağlantıdan günde bir kupon kullanılır. Kuponla alınan koltuk da onaydan geçer ve reddedilebilir. Kuponun parasal karşılığı yoktur.': 'Код купона уменьшает сумму к оплате на стоимость одного места: за одно место платить не нужно, за блок большего размера вы оплачиваете остаток. Число использований и срок действия кодов ограничены; их действие может быть прекращено. С одного подключения можно использовать один купон в день. Место, полученное по купону, также проходит одобрение и может быть отклонено. Купон не имеет денежного эквивалента.',
 };

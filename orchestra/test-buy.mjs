@@ -193,7 +193,7 @@ test('in English one seat reads as one seat, not "1 seats"', async () => {
   setLang('en');
   try {
     assert.equal(t('1 koltuk'), '1 seat');
-    assert.equal(t('En iyi boş yer: Orta, 3. sıradan 1 koltuk · 10 $.'), `Best free place: ${t('Orta')}, from row 3: 1 seat · ${t('10 $')}.`);
+    assert.equal(t('En iyi boş yer: Orta, 3. sıradan 1 koltuk · 10 $.'), `Best available place: ${t('Orta')}, from row 3: 1 seat · ${t('10 $')}.`);
     assert.equal(t('Seçtiğin yer: Sahne önü, 1 koltuk, 90 $.'), `Your place: ${t('Sahne önü')}, 1 seat, ${t('90 $')}.`);
     assert.equal(t('Sahne önü · 1 koltuk'), `${t('Sahne önü')} · 1 seat`);
     assert.equal(t('1 koltuk · Sahne önü'), `1 seat · ${t('Sahne önü')}`);

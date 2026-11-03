@@ -6,7 +6,7 @@ export const ES = {
   'Ses kontrollerine geç': 'Ir a los controles de sonido',
   'Dinlemek ve anını oluşturmak için JavaScript gerekir.': "Necesitas JavaScript para escuchar y crear tu clip.",
   // top bar and panel
-  'Ajanını bağla': 'Conecta tu agente', 'Anını indir': "Descarga tu clip", 'Davet et': 'Invita', 'Koltuk al': 'Compra una butaca',
+  'Ajanını bağla': 'Conecta tu agente', 'Anını indir': "Descarga tu clip", 'Davet et': 'Invita', 'Koltuk al': 'Compra butaca',
   'Diğer': 'Más', 'Menü': 'Menú', 'Koltuk sahipleri': 'Titulares de butacas', 'Ülkelerin nota katkısı': 'Notas por país',
   'Proje ve iletişim': 'Proyecto y contacto', 'Gizlilik': 'Privacidad', 'Yapabileceklerin': 'Qué puedes hacer',
   'Seçtiğin iş': 'Tu tarea', 'Paneli kapat': 'Cerrar el panel', 'Dil': 'Idioma',
@@ -149,7 +149,7 @@ export const ES = {
   'Tarayıcın canlı salona bağlanır. IP adresin ülkeyi bulmak, kötüye kullanımı sınırlamak ve günlük sayımda aynı adresi iki kez saymamak için o an kullanılır; kendisi kaydedilmez. Bunun için her açılışta değişen tuzlu bir özet yalnız bellekte ve en fazla o gün boyunca tutulur.': 'Tu navegador se conecta a la sala en directo. Tu dirección IP se usa en ese momento para determinar el país, limitar los abusos y evitar contar dos veces la misma dirección en los totales diarios; la dirección en sí no se guarda. Para ello, se conserva un resumen criptográfico con sal que cambia en cada reinicio, solo en memoria y, como máximo, durante ese día.',
   'Ajanını bağlarsan.': 'Si conectas tu agente.',
   'Okuyucu anonim bir makine kimliği, adım türü sayıları, çalışıyor bilgisi ve oturum sayısı gönderir. Prompt, kod, proje adı ve dosya yolu gönderilmez. Eşleştirme ve adım toplamları sunucu belleğinde en fazla bir saat kalır. Salondaki herkes koltuğunun ülke bayrağını, aracını (Claude, Codex, Gemini ya da diğer), oturum sayısını ve adım attığın anları görür; küçük bir salonda ülkenden tek kişiysen tanınabilirsin.': 'El lector envía un identificador anónimo de la máquina, el recuento de cada tipo de paso, si está trabajando y el número de sesiones. No se envían instrucciones, código, nombres de proyectos ni rutas de archivos. Los emparejamientos y los totales de pasos permanecen en la memoria del servidor como máximo una hora. Todos los presentes en la sala ven la bandera del país de tu butaca, tu herramienta (Claude, Codex, Gemini u otra), el número de sesiones y los momentos en que das pasos; en una sala pequeña podrían reconocerte si eres la única persona de tu país.',
-  'Ölçüm.': 'Recuento.', 'Sunucu yalnız günlük toplam sayılar tutar, örneğin bugün kaç kez dinleme başlatıldığı. Kimlik ya da kişiye bağlanan kayıt yoktur.': 'El servidor solo guarda totales diarios, como cuántas escuchas se han iniciado hoy. No hay registros vinculados a una identidad o persona.',
+  'Ölçüm.': 'Recuento.', 'Sunucu yalnız günlük toplam sayılar tutar, örneğin bugün kaç kez dinleme başlatıldığı. Kimlik ya da kişiye bağlanan kayıt yoktur.': 'El servidor solo guarda totales diarios, como cuántas escuchas se han iniciado hoy. No hay datos de identidad ni registros vinculados a una persona.',
   'Çalışma anın.': "Tu clip de trabajo.", 'Ses, görsel ve video bu tarayıcıda üretilir, sunucuya yüklenmez.': 'El sonido, la imagen y el vídeo se crean en este navegador y no se suben al servidor.',
   'Dış kaynaklar.': 'Fuentes externas.',
   'Sayfa, ses motoru, ses örnekleri ve yazı tipleri bu siteden gelir; başka bir siteye istek gitmez. "DijitalPi ile iletişime geç" bağlantısı dijitalpi.com\'u açar.': 'La página, el motor de sonido, las muestras y las tipografías proceden de este sitio; no se envían solicitudes a ningún otro sitio. El enlace "Contacta con DijitalPi" abre dijitalpi.com.',
@@ -157,11 +157,11 @@ export const ES = {
   'Soru ve silme talepleri için': 'Para preguntas y solicitudes de eliminación:',
   // seats
   'Orkestranın etrafındaki koltuklara logonu ya da profil resmini koy. Üzerine gelen adını ve linkini görür, orkestra o yönde çaldıkça koltuğun parlar.': 'Pon tu logo o foto de perfil en las butacas que rodean la orquesta. Quien pase el puntero por encima verá tu nombre y tu enlace, y tu butaca brillará cuando la orquesta toque en esa dirección.',
-  'Sıra': 'Filas', 'Ön sıra': 'Primeras filas', 'Orta': 'Centro', 'Arka': 'Fondo', 'Yan yana koltuk': 'Butacas contiguas', 'Sıra sayısı': 'Número de filas',
+  'Sıra': 'Filas', 'Ön sıra': 'Primeras filas', 'Orta': 'Filas centrales', 'Arka': 'Filas traseras', 'Yan yana koltuk': 'Butacas contiguas', 'Sıra sayısı': 'Número de filas',
   'Salonda yer seç': 'Elegir un lugar en la sala', 'Başka bir yer seç': 'Elegir otro lugar', 'Önce boyutu seç, sonra bloğu salonda boş bir yere yerleştir.': 'Elige primero el tamaño y después coloca el bloque en un lugar libre de la sala.',
   'Logo ya da profil resmi (PNG, JPG ya da WebP)': 'Logo o foto de perfil (PNG, JPG o WebP)', 'Görünecek ad': 'Nombre que se mostrará', 'Kısa tanıtım (isteğe bağlı)': 'Breve presentación (opcional)', 'Şehir, ülke (isteğe bağlı)': 'Ciudad, país (opcional)',
   'Link (site, Instagram, X…)': 'Enlace (web, Instagram, X…)',
-  'Ödemeye geç': 'Ir al pago', 'Yeri değiştir': 'Cambiar de lugar', 'Koltuğunun salondaki önizlemesi': 'Vista previa de tus butacas en la sala',
+  'Ödemeye geç': 'Ir al pago', 'Yeri değiştir': 'Cambiar de lugar', 'Koltuğunun salondaki önizlemesi': 'Vista previa de tu butaca en la sala',
   'Henüz satılmış koltuk yok.': 'Aún no se han vendido butacas.',
   '{a} · koltuğu {b}': '{a} · {b} por butaca', '{a} boş koltuk · {b} sıra': '{a} butacas libres · {b} filas', '{a} koltuk · {b} yan yana, {c} sıra': '{a} butacas · {b} contiguas, {c} filas',
   // One seat: the sentences above with the number written in, so English says "1 seat", not "1 seats".
