@@ -4,7 +4,7 @@
 
 Repo kökünde `PORT=4480 node orchestra/server.mjs`, sonra http://127.0.0.1:4480. Sunucu varsayılan olarak yalnız 127.0.0.1'e bağlanır. Bazı tarayıcılar `localhost`'u engelliyor; o durumda 127.0.0.1 ile aç.
 
-Sayfadaki "Ajanımı bağla" komutu tek dosyalık okuyucuyu (`/reader.py`, repo kökündeki `reader.py`) siteden indirir; repo gerekmez. Okuyucu ses çalmaz, müziği tarayıcı çalar. Geçmiş oturumlar sessiz kalır, yalnız yeni adımlar gider. Ctrl+C kapatır. Yerel müzik için `./install.sh`; `control.py` repoyu kendi gerçek konumundan bulur (`CODE_SONATA_APP` ile değiştirilebilir).
+Sayfadaki "Ajanımı bağla" komutu tek dosyalık okuyucuyu (`/reader.py`, repo kökündeki `reader.py`) siteden indirir; repo gerekmez. Okuyucu ses çalmaz, müziği tarayıcı çalar. Geçmiş oturumlar sessiz kalır, yalnız yeni adımlar gider. Okuyucu arka planda çalışır (Terminal kapanınca durmaz; makine başına bir tane, yeni komut eskisinin yerine geçer), `python3 reader.py --stop` kapatır; kaydı ve pid dosyası `~/Library/Caches/code-sonata/` (Linux'ta `~/.cache/code-sonata/`). Yerel müzik için `./install.sh`; `control.py` repoyu kendi gerçek konumundan bulur (`CODE_SONATA_APP` ile değiştirilebilir).
 
 ## Test ve ölçüm
 

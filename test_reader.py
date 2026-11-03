@@ -1,6 +1,11 @@
 import json
 import os
 from pathlib import Path
+import pty
+import select
+import signal
+import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -447,6 +452,103 @@ class ReporterTests(unittest.TestCase):
                 worker.start()
                 reporter.loop()
                 worker.join()
+
+
+READER = str(Path(__file__).with_name("reader.py"))
+
+
+class BackgroundTests(unittest.TestCase):
+    """Started from a terminal, the reader goes on after the terminal closes; --stop ends it."""
+    URL = "http://127.0.0.1:9/"   # nothing listens there: the reader retries and nothing leaves the machine
+
+    def setUp(self):
+        self.home = tempfile.mkdtemp()
+        self.env = {**os.environ, "HOME": self.home, "XDG_CACHE_HOME": os.path.join(self.home, "cache")}
+        self.addCleanup(self.kill_left_over)
+
+    def cache(self):
+        return Path(self.home, "Library/Caches/code-sonata") if sys.platform == "darwin" else Path(self.home, "cache/code-sonata")
+
+    def pid(self):
+        try:
+            return int((self.cache() / "reader.pid").read_text())
+        except (OSError, ValueError):
+            return None
+
+    @staticmethod
+    def alive(pid):
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+
+    def gone(self, pid):
+        for _ in range(50):
+            if not self.alive(pid):
+                return True
+            time.sleep(.1)
+        return False
+
+    def kill_left_over(self):
+        pid = self.pid()
+        if pid and self.alive(pid):
+            os.kill(pid, signal.SIGKILL)
+
+    def reader(self, *args):
+        return subprocess.run([sys.executable, READER, *args], env=self.env, stdin=subprocess.DEVNULL,
+                              capture_output=True, text=True, timeout=30)
+
+    def test_the_reader_goes_on_after_its_terminal_closes(self):
+        child, terminal = pty.fork()
+        if child == 0:
+            os.execve(sys.executable, [sys.executable, READER, self.URL], self.env)
+        out, end = b"", time.monotonic() + 10
+        while b"--stop" not in out and time.monotonic() < end:
+            if select.select([terminal], [], [], .2)[0]:
+                try:
+                    out += os.read(terminal, 4096)
+                except OSError:
+                    break
+        os.close(terminal)   # the tab is closed
+        os.waitpid(child, 0)
+        pid = self.pid()
+        self.assertIsNotNone(pid, out.decode(errors="replace"))
+        time.sleep(.5)
+        self.assertTrue(self.alive(pid))
+
+    def test_the_command_returns_at_once_and_stop_ends_the_reader(self):
+        started = self.reader(self.URL)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        self.assertIn("--stop", started.stdout)
+        pid = self.pid()
+        self.assertTrue(pid and self.alive(pid))
+        stopped = self.reader("--stop")
+        self.assertEqual(stopped.returncode, 0, stopped.stderr)
+        self.assertIn("Okuyucu durdu", stopped.stdout)
+        self.assertTrue(self.gone(pid))
+        self.assertIsNone(self.pid())
+
+    def test_a_new_command_replaces_the_running_reader(self):
+        self.reader(self.URL)
+        first = self.pid()
+        self.reader(self.URL)
+        second = self.pid()
+        self.assertNotEqual(first, second)
+        self.assertTrue(self.gone(first))
+        self.assertTrue(self.alive(second))
+
+    def test_stop_never_signals_a_program_that_is_not_the_reader(self):
+        other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        self.addCleanup(other.wait)
+        self.addCleanup(other.kill)
+        self.cache().mkdir(parents=True)
+        (self.cache() / "reader.pid").write_text(str(other.pid))
+        stopped = self.reader("--stop")
+        self.assertEqual(stopped.returncode, 0, stopped.stderr)
+        self.assertIn("çalışan okuyucu yok", stopped.stdout)
+        time.sleep(.3)
+        self.assertIsNone(other.poll())
 
 
 if __name__ == "__main__":

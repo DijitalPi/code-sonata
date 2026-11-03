@@ -81,7 +81,8 @@ Repo kökünde `PORT=4480 node orchestra/server.mjs`; sunucu varsayılan olarak 
 2. **Katıl:** Bağlantı komutumu oluştur → komutu herhangi bir Terminal'de çalıştır (okuyucuyu siteden indirir) → Claude/Codex ile yeni faaliyet. macOS ya da Linux ve Python 3 gerekir (Windows yok). Komutta özel anahtar vardır; paylaşma.
 3. **Kendini bul:** bağlı/ilk faaliyet/kesinti durumları, metinsel koltuk ve SEN vurgusu. Yalnız benim sesim gerçek yeni faaliyetlerden kısa motif çalar.
 4. **Anını oluştur:** kişisel gerçek faaliyetten veya son 12 sn anonim ortak notalardan PNG+WAV. Ses tarayıcıda salonun kendi örnekleri ve yankısıyla üretilir (stereo, 44,1 kHz); dinleyici sade tınıyı seçtiyse ya da örnekler yüklenemezse sade sentez. Başlığı/sayı görünürlüğünü seç, önizle, indir. Desteklenen tarayıcıda VP8/Opus WebM; video hatasında PNG/WAV hazır kalır.
-5. **Ayrıl:** Terminal'de Ctrl+C okuyucuyu durdurur. Tarayıcı eşleştirmesini kaldır özel bağı kaldırır; ortak okuyucuyu kapatmaz.
+5. **Ayrıl:** Okuyucu arka planda çalışır, Terminal kapanınca durmaz; `python3 reader.py --stop` durdurur
+   (`--foreground` pencerede tutar, orada Ctrl+C). Tarayıcı eşleştirmesini kaldır özel bağı kaldırır; ortak okuyucuyu kapatmaz.
 
 Kişisel anahtar/sayılar en fazla1saat sunucu belleğinde; restart yeni komut gerektirir. Genel SSE anahtar, makine kimliği, kod/prompt/yol taşımaz. Medya sunucuya yüklenmez. Ölçüm isteğe bağlı ve yalnız cihazda; silme UI'da. Bildirimler best-effort, kesintide kayıp olabilir. Crowd POST ve SSE testleri simülasyon olarak etiketli; kişisel an üretemez.
 

@@ -150,7 +150,8 @@ PORT=4480 node orchestra/server.mjs    # http://127.0.0.1:4480
 ```
 
 The page gives you a one-line command that downloads `reader.py` (Python 3, stdlib only) from the
-server and joins. To play locally and join at the same time: `python3 agents.py --global <URL>`.
+server and joins. The reader runs in the background, so the terminal can be closed;
+`python3 reader.py --stop` stops it. To play locally and join at the same time: `python3 agents.py --global <URL>`.
 There is no public hall yet; run your own. Seats around the hall can be sold with Stripe Checkout and
 approved by hand at `/yonetim/`; this stays off until `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`,
 `SEATS_DIR`, `ORDERS_FILE` and `ADMIN_KEYS` are set. Self-hosting, Docker, payment and reverse proxy

@@ -162,7 +162,7 @@ try {
 $('copy-command').onclick = async () => { const ok = await clipboard($('command').value, $('command')); $('personal-status').textContent = ok ? 'Komut kopyalandı. Repo Terminal’inde çalıştır.' : 'Otomatik kopyalama olmadı. Seçili komutu elle kopyala.'; };
 $('unpair').onclick = async () => {
   $('unpair').disabled = true;
-  try { await api('/api/unpair', { pair: token }); token = null; savePair(); me = null; ownSeat = null; stopPersonalAudio(); $('setup').hidden = true; $('personal').hidden = true; $('command').value = ''; $('personal-status').textContent = 'Eşleştirme kaldırıldı. Ortak katılımı da durdurmak için Terminal’de Ctrl+C.'; }
+  try { await api('/api/unpair', { pair: token }); token = null; savePair(); me = null; ownSeat = null; stopPersonalAudio(); $('setup').hidden = true; $('personal').hidden = true; $('command').value = ''; $('personal-status').textContent = 'Eşleştirme kaldırıldı. Ortak katılımı da durdurmak için Terminal’de python3 reader.py --stop.'; }
   catch (error) { $('personal-status').textContent = error.message; }
   finally { $('unpair').disabled = false; }
 };

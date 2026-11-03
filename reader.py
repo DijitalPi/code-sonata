@@ -7,7 +7,8 @@ Reads the session logs on this computer (~/.claude/projects, ~/.codex/sessions, 
 ~/.grok/sessions; Grok sessions sit with the other agents) and sends only
 counts once a second: how many steps of each kind, whether an agent is working, how many sessions
 of each tool. Prompts, code, file paths and tool output never leave this computer; test and
-commit results are read only as yes/no. Needs Python 3 and nothing else. Stop with Ctrl+C.
+commit results are read only as yes/no. Needs Python 3 and nothing else. It runs in the background,
+so the terminal can be closed; `python3 reader.py --stop` stops it (`--foreground` stays in the window).
 
 The local macOS tool (agents.py) imports this file for the same reading and reporting.
 """
@@ -19,6 +20,7 @@ from pathlib import Path
 import re
 import secrets
 import shlex
+import signal
 import sys
 import threading
 import time
@@ -603,14 +605,14 @@ class GlobalReporter:
                 self.failed, self.seat = True, None
 
 
-def run(url, duration=None, roots=ROOTS):
+def run(url, duration=None, roots=ROOTS, background=False):
     """Standalone reader: no sound here, the orchestra plays in the browser."""
     reporter = GlobalReporter(url)
     watcher = AgentWatcher(roots)
     activity = Activity()
     print("Agent Orchestra okuyucusu çalışıyor. Yalnız adım sayıları gönderilir; prompt, kod ve dosya yolu gönderilmez.\n"
           f"{len(watcher.offsets)} etkin oturum kaydı bulundu. Geçmiş sayılmaz, yeni adımlar orkestraya gider. "
-          "Durdurmak için Ctrl+C.", flush=True)
+          + ("" if background else "Durdurmak için Ctrl+C."), flush=True)
     started, last_note, counted = time.monotonic(), time.monotonic(), 0
     try:
         while duration is None or time.monotonic() - started < duration:
@@ -622,7 +624,8 @@ def run(url, duration=None, roots=ROOTS):
             reporter.add(events, activity.is_working(now), len(activity.sessions), activity.tools())
             counted += sum(1 for _, kind in events if kind in GlobalReporter.STEPS)
             if counted and now - last_note >= 30:
-                print(f"♫ son 30 sn: {counted} adım · {len(activity.sessions)} oturum", flush=True)
+                if not background:   # nobody reads a background log every half minute
+                    print(f"♫ son 30 sn: {counted} adım · {len(activity.sessions)} oturum", flush=True)
                 counted, last_note = 0, now
             time.sleep(.5)
     except KeyboardInterrupt:
@@ -633,12 +636,104 @@ def run(url, duration=None, roots=ROOTS):
     return 0
 
 
+# In the background the reader belongs to no terminal: closing the tab it was started from does not stop it.
+# One reader per machine: its pid is kept here, and a new command replaces the reader that is running.
+PID_FILE, LOG_FILE = CACHE / "reader.pid", CACHE / "reader.log"
+
+
+def running_reader():
+    """The background reader's pid, only if the pid file names a live reader and not some other program."""
+    import subprocess
+    try:
+        pid = int(PID_FILE.read_text().strip())
+        command = subprocess.run(["ps", "-p", str(pid), "-o", "command="], capture_output=True, text=True, timeout=5).stdout
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+    return pid if Path(__file__).name in command else None
+
+
+def stop_background(quiet=False):
+    pid = running_reader()
+    if pid is not None:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+        for _ in range(50):   # it stops within a second: the sending thread looks once a second
+            try:
+                os.kill(pid, 0)
+            except OSError:
+                break
+            time.sleep(.1)
+    try:   # a stale file goes; one a newer reader has written stays
+        if pid is None or PID_FILE.read_text().strip() == str(pid):
+            PID_FILE.unlink()
+    except OSError:
+        pass
+    if not quiet:
+        print("Okuyucu durdu." if pid is not None else "Arka planda çalışan okuyucu yok.", flush=True)
+    return 0
+
+
+def start_background(url):
+    """Start the reader away from this terminal, show its first lines, give the terminal back."""
+    stop_background(quiet=True)
+    CACHE.mkdir(parents=True, exist_ok=True)
+    child = os.fork()
+    if child == 0:
+        os.setsid()
+        if os.fork():
+            os._exit(0)
+        null = os.open(os.devnull, os.O_RDONLY)
+        log = os.open(LOG_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        os.dup2(null, 0)
+        os.dup2(log, 1)
+        os.dup2(log, 2)
+        PID_FILE.write_text(str(os.getpid()))
+        PID_FILE.chmod(0o600)
+
+        def stopped(*_):
+            raise KeyboardInterrupt
+        signal.signal(signal.SIGTERM, stopped)
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
+        code = 1
+        try:
+            code = run(url, background=True)
+        finally:
+            try:
+                if int(PID_FILE.read_text()) == os.getpid():
+                    PID_FILE.unlink()
+            except (OSError, ValueError):
+                pass
+            os._exit(code)
+    os.waitpid(child, 0)
+    shown, end = 0, time.monotonic() + 5
+    while time.monotonic() < end:   # until the hall answers (a seat, or why not)
+        try:
+            lines = LOG_FILE.read_text().splitlines()
+        except OSError:
+            lines = []
+        for line in lines[shown:]:
+            print(line, flush=True)
+        shown = len(lines)
+        if any(line.startswith(("Dünya orkestrası", "Orkestra", "Sunucu")) for line in lines):
+            break
+        time.sleep(.2)
+    print("Okuyucu arka planda çalışıyor; bu pencereyi kapatabilirsin.\n"
+          f"Durdurmak için: python3 {shlex.quote(os.path.abspath(__file__))} --stop", flush=True)
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("url", nargs="?", help="Tarayıcının verdiği orkestra adresi")
     parser.add_argument("--global", dest="global_url", metavar="URL", help=argparse.SUPPRESS)
     parser.add_argument("--duration", type=float, help=argparse.SUPPRESS)
+    parser.add_argument("--stop", action="store_true", help="Arka planda çalışan okuyucuyu durdur")
+    parser.add_argument("--foreground", action="store_true", help="Bu pencerede çalış; Ctrl+C durdurur")
     args = parser.parse_args()
+    if args.stop:
+        return stop_background()
     url = args.url or args.global_url
     if not url:
         parser.error("Orkestra adresini ver: python3 reader.py 'https://…/#pair=…'")
@@ -647,6 +742,9 @@ def main():
         GlobalReporter.event(url)
     except ValueError as exc:
         parser.error(str(exc))
+    if args.duration is None and not args.foreground and hasattr(os, "fork"):
+        return start_background(url)
+    stop_background(quiet=True)   # one reader per machine
     return run(url, args.duration)
 
 
