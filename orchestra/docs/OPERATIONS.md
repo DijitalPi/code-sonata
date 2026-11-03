@@ -70,6 +70,7 @@ Kesinti: sunucu durunca tarayıcı SSE'yi kendisi yeniden dener, vekilin 502'si 
 | `ADMIN_KEYS` | Yönetim paneli | `ad:anahtar,ad2:anahtar2`; ad küçük harf, rakam, tire (≤20), anahtar ≥24 karakter. Yoksa `/yonetim/` 404. Onaylar kimin anahtarıyla yapıldıysa o adla kaydedilir |
 | `AUCTION_FILE` | Ön blok açık artırması | Koltuk satışı açıkken bu dosya da verilirse sahnenin önündeki 24×4 blok panelden açık artırmaya çıkarılabilir. Yoksa ya da okunamazsa açık artırma uçları 404, sayfada kutu yok |
 | `SLACK_WEBHOOK_URL` | İsteğe bağlı | Ödenen her sipariş için bir Slack mesajı, panele bağlantıyla; açık artırmanın başlangıcı, her yeni en yüksek teklif, bitişi ve tahsilat sorunu |
+| `STRIPE_API_BASE` | Yalnız test | Stripe yerine yerel sahte sunucu (testler, tarayıcı denemesi). Yayında boş kalmalı: gizli anahtar bu adrese gider |
 
 Etkinlik anahtarı olmadan da bir ofis ağı çalışır: makine raporları ayrı sayılır (adres başına 40 rapor/sn, en fazla 20 makine, saatte 40 yeni makine; uykudan 20 dakika içinde dönen makine yeni sayılmaz ve kendi bölümüne döner). Dinleyici ve kişisel eşleştirme adres başına 32. Sayfa, eşleştirme ve sayaç istekleri adres başına 8/sn; kişisel görünümün iki saniyelik sorgusu eşleştirme başına sayılır. `/api/play` yalnız okuyucudan kabul edilir (JSON, tarayıcı başlığı yok): başka bir site ziyaretçilerinin tarayıcısından makine oturtamaz, dinleyici koltuğu tutamaz.
 
@@ -104,9 +105,43 @@ Bir kupon kodu bir koltuğu bedava yapar: tek koltuk seçilirse ödeme yoktur ve
 - Bedava sipariş doğrudan "Onay bekleyenler"e düşer ("Kupon: KOD · bedava"); reddetmek ve kaldırmak iade aramaz. Alıcı sayfada "Koltuğun ayrıldı; onay bekliyor" ya da "Koltuğun onaylanmadı" okur. `SLACK_WEBHOOK_URL` varsa "Kuponla bedava koltuk: …" mesajı gider; indirimli ödemenin mesajında "kupon KOD" yazar.
 - Kodlar `ORDERS_FILE`'da (`coupons`) siparişlerle birlikte durur; kuponlu siparişte `coupon` ve `discount` (sent). Adres başına günde bir kupon ve saatte en çok 10 yanlış kod denemesi; ikisi de yalnız bellekte tutulur, sunucu yeniden başlayınca sıfırlanır.
 
+## Yedek
+
+Koltuk satışı açıkken kimin ne ödediğinin tek kaydı volume'dadır; makine ya da volume giderse kayıtlar Stripe panelinden elle çıkarılır.
+Günde bir kez, makine dışına yedek al.
+
+- Ne: `ORDERS_FILE` (siparişler, olaylar, kupon kodları), `AUCTION_FILE`, `SEATS_DIR` (logolar; `pending/` onay bekleyenler), varsa
+  `SEATS_FILE` ve `METRICS_FILE`.
+- Sıra: önce JSON dosyaları, sonra `SEATS_DIR`. Defter `.tmp`'ye yazılıp yeniden adlandırılır, kopya her an tutarlıdır; logo siparişten
+  önce yazıldığı için bu sırayla yedekteki her siparişin logosu da yedektedir (arada reddedilenin logosu eksik olabilir, zararsız).
+- Nereye: kendi kontrolündeki başka bir makineye ya da şifreli bir hedefe (ör. `rclone crypt`). Yedekte ad, link ve Stripe'tan gelen
+  e-posta var; gizlilik metni "sunucuda tutulur, paylaşılmaz" diyor.
+- Saklama: 30 gün; daha eskisini sil.
+
+```sh
+#!/bin/sh
+# /usr/local/bin/orchestra-yedek · cron: 15 4 * * * root /usr/local/bin/orchestra-yedek
+set -eu
+D=/srv/orchestra; K=/var/backups/orchestra; G=$(date +%F)
+mkdir -p "$K/$G"
+cp "$D/orders.json" "$K/$G/"
+[ -f "$D/auction.json" ] && cp "$D/auction.json" "$K/$G/"
+cp -R "$D/seats" "$K/$G/"
+tar -czf "$K/$G.tgz" -C "$K" "$G" && rm -rf "${K:?}/$G"
+rclone copy "$K/$G.tgz" yedek-sifreli:orchestra/
+find "$K" -name '*.tgz' -mtime +30 -delete
+```
+
+Geri yükleme: kapsayıcıyı durdur, arşivi aç, `orders.json`, `auction.json` ve `seats/`'i volume'a koy (sahibi `node` kullanıcısı),
+başlat; panelde Genel bakış sayıları ve onay bekleyenler yedekle aynı olmalı. Yedek alındıktan sonra ödenmiş siparişler Stripe
+panelinde (Payments) görünür, panelde yoktur: o sürede ödeme geldiyse alıcıyla iletişime geç ya da iade et. Geri yüklemeyi yayından
+önce bir kez dene.
+
 ## Yayın kontrol listesi
 
 1. Vekilin erişim kaydı kapalı ya da IP'siz olmalı. Sayfadaki gizlilik metni "IP kaydedilmez" diyor; etkinlik anahtarı da `/api/stream` adresinde gider.
 2. `/sounds/` 27 MB. Sıkıştırmayı yalnız statik dosyalarda aç. `/api/stream` (`text/event-stream`) sıkıştırılmaz ve tamponlanmaz.
 3. TLS ile HTTP/2 açık olsun. HTTP/1.1'de tarayıcı bir siteye en fazla 6 bağlantı açar, yedinci sekme bekler.
 4. Vekil üzerinden bir akışın 3 dakikadan uzun açık kaldığını dene (`curl -N https://…/api/stream`). 60 sn'de kesiliyorsa vekilin okuma zaman aşımını kapat; istek süresini sunucu kendisi sınırlar. Sunucu boştaki bağlantıyı 95 sn tutar, yaygın 90 sn vekil zaman aşımından uzun.
+5. HSTS vekilde açık olsun (`Strict-Transport-Security: max-age=31536000`); sunucu kendisi göndermez, TLS vekilde biter.
+6. Koltuk satışı açıksa yedek (yukarıda) kurulu ve geri yükleme bir kez denenmiş olsun.
