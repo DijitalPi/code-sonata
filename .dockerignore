@@ -4,3 +4,5 @@ sessions
 .build
 orchestra/evidence
 orchestra/web/sounds
+orchestra/docs
+orchestra/deploy

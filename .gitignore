@@ -4,3 +4,5 @@ sessions/
 .DS_Store
 orchestra/web/sounds/
 orchestra/evidence/
+orchestra/deploy/.env
+orchestra/deploy/orchestra.env

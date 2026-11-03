@@ -48,6 +48,28 @@ Koltuk satışıyla: kalıcı bir volume bağla, ayarları dosyadan ver (`-v /sr
 
 Kapsayıcı içinde `HOST=0.0.0.0`; örnek komut host portunu yalnız loopback'e açar.
 
+## Sunucuya kurulum (compose + Caddy)
+
+`orchestra/deploy/` hazır bir kurulumdur: `compose.yaml` sunucuyu ve önündeki Caddy'yi açar. Sunucu portu dışarıya kapalıdır, ona yalnız
+Caddy ulaşır. `Caddyfile` sertifikayı Let's Encrypt'ten alır; HSTS, aşağıdaki gövde sınırları, yalnız statik dosyada sıkıştırma,
+tamponsuz akış ve HTTP/2-3 sağlar. Erişim kaydı ve ziyaretçi adresli hata kaydı yazmaz. İstek hızını sunucu kendisi sınırlar (Caddy'de
+hız sınırı eklentisi yok). `backup.sh` ve `restore.sh` aşağıdaki Yedek bölümünün betikleridir. Gereken: Docker + compose, 80 ve 443
+(TCP), 443/UDP açık, build sırasında GitHub Pages erişimi.
+
+1. Alan adının A (varsa AAAA) kaydı sunucuya. Cloudflare'de "DNS only" kalsın; proxy açılacaksa Ayarlar'daki `TRUST_CF` satırı.
+2. `git clone https://github.com/DijitalPi/code-sonata /srv/code-sonata`, sonra `cd /srv/code-sonata/orchestra/deploy`.
+3. `cp .env.example .env`: `DOMAIN`. `cp orchestra.env.example orchestra.env && chmod 600 orchestra.env`: Stripe canlı kısıtlı
+   anahtarı, webhook imza sırrı (aşağıda Koltuk ödemesi 1-2), `ADMIN_KEYS` (`openssl rand -hex 16`), isteğe bağlı `SLACK_WEBHOOK_URL`.
+4. `install -d -o 1000 -g 1000 /srv/orchestra` (veri klasörü, `node` kullanıcısı yazar).
+5. `docker compose up -d --build`. Denetim: `curl https://ALAN/api/health`, `curl -sI https://ALAN/ | grep -i strict-transport`,
+   `/api/seats` yanıtında `"checkout":true`; panel `https://ALAN/yonetim/`.
+6. Yedek: `rclone config` ile şifreli hedef (`yedek-sifreli`), cron satırı `backup.sh` başında; bir kez elle çalıştır ve geri yüklemeyi dene.
+7. Aşağıdaki Yayın kontrol listesi. Canlı ödemeyi bir kez dene: arka sırada 1 koltuk (3 $) al, panelden Reddet; iade Stripe'ta görünsün.
+
+Güncelleme: `docker tag agent-orchestra:local agent-orchestra:onceki && git pull && docker compose up -d --build`. Geri dönüş:
+`compose.yaml`'da imajı `agent-orchestra:onceki` yap, `docker compose up -d --no-build`. 80/443'ü başka bir vekil tutuyorsa `caddy`
+servisini çıkar, sunucuya `ports: ["127.0.0.1:4480:4480"]` ekle ve o vekile bir sonraki bölümü uygula.
+
 ## Ters vekil arkasında yayın
 
 `HOST=0.0.0.0` ve `TRUST_PROXY=1`. Sunucu portuna yalnız güvenilir vekil ulaşabilmeli: istemci portu doğrudan görürse sahte X-Forwarded-For ile hız sınırını ve ülkeyi aşar. Vekilde istek gövdesi 2 KiB (koltuk alırken `/api/seats/checkout` 450 KiB, Stripe olayı `/api/stripe` 64 KiB), istek hızı sınırı, SSE tamponlaması kapalı, TLS ve origin doğrulaması olmalı. `PUBLIC_URL=https://alan-adin` OG/Twitter görselini ve canonical adresi mutlak üretir; yerelde boş bırak.
@@ -118,26 +140,18 @@ Günde bir kez, makine dışına yedek al.
   e-posta var; gizlilik metni "sunucuda tutulur, paylaşılmaz" diyor.
 - Saklama: 30 gün; daha eskisini sil.
 
-```sh
-#!/bin/sh
-# /usr/local/bin/orchestra-yedek · cron: 15 4 * * * root /usr/local/bin/orchestra-yedek
-set -eu
-D=/srv/orchestra; K=/var/backups/orchestra; G=$(date +%F)
-mkdir -p "$K/$G"
-cp "$D/orders.json" "$K/$G/"
-[ -f "$D/auction.json" ] && cp "$D/auction.json" "$K/$G/"
-cp -R "$D/seats" "$K/$G/"
-tar -czf "$K/$G.tgz" -C "$K" "$G" && rm -rf "${K:?}/$G"
-rclone copy "$K/$G.tgz" yedek-sifreli:orchestra/
-find "$K" -name '*.tgz' -mtime +30 -delete
-```
+Betik `orchestra/deploy/backup.sh` (bu sırayla kopyalar, `.tgz`'yi 600 yapar, `rclone` ile makine dışına gönderir, 30 günden eskiyi
+siler): cron `15 4 * * * root /srv/code-sonata/orchestra/deploy/backup.sh`. `DATA`, `BACKUPS`, `REMOTE`, `KEEP_DAYS` ile ayarlanır.
 
-Geri yükleme: kapsayıcıyı durdur, arşivi aç, `orders.json`, `auction.json` ve `seats/`'i volume'a koy (sahibi `node` kullanıcısı),
-başlat; panelde Genel bakış sayıları ve onay bekleyenler yedekle aynı olmalı. Yedek alındıktan sonra ödenmiş siparişler Stripe
+Geri yükleme: `docker compose stop orchestra && ./restore.sh /var/backups/orchestra/GÜN.tgz && docker compose start orchestra`.
+Betik değiştirdiği dosyaları silmez, `/srv/orchestra.before-<zaman>`'a taşır, sahibini `node` yapar. Panelde Genel bakış sayıları ve
+onay bekleyenler yedekle aynı olmalı. Yedek alındıktan sonra ödenmiş siparişler Stripe
 panelinde (Payments) görünür, panelde yoktur: o sürede ödeme geldiyse alıcıyla iletişime geç ya da iade et. Geri yüklemeyi yayından
 önce bir kez dene.
 
 ## Yayın kontrol listesi
+
+`orchestra/deploy/` ile 1, 2, 3 ve 5 hazır gelir; 4 ve 6'yı yine dene.
 
 1. Vekilin erişim kaydı kapalı ya da IP'siz olmalı. Sayfadaki gizlilik metni "IP kaydedilmez" diyor; etkinlik anahtarı da `/api/stream` adresinde gider.
 2. `/sounds/` 27 MB. Sıkıştırmayı yalnız statik dosyalarda aç. `/api/stream` (`text/event-stream`) sıkıştırılmaz ve tamponlanmaz.

@@ -154,7 +154,8 @@ server and joins. To play locally and join at the same time: `python3 agents.py 
 There is no public hall yet; run your own. Seats around the hall can be sold with Stripe Checkout and
 approved by hand at `/yonetim/`; this stays off until `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`,
 `SEATS_DIR`, `ORDERS_FILE` and `ADMIN_KEYS` are set. Self-hosting, Docker, payment and reverse proxy
-settings are in [orchestra/docs/OPERATIONS.md](orchestra/docs/OPERATIONS.md), architecture details in
+settings are in [orchestra/docs/OPERATIONS.md](orchestra/docs/OPERATIONS.md) (a ready Docker Compose + Caddy setup with
+backups is in `orchestra/deploy/`), architecture details in
 [orchestra/README.md](orchestra/README.md) (Turkish).
 
 ## Folder and editor modes
