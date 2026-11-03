@@ -367,7 +367,8 @@ export function listHolders(holders) {
     ? `${num(holders.length)} sahip, ${num(seatsSold)} koltuk. ${num(PLAN.count)} koltuğun ${num(PLAN.count - seatsSold)} tanesi boş.`
     : 'Henüz satılmış koltuk yok.';
   for (const h of [...holders].sort((a, b) => a.ring - b.ring || b.width * b.depth - a.width * a.depth)) {
-    const a = el('a', { href: h.link, target: '_blank', rel: 'sponsored noopener noreferrer', textContent: h.name, translate: false });
+    // The holder may see the visit came from this site (the origin only, never the page); the rest of the site sends none.
+    const a = el('a', { href: h.link, target: '_blank', rel: 'sponsored noopener', referrerPolicy: 'origin', textContent: h.name, translate: false });
     list.append(el('li', {}, a, el('small', { textContent: `${tierOf(h.ring).label} · ${h.width * h.depth} koltuk` })));
   }
 }

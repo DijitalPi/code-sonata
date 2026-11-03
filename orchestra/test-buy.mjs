@@ -23,7 +23,7 @@ globalThis.fetch = async (url, init = {}) => {
   const { status, body } = await answer(url, init);   // an answer may come later
   return new Response(JSON.stringify(body), { status });
 };
-const { setupBuying, followOrder, backFromStripe } = await import('./web/buy.js');
+const { setupBuying, followOrder, backFromStripe, listHolders } = await import('./web/buy.js');
 let hallGeometry = {};
 const buying = setupBuying({ canvas, geometry: () => hallGeometry, amfi, encode: async (img) => { logos.push(img); return 'data:image/webp;base64,UklGRg=='; }, go: (url) => went.push(url) });
 
@@ -421,4 +421,10 @@ test('a code checkout turned down stays off even if an older check answers later
   release({ status: 200, body: { code: 'HER', tier: 'any' } });
   await pending;
   assert.deepEqual([$('seat-price').textContent, $('seat-pay-status').textContent], ['25 $', 'Bu kodun hakları bitti.']);
+});
+
+test("a holder's link in the list says the visit came from here, and only the site", () => {
+  listHolders([{ id: 'o-1', ring: 0, col: 0, width: 2, depth: 1, name: 'Acme', link: 'https://acme.example/' }]);
+  const a = $('holders').querySelector('a');
+  assert.deepEqual([a.getAttribute('rel') ?? a.rel, a.getAttribute('referrerpolicy') ?? a.referrerPolicy], ['sponsored noopener', 'origin']);
 });

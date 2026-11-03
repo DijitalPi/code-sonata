@@ -35,7 +35,8 @@ test('a holder card shows the big logo, name, their line, city, link and seats, 
   assert.equal(el.querySelector('p').textContent, 'Kod yazan bir ekip');
   assert.equal(el.querySelector('.city').textContent, 'İzmir, Türkiye');
   const a = el.querySelector('a');
-  assert.deepEqual([a.textContent, a.getAttribute('rel') ?? a.rel], ['acme.example ↗', 'sponsored noopener noreferrer']);
+  assert.deepEqual([a.textContent, a.getAttribute('rel') ?? a.rel], ['acme.example ↗', 'sponsored noopener']);
+  assert.equal(a.getAttribute('referrerpolicy') ?? a.referrerPolicy, 'origin', 'the holder sees the visit came from here, not from which page');
   assert.match(el.querySelector('small').textContent, /^8 koltuk · /);
   assert.ok(['b', 'p', '.city', 'a'].every((s) => el.querySelector(s).getAttribute('translate') === 'no'), 'what a buyer wrote is not translated');
   assert.equal(lit.at(-1), 'o-acme');

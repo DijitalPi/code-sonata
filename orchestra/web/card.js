@@ -49,7 +49,7 @@ export function createCard({ stage, canvas, amfi }) {
       if (h.about) card.append(own('p', h.about));
       if (h.city) card.append(own('span', h.city, 'city'));
       if (h.link) {
-        const a = document.createElement('a'); a.href = h.link; a.target = '_blank'; a.rel = 'sponsored noopener noreferrer'; a.translate = false;
+        const a = document.createElement('a'); a.href = h.link; a.target = '_blank'; a.rel = 'sponsored noopener'; a.referrerPolicy = 'origin'; a.translate = false;   // the holder sees the site, not the page
         a.textContent = h.link.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '').slice(0, 48) + ' ↗'; card.append(a);
       }
       const size = `${h.width * h.depth} koltuk · ${tierOf(h.ring).label}`;
