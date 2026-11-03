@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { personalNotes, liveNotes, deltaActivity, wavBytes, wavFromChannels, publicInvite, eventKey, momentLayout, captureCommon } from './web/moment.js';
 import { SONGS, PLANS, METERS, PLAYLIST } from './web/music.mjs';
 import { createConductor } from './web/conductor.mjs';
+import { soundNudge } from './web/nudge.mjs';
 import { NOTE_RANGE, drumKit } from './web/instruments.js';
 test('personal output requires activity and has bounded harmonious notes', () => {
   assert.deepEqual(personalNotes({}), []);
@@ -141,4 +142,18 @@ test('the connect panel shows how to stop the reader, before pairing too, with a
   assert.equal(setup.includes('stop-command'), false, 'outside the part that appears only after pairing');
   const source = await readFile(new URL('./web/experience.js', import.meta.url), 'utf8');
   assert.match(source, /\$\('stop-command'\)\.value = `curl -fsSL \$\{location\.origin\}\/reader\.py -o reader\.py && python3 reader\.py --stop`/);
+});
+
+test('notes with nothing to hear bring a line that says why, unless the listener stopped the sound or is elsewhere on purpose', () => {
+  const live = { notes: true, running: false, stopped: false, personal: false, watchOnly: false, listenShown: false, elsewhere: false };
+  assert.equal(soundNudge(live), 'off');                                   // the browser still waits for a tap
+  assert.equal(soundNudge({ ...live, elsewhere: true }), 'elsewhere');     // another tab took the sound
+  assert.equal(soundNudge({ ...live, elsewhere: true, listenShown: true }), 'elsewhere');
+  assert.equal(soundNudge({ ...live, listenShown: true }), null);          // the big listen button is already in sight
+  assert.equal(soundNudge({ ...live, running: true }), null);
+  assert.equal(soundNudge({ ...live, stopped: true }), null);              // the listener pressed stop: no nagging
+  assert.equal(soundNudge({ ...live, stopped: true, elsewhere: true }), null);
+  assert.equal(soundNudge({ ...live, personal: true }), null);             // own sound only: the shared hall is quiet on purpose
+  assert.equal(soundNudge({ ...live, watchOnly: true }), null);            // a wall display has no sound
+  assert.equal(soundNudge({ ...live, notes: false }), null);
 });

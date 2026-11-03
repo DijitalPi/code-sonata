@@ -174,6 +174,10 @@ body.is-demo #connection { color: var(--gold); }
 
 .announce { position: fixed; left: 50%; top: 20px; z-index: 30; transform: translate(-50%, -8px); opacity: 0; pointer-events: none; padding: 10px 20px; border-radius: 999px; background: var(--gold); color: #1a1208; font-weight: 600; transition: opacity .25s, transform .25s; }
 .announce.show { opacity: 1; transform: translate(-50%, 0); }
+.nudge { position: fixed; left: 50%; top: calc(var(--bar) + 12px); z-index: 30; transform: translateX(-50%); display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px 12px; width: max-content; max-width: calc(100vw - 32px); padding: 8px 8px 8px 18px; border-radius: 24px; background: var(--paper); border: 1px solid var(--gold); color: var(--ink); box-shadow: 0 8px 24px rgba(0, 0, 0, .35); }
+.nudge[hidden] { display: none; }
+.nudge button { padding: 8px 16px; border-radius: 999px; background: var(--gold); color: #1a1208; font-weight: 600; white-space: nowrap; }
+.nudge button.nudge-close { min-width: 40px; padding: 4px 8px; background: transparent; color: var(--dim); font-size: 22px; font-weight: 400; line-height: 1; }
 .skip { position: fixed; left: 12px; top: -60px; z-index: 40; padding: 10px 16px; border-radius: 999px; background: var(--gold); color: #1a1208; text-decoration: none; }
 .skip:focus { top: 12px; }
 

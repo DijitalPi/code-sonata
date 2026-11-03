@@ -7,6 +7,7 @@ import { setupAuction, backFromBid, left } from './auction.js';
 import { t, getLang, num } from './i18n.js';
 import { PLAN, AUCTION } from './seats.mjs';
 import { createCard } from './card.js';
+import { soundNudge } from './nudge.mjs';
 import { SECTIONS, SOUNDFONT, loadInstrument, voiceOfSection, hall, masterChain, drumKit } from './instruments.js';
 // Agent Orchestra listener: draws the hall and plays the conductor's notes in sync.
 // One warm family under stage light: distinguishable sections, no rainbow.
@@ -209,6 +210,7 @@ function applyFrame(frame) {
   }
   if (frame.players !== undefined) { document.body.classList.toggle("is-climax", Boolean(frame.climax)); }
   if (audio && !isPersonal()) for (const note of frame.notes || []) schedule(note);
+  if (frame.notes?.length) nudge(true);
 }
 connect();
 // A connection can die without closing (a phone moving from Wi-Fi to mobile data, a laptop waking up). The hall
@@ -228,6 +230,7 @@ if (tabs) tabs.onmessage = (event) => {
     wanted = false;
     audio.ctx.suspend();
     $("loading").textContent = "Ses başka sekmede. Burada dinlemek için tekrar başlat.";
+    elsewhere = true;
     document.querySelectorAll("[data-team]").forEach((b) => { b.disabled = false; });
     $("enter").classList.remove("hidden");
   }
@@ -369,6 +372,28 @@ function schedule([at, pitch, velocity, duration, voice]) {
   if (audio.sampled) loadVoice(audio, voice);   // its section just took the stage, or a cue on a voice nobody sits in
   audio.standIn?.start({ note: pitch, velocity, time, duration });   // until its samples arrive
 }
+
+// Notes arriving with nothing to hear (nudge.mjs): a line under the bar says why and one tap starts the live hall.
+// What the listener stopped here stays stopped; sound playing here again clears both reasons.
+let stoppedHere = false, elsewhere = false;
+// In sight: in the window, not faded out and not under anything (an open panel fades the hero, or covers it on a phone).
+const onScreen = (el) => { const r = el.getBoundingClientRect();
+  return (el.checkVisibility?.({ checkOpacity: true, opacityProperty: true }) ?? true)
+    && el.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)); };
+function nudge(notes) {
+  const running = audio?.ctx.state === "running";
+  if (running && wanted) stoppedHere = elsewhere = false;   // suspend() is not instant: a stop just pressed still reads running
+  const why = soundNudge({ notes, running, stopped: stoppedHere, personal: isPersonal(), watchOnly: location.hash === "#tv",
+    listenShown: onScreen($("listen")), elsewhere });
+  const box = $("sound-nudge");
+  box.hidden = !why;
+  if (!why || box.dataset.why === why) return;
+  box.dataset.why = why;
+  $("sound-nudge-text").textContent = why === "elsewhere" ? "Ses başka sekmede çalıyor." : "Salon çalıyor, ses kapalı.";
+  $("sound-nudge-go").textContent = why === "elsewhere" ? "Burada çal" : "Sesi aç";
+}
+$("sound-nudge-go").onclick = () => { $("sound-nudge").hidden = true; listenLive(); };
+$("sound-nudge-close").onclick = () => { stoppedHere = true; nudge(false); };   // silence chosen: it does not come back
 
 // One listen button: the demo concert while no agent works (demoFirst), the live hall otherwise; a small link
 // under it keeps the live hall, with its house pianist, one tap away.
@@ -725,6 +750,7 @@ requestAnimationFrame(frame);
 
 function pauseCommon() {
   wanted = false;
+  stoppedHere = true; nudge(false);
   if (audio?.ctx.state === "running") audio.ctx.suspend();
   $("sound").textContent = "Sesi başlat";
   $("loading").textContent = "Ortak ses durduruldu. Kontrollerden yeniden başlatabilirsin.";
