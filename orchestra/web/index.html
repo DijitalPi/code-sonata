@@ -64,8 +64,11 @@
       <label for="command">Bu tarayıcıya özel komut</label>
       <textarea id="command" rows="3" readonly spellcheck="false"></textarea>
       <div class="row"><button id="copy-command" class="quiet">Komutu kopyala</button><button id="unpair" class="quiet">Eşleştirmeyi kaldır</button></div>
-      <p class="note">Komut sana özel bir anahtar içerir, paylaşma. Anahtar bir saat sonra silinir. Okuyucu arka planda çalışır, Terminal'i kapatabilirsin. Eşleştirmeyi kaldırmak ortak çalmayı durdurmaz; okuyucuyu durdurmak için Terminal'de python3 reader.py --stop.</p>
+      <p class="note">Komut sana özel bir anahtar içerir, paylaşma. Anahtar bir saat sonra silinir. Okuyucu arka planda çalışır, Terminal'i kapatabilirsin. Eşleştirmeyi kaldırmak ortak çalmayı durdurmaz.</p>
     </div>
+    <label for="stop-command">Okuyucuyu durdurma komutu (her klasörde çalışır)</label>
+    <textarea id="stop-command" rows="2" readonly spellcheck="false"></textarea>
+    <div class="row"><button id="copy-stop" class="quiet">Durdurma komutunu kopyala</button></div>
     <p id="personal-status" role="status">Henüz ajan bağlamadın.</p>
     <button id="demo" class="link">Kendi sesin nasıl duyulur: örneği dinle</button>
     <div id="personal" hidden>

@@ -136,6 +136,8 @@ const SAVED_PAIR = 'orchestra-pair';
 function savePair() { try { if (token) sessionStorage.setItem(SAVED_PAIR, JSON.stringify({ token, command: $('command').value })); else sessionStorage.removeItem(SAVED_PAIR); } catch {} }
 // The reader is one file from this site (Python 3 only): no repository, no install.
 const readerCommand = fragment => `curl -fsSL ${location.origin}/reader.py -o reader.py && python3 reader.py '${location.origin}/${fragment}'`;
+// The reader runs in the background, so stopping it is a command of its own; it fetches the reader again and works in any folder.
+$('stop-command').value = `curl -fsSL ${location.origin}/reader.py -o reader.py && python3 reader.py --stop`;
 $('pair').onclick = async () => {
   $('pair').disabled = true;
   try {
@@ -160,6 +162,7 @@ try {
   if (saved?.token) { token = saved.token; $('command').value = saved.command; $('setup').hidden = false; $('pair').textContent = 'Yeni bağlantı oluştur'; }
 } catch {}
 $('copy-command').onclick = async () => { const ok = await clipboard($('command').value, $('command')); $('personal-status').textContent = ok ? 'Komut kopyalandı. Repo Terminal’inde çalıştır.' : 'Otomatik kopyalama olmadı. Seçili komutu elle kopyala.'; };
+$('copy-stop').onclick = async () => { const ok = await clipboard($('stop-command').value, $('stop-command')); $('personal-status').textContent = ok ? 'Durdurma komutu kopyalandı. Herhangi bir Terminal’de çalıştır.' : 'Otomatik kopyalama olmadı. Seçili komutu elle kopyala.'; };
 $('unpair').onclick = async () => {
   $('unpair').disabled = true;
   try { await api('/api/unpair', { pair: token }); token = null; savePair(); me = null; ownSeat = null; stopPersonalAudio(); $('setup').hidden = true; $('personal').hidden = true; $('command').value = ''; $('personal-status').textContent = 'Eşleştirme kaldırıldı. Ortak katılımı da durdurmak için Terminal’de python3 reader.py --stop.'; }

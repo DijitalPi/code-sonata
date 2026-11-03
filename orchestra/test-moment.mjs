@@ -130,3 +130,15 @@ test('a shared-hall moment that contains any demo or test note keeps that label'
   assert.equal(captureCommon([{ at: t - 1000, note: [60, 58, .5, 0], source: 'live' }], t).label, '');
   assert.equal(captureCommon([{ at: t - 13_000, note: [60, 58, .5, 0], source: 'demo' }], t).notes.length, 0);
 });
+test('the connect panel shows how to stop the reader, before pairing too, with a command that works from any folder', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const html = await readFile(new URL('./web/index.html', import.meta.url), 'utf8');
+  const start = html.indexOf('<div id="setup"');
+  let depth = 0, end = start;
+  for (const m of html.slice(start).matchAll(/<\/?div\b/g)) { depth += m[0] === '<div' ? 1 : -1; if (!depth) { end = start + m.index; break; } }
+  const setup = html.slice(start, end);
+  assert.ok(html.includes('<textarea id="stop-command"') && html.includes('id="copy-stop"'));
+  assert.equal(setup.includes('stop-command'), false, 'outside the part that appears only after pairing');
+  const source = await readFile(new URL('./web/experience.js', import.meta.url), 'utf8');
+  assert.match(source, /\$\('stop-command'\)\.value = `curl -fsSL \$\{location\.origin\}\/reader\.py -o reader\.py && python3 reader\.py --stop`/);
+});
