@@ -36,7 +36,7 @@ a { color: var(--gold); text-underline-offset: 4px; }
 .more { position: relative; margin: 0; padding: 0; border: 0; align-self: auto; }
 .more summary::-webkit-details-marker { display: none; }
 .more summary::after { content: " ▾"; font-size: 12px; }
-.more-list { position: absolute; right: 0; top: calc(100% + 8px); display: flex; flex-direction: column; min-width: 230px; padding: 6px; border-radius: 14px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line), 0 18px 40px rgba(0, 0, 0, .55); }
+.more-list { position: absolute; inset-inline-end: 0; top: calc(100% + 8px); display: flex; flex-direction: column; min-width: 230px; padding: 6px; border-radius: 14px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line), 0 18px 40px rgba(0, 0, 0, .55); }
 .more-list .nav { padding: 12px 14px; border-radius: 10px; }
 .only-narrow { display: none !important; }
 .more:not([open]) .more-list { display: none; }
