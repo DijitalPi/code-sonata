@@ -27,13 +27,18 @@ document.addEventListener('click', event => {
 });
 
 // The bar folds its menu into the Menu button whenever the menu does not fit on one line: a longer
-// language, capitals, a mid-size window. Measured unfolded each time, so it unfolds again when there is room.
+// language, capitals, a mid-size window. If even that does not fit (a narrow phone, a long language), the bar
+// tightens, and last the name gives way to the mark. Measured unfolded each time, so it unfolds again when there is room.
 const bar = document.querySelector('.topbar');
+const STEPS = ['compact', 'tight', 'mark-only'];
 function fit() {
   if (!bar) return;
-  bar.classList.remove('compact');
-  // The bar widens with what it holds, so it is measured against the window, not against itself.
-  if (bar.scrollWidth > document.documentElement.clientWidth + 1) bar.classList.add('compact');
+  bar.classList.remove(...STEPS);
+  for (const step of STEPS) {
+    // The bar widens with what it holds, so it is measured against the window, not against itself.
+    if (bar.scrollWidth <= document.documentElement.clientWidth + 1) return;
+    bar.classList.add(step);
+  }
 }
 addEventListener('resize', fit);
 addEventListener('lang', fit);

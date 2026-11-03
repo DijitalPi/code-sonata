@@ -209,12 +209,13 @@ body.is-demo #connection { color: var(--gold); }
   .demo-banner { position: static; order: -4; margin: 12px 16px 0; border-radius: 16px; flex-wrap: wrap; }
   .live { position: static; order: -2; text-align: left; padding: 16px 16px 0; }
   .now { position: static; order: -1; max-width: none; padding: 10px 16px 0; }
-  .stats { justify-content: space-between; gap: 12px; }
+  .stats { justify-content: space-between; gap: 10px 12px; flex-wrap: wrap; }
   #hall { height: calc(50vw + 124px); max-height: 70svh; }
   .stage-foot { padding: 0 16px 8px; }
   .score { height: 60px; margin: 0 -16px; }
   .score .label { left: 16px; }
-  .dock { border-radius: 16px; padding: 8px; }
+  .dock { max-width: 100%; border-radius: 16px; padding: 8px; }
+  .dock label, .dock select { min-width: 0; max-width: 100%; }
   .league { grid-template-columns: 1fr; }
 }
 /* Arrival: text settles in under 0.35 s and never holds the reader back. */
@@ -303,3 +304,9 @@ body.is-placing .hero, body.is-placing .now, body.is-placing .live { visibility:
   .wordmark .mark { display: none; }
   .topbar { gap: 6px; padding-left: 12px; }
 }
+/* A bar that still does not fit (views.js): tighter type and room, then the mark instead of the name (still read aloud). */
+.topbar.tight { gap: 4px; padding-inline: 10px; }
+.topbar.tight .wordmark { font-size: 17px; }
+.topbar.tight .nav, .topbar.tight .more summary { padding: 8px 9px; font-size: 15.5px; letter-spacing: .01em; }
+.topbar.mark-only .wordmark .name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.topbar.mark-only .wordmark .mark { display: inline-block; margin-inline-end: 0; }
