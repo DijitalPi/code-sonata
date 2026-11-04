@@ -29,11 +29,19 @@ function cleanLines(o) {
   return Object.assign(o, lines);
 }
 
+const validOrder = (o) => Boolean(o) && typeof o === "object" && ID.test(o.id) && STATES.has(o.state) && validBlock(o);
 export function createBook(data) {
-  const orders = (Array.isArray(data?.orders) ? data.orders : [])
-    .filter((o) => o && typeof o === "object" && ID.test(o.id) && STATES.has(o.state) && validBlock(o)).map(cleanLines);
+  const orders = (Array.isArray(data?.orders) ? data.orders : []).filter(validOrder).map(cleanLines);
   const events = (Array.isArray(data?.events) ? data.events : []).filter((e) => e && typeof e.what === "string").slice(-EVENTS);
   return { orders, events, coupons: cleanCoupons(data?.coupons) };
+}
+
+// Why a written order file cannot be trusted, or null. An order it cannot read may be a seat paid for: the file is
+// never read without it, as if the seat were free.
+export function bookProblem(data) {
+  if (!Array.isArray(data?.orders)) return "no list of orders";
+  const bad = data.orders.find((o) => !validOrder(o));
+  return bad === undefined ? null : `an order it cannot read (${typeof bad?.id === "string" ? bad.id : "no id"})`;
 }
 
 const find = (book, id) => book.orders.find((o) => o.id === id) || null;

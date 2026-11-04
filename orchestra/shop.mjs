@@ -5,7 +5,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createBook, hold, free, setSession, drop, paid, expire, sweep, approve, won, reject, remove, startRefund, stopRefund, liveSeats, reserved, summary, buyerState } from "./orders.mjs";
+import { createBook, bookProblem, hold, free, setSession, drop, paid, expire, sweep, approve, won, reject, remove, startRefund, stopRefund, liveSeats, reserved, summary, buyerState } from "./orders.mjs";
 import { createStripe, verifySignature } from "./stripe.mjs";
 import { parseKeys, whoHasKey, sessionSecret, makeCookie, readCookie, SESSION_MS } from "./admin.mjs";
 import { webpSize } from "./webp.mjs";
@@ -60,7 +60,8 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
   if (ordersFile && existsSync(ordersFile)) {
     try {
       const data = JSON.parse(readFileSync(ordersFile, "utf8"));
-      if (!Array.isArray(data?.orders)) throw new Error("no list of orders");
+      const problem = bookProblem(data);
+      if (problem) throw new Error(problem);
       book = createBook(data);
     } catch (error) { readable = false; log(`orders: not read, payment stays closed (${error.message})`); }
   }

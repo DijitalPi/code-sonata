@@ -409,6 +409,20 @@ test('payment opens only with someone to approve it, and stays shut on an order 
   assert.equal(createShop({ env: { ...pay, ADMIN_KEYS: `selim:${SELIM}` }, log: quiet }).open, true);
   await writeFile(pay.ORDERS_FILE, '{}');
   assert.equal(createShop({ env: { ...pay, ADMIN_KEYS: `selim:${SELIM}` }, log: quiet }).open, false, 'an order file without its list');
+  // One order it cannot read may be a seat paid for: never read as a free seat (F3).
+  const sold = { id: `o-${'1'.repeat(24)}`, state: 'paid', ring: 0, col: 10, width: 1, depth: 1, name: 'Acme', link: 'https://acme.example',
+    amount: 2500, currency: 'usd', payment: 'pi_old', createdAt: 1, heldUntil: 2 };
+  for (const [what, bad] of [['a width as text', { ...sold, width: '1' }], ['a state it does not know', { ...sold, state: 'odd' }],
+    ['an id it does not know', { ...sold, id: 'o-1' }], ['not an order', null]]) {
+    const text = JSON.stringify({ orders: [{ ...sold, id: `o-${'2'.repeat(24)}` }, bad], events: [] });
+    await writeFile(pay.ORDERS_FILE, text);
+    const shop = createShop({ env: { ...pay, ADMIN_KEYS: `selim:${SELIM}` }, log: quiet });
+    assert.equal(shop.open, false, `${what}: payment closed`);
+    shop.sweep(Date.now());
+    assert.equal(await readFile(pay.ORDERS_FILE, 'utf8'), text, `${what}: the file is left as it is`);
+  }
+  await writeFile(pay.ORDERS_FILE, JSON.stringify({ orders: [sold], events: [] }));
+  assert.equal(createShop({ env: { ...pay, ADMIN_KEYS: `selim:${SELIM}` }, log: quiet }).open, true, 'a sound order file opens payment');
 });
 
 test('orders and holds survive a restart, read back from the file', async () => {
