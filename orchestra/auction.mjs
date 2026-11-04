@@ -33,9 +33,9 @@ export function createAuctions(data) {
 }
 
 // Why a written auction file cannot be trusted, or null. A file the server writes always has its auction (null
-// before the first, and then no bids) and every bid whole; the bid marked top or winner is the one the auction
-// points to, and an auction that ended with bids has it. Anything else may hide a block sold or a hold to capture,
-// so it is never read as no auction.
+// before the first, and then no bids) and every bid whole, each under its own id; the bid marked top or winner is
+// the one the auction points to, and an auction that ended with bids has it. Anything else may hide a block sold or
+// a hold to capture, so it is never read as no auction.
 export function auctionProblem(data) {
   if (!data || typeof data !== "object" || !("auction" in data)) return "no auction in the file";
   const a = data.auction;
@@ -46,8 +46,9 @@ export function auctionProblem(data) {
     const bad = data[k].find((b) => !validBid(b));
     if (bad !== undefined) return `a bid it cannot read (${bad?.id ?? "no id"})`;
   }
-  const bids = data.bids || [];
-  if (a === null) return bids.length || (data.old || []).length ? "bids without their auction" : null;
+  const bids = data.bids || [], every = [...bids, ...(data.old || [])];
+  if (new Set(every.map((b) => b.id)).size !== every.length) return "two bids with one id";   // found by id, the wrong one would be used
+  if (a === null) return every.length ? "bids without their auction" : null;
   const leading = bids.filter((b) => ["top", "winner"].includes(b.state));
   if (leading.length > 1) return "more than one top bid";
   if ((a.top ?? null) !== (leading[0]?.id ?? null)) return "its top bid is not the one it points to";

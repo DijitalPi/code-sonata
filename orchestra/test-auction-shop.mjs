@@ -382,7 +382,10 @@ test('an auction file that cannot be trusted closes payment and keeps the block;
     ['won without its top', JSON.stringify(without('won'))], ['capturing without its top', JSON.stringify(without('capturing'))],
     ['failed without its top', JSON.stringify(without('failed'))], ['open with a top bid it does not point to', JSON.stringify(without('open'))],
     ['two top bids', JSON.stringify(second('open'))], ['won with its bid not the winner', JSON.stringify({ ...saved('won'), bids: saved('open').bids })],
-    ['open with a winner', JSON.stringify({ ...saved('open'), bids: saved('won').bids })]]) {
+    ['open with a winner', JSON.stringify({ ...saved('open'), bids: saved('won').bids })],
+    // the bid found by its id would not be the one checked: an earlier, passed bid would be captured (N3)
+    ['two bids with one id', JSON.stringify({ ...saved('capturing'), bids: [{ ...saved('capturing').bids[0], state: 'outbid', amount: 2300, payment: 'pi_lower' }, ...saved('capturing').bids] })],
+    ['an id in the bids and the old', JSON.stringify({ ...saved('open'), old: [{ ...saved('open').bids[0], state: 'expired' }] })]]) {
     const at = mkdtempSync(join(tmpdir(), 'auction-bad-'));
     try {
       const caseEnv = { ...env, SEATS_DIR: at, ORDERS_FILE: join(at, 'orders.json'), AUCTION_FILE: join(at, 'auction.json'), SLACK_WEBHOOK_URL: '' };
