@@ -647,9 +647,12 @@ LOCK_FILE, START_FILE = CACHE / "reader.lock", CACHE / "reader.start"
 
 def take_lock(path, wait=0.0):
     """An open file holding an exclusive lock on path; None if another process still holds it after `wait` seconds."""
-    import fcntl
     CACHE.mkdir(parents=True, exist_ok=True)
     fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        import fcntl
+    except ImportError:   # Windows: no locks, and no background reader to make way for
+        return fd
     end = time.monotonic() + wait
     while True:
         try:
@@ -663,7 +666,7 @@ def take_lock(path, wait=0.0):
 
 
 def running_reader():
-    """The background reader's pid, only while a reader holds its lock: never some other program's."""
+    """The running reader's pid, only while a reader holds its lock: never some other program's."""
     free = take_lock(LOCK_FILE)
     if free is not None:   # nobody holds it: no reader runs, whatever the pid file says
         os.close(free)
@@ -674,64 +677,114 @@ def running_reader():
         return None
 
 
+BUSY = "Başka bir okuyucu komutu sürüyor; bitince yeniden dene."
+NOT_STOPPED = "Çalışan okuyucu durmadı; birkaç saniye sonra yeniden dene."
+
+
 def stop_reader():
-    """Stop the running reader (the caller holds START_FILE); its pid, or None if none ran."""
+    """Stop the running reader (the caller holds START_FILE): None if none ran, else whether it stopped."""
     pid = running_reader()
-    if pid is not None:
-        try:
-            os.kill(pid, signal.SIGTERM)
+    if pid is None:
+        try:   # a file no reader stands behind
+            PID_FILE.unlink()
         except OSError:
             pass
-        for _ in range(50):   # it stops within a second: the sending thread looks once a second
-            try:
-                os.kill(pid, 0)
-            except OSError:
-                break
-            time.sleep(.1)
-    try:   # a stale file goes; one a newer reader has written stays
-        if pid is None or PID_FILE.read_text().strip() == str(pid):
+        return None
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        pass
+    free = take_lock(LOCK_FILE, wait=5)   # it lets go of its lock when it has stopped, within a second
+    if free is None:
+        return False   # still running: its pid stays, so it can be stopped again
+    os.close(free)
+    try:
+        if PID_FILE.read_text().strip() == str(pid):
             PID_FILE.unlink()
     except OSError:
         pass
-    return pid
+    return True
+
+
+def hold_reader():
+    """Become the machine's reader (the caller holds START_FILE): its lock, held while the process lives, or None."""
+    held = take_lock(LOCK_FILE, wait=5)
+    if held is not None:
+        PID_FILE.write_text(str(os.getpid()))
+        PID_FILE.chmod(0o600)
+    return held
+
+
+def let_go_reader():
+    try:
+        if int(PID_FILE.read_text()) == os.getpid():
+            PID_FILE.unlink()
+    except (OSError, ValueError):
+        pass
 
 
 def stop_background(quiet=False):
     start = take_lock(START_FILE, wait=20)   # a start under way ends first
+    if start is None:
+        print(BUSY, flush=True)
+        return 1
     try:
-        pid = stop_reader()
+        stopped = stop_reader()
     finally:
-        if start is not None:
-            os.close(start)
+        os.close(start)
+    if stopped is False:
+        print(NOT_STOPPED, flush=True)
+        return 1
     if not quiet:
-        print("Okuyucu durdu." if pid is not None else "Arka planda çalışan okuyucu yok.", flush=True)
+        print("Okuyucu durdu." if stopped else "Arka planda çalışan okuyucu yok.", flush=True)
     return 0
+
+
+def run_here(url, duration=None):
+    """In this window (Ctrl+C stops it), and still the machine's one reader: it replaces the running one."""
+    start = take_lock(START_FILE, wait=20)
+    if start is None:
+        print(BUSY, flush=True)
+        return 1
+    try:
+        held = hold_reader() if stop_reader() is not False else None
+    finally:
+        os.close(start)
+    if held is None:
+        print(NOT_STOPPED, flush=True)
+        return 1
+    try:
+        return run(url, duration)
+    finally:
+        let_go_reader()
+        os.close(held)
 
 
 def start_background(url):
     """Start the reader away from this terminal, show its first lines, give the terminal back."""
     start = take_lock(START_FILE, wait=20)
+    if start is None:
+        print(BUSY, flush=True)
+        return 1
     try:
-        stop_reader()
+        if stop_reader() is False:
+            print(NOT_STOPPED, flush=True)
+            return 1
         ready, told = os.pipe()
         child = os.fork()
         if child == 0:
             os.close(ready)
-            if start is not None:
-                os.close(start)   # the lock is the starting command's, not the reader's
+            os.close(start)   # the lock is the starting command's, not the reader's
             os.setsid()
             if os.fork():
                 os._exit(0)
-            held = take_lock(LOCK_FILE, wait=5)   # the reader it replaces lets go within a second
-            if held is None:
+            if hold_reader() is None:   # the reader it replaces lets go within a second
                 os._exit(1)
             null = os.open(os.devnull, os.O_RDONLY)
             log = os.open(LOG_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             os.dup2(null, 0)
             os.dup2(log, 1)
             os.dup2(log, 2)
-            PID_FILE.write_text(str(os.getpid()))
-            PID_FILE.chmod(0o600)
             os.write(told, b"1")
             os.close(told)
 
@@ -743,19 +796,14 @@ def start_background(url):
             try:
                 code = run(url, background=True)
             finally:
-                try:
-                    if int(PID_FILE.read_text()) == os.getpid():
-                        PID_FILE.unlink()
-                except (OSError, ValueError):
-                    pass
+                let_go_reader()
                 os._exit(code)
         os.close(told)
         os.waitpid(child, 0)
         started = select.select([ready], [], [], 10)[0] and os.read(ready, 1) == b"1"
         os.close(ready)
     finally:
-        if start is not None:
-            os.close(start)
+        os.close(start)
     if not started:
         print("Önceki okuyucu kapanmadı, yeni okuyucu başlatılmadı. Birkaç saniye sonra yeniden dene.", flush=True)
         return 1
@@ -796,8 +844,7 @@ def main():
         parser.error(str(exc))
     if args.duration is None and not args.foreground and hasattr(os, "fork"):
         return start_background(url)
-    stop_background(quiet=True)   # one reader per machine
-    return run(url, args.duration)
+    return run_here(url, args.duration)
 
 
 if __name__ == "__main__":

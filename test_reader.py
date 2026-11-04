@@ -564,8 +564,10 @@ class BackgroundTests(unittest.TestCase):
 
     def readers(self):
         """Readers of this test still running (their URL is this test's), whatever the pid file says."""
-        out = subprocess.run(["pgrep", "-f", f"{READER} {self.URL}"], capture_output=True, text=True).stdout
-        return [int(p) for p in out.split()]
+        found = subprocess.run(["pgrep", "-f", f"{READER} {self.URL}"], capture_output=True, text=True)
+        if found.returncode not in (0, 1):   # 1: none; anything else: this machine does not list processes here
+            self.skipTest(f"pgrep: {found.stderr.strip()}")
+        return [int(p) for p in found.stdout.split()]
 
     def test_two_commands_at_once_leave_one_reader(self):
         """Started side by side, the two commands still leave one reader, the one the pid file names (G3)."""
@@ -579,6 +581,52 @@ class BackgroundTests(unittest.TestCase):
         self.reader("--stop")
         self.assertTrue(self.gone(self.readers()[0]) if self.readers() else True)
         self.assertEqual(self.readers(), [])
+
+    def test_a_reader_in_its_window_is_the_one_reader_too(self):
+        """--foreground holds the same lock: a new command replaces it, --stop ends it (Y1)."""
+        here = subprocess.Popen([sys.executable, READER, "--foreground", self.URL], env=self.env, stdin=subprocess.DEVNULL,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.addCleanup(here.wait)
+        self.addCleanup(lambda: here.poll() is None and here.kill())
+        for _ in range(50):
+            if self.pid() == here.pid:
+                break
+            time.sleep(.1)
+        self.assertEqual(self.pid(), here.pid, "the window's reader is the machine's reader")
+        self.reader(self.URL)
+        here.wait(timeout=10)
+        background = self.pid()
+        self.assertNotEqual(background, here.pid)
+        self.assertTrue(background and self.alive(background))
+        self.reader("--stop")
+        self.assertTrue(self.gone(background))
+
+    def test_a_reader_that_does_not_stop_is_not_said_to_have_stopped(self):
+        """A reader that cannot stop (here: paused) keeps its pid, so it can be stopped again (Y2)."""
+        self.reader(self.URL)
+        pid = self.pid()
+        os.kill(pid, signal.SIGSTOP)
+        self.addCleanup(lambda: self.alive(pid) and os.kill(pid, signal.SIGCONT))
+        stopped = self.reader("--stop")
+        self.assertNotEqual(stopped.returncode, 0)
+        self.assertNotIn("Okuyucu durdu", stopped.stdout)
+        self.assertEqual(self.pid(), pid)
+        self.assertTrue(self.alive(pid))
+        os.kill(pid, signal.SIGCONT)   # the stop it was sent ends it now
+        self.assertTrue(self.gone(pid))
+
+    def test_a_command_that_cannot_take_its_turn_changes_nothing(self):
+        """While another command holds reader.start, --stop gives up and leaves the reader running (Y6)."""
+        import fcntl
+        self.reader(self.URL)
+        pid = self.pid()
+        turn = open(self.cache() / "reader.start", "w")
+        self.addCleanup(turn.close)
+        fcntl.flock(turn, fcntl.LOCK_EX)
+        stopped = self.reader("--stop")
+        self.assertNotEqual(stopped.returncode, 0)
+        self.assertTrue(self.alive(pid))
+        self.assertEqual(self.pid(), pid)
 
 
 if __name__ == "__main__":
