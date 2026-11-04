@@ -3,6 +3,14 @@
 // about, and that block lights up in the hall while it is open. On its own so it can be tested without the page.
 import { tierOf } from './seats.mjs';
 
+// The link as the card writes it, at most 48 characters: the site always shows; a long address loses the end of
+// its path, a long site name its front (the end of a name tells whose site it is).
+function shortLink(link) {
+  const u = new URL(link), site = u.host.replace(/^www\./, '');
+  if (site.length > 48) return `…${site.slice(-47)}`;
+  return `${site}${`${u.pathname}${u.search}${u.hash}`.replace(/\/$/, '')}`.slice(0, 48);
+}
+
 export function createCard({ stage, canvas, amfi }) {
   const card = document.createElement('div');
   card.className = 'seat-card'; card.hidden = true; card.setAttribute('role', 'status');
@@ -50,7 +58,7 @@ export function createCard({ stage, canvas, amfi }) {
       if (h.city) card.append(own('span', h.city, 'city'));
       if (h.link) {
         const a = document.createElement('a'); a.href = h.link; a.target = '_blank'; a.rel = 'sponsored noopener'; a.referrerPolicy = 'origin'; a.translate = false;   // the holder sees the site, not the page
-        a.textContent = h.link.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '').slice(0, 48) + ' ↗'; card.append(a);
+        a.textContent = `${shortLink(h.link)} ↗`; card.append(a);
       }
       const size = `${h.width * h.depth} koltuk · ${tierOf(h.ring).label}`;
       const meta = document.createElement('small'); meta.textContent = amfi.isDemo() ? `Demo örneği, gerçek alıcı değil · ${size}` : size; card.append(meta);

@@ -89,13 +89,13 @@ function oneLine(text, max) {
   return line.length > max ? null : line;
 }
 // What a holder shows: a name of up to 40 characters, a web address, and if they like a line about them (120)
-// and their city (40); or null.
+// and their city (40); or null. An address with a user name or password is refused: it hides the site it goes to.
 export function cleanHolder(h) {
   const name = typeof h?.name === 'string' ? h.name.trim() : '';
   if (!name || name.length > 40) return null;
   let link = null;
   try { link = typeof h.link === 'string' && h.link.length <= 300 ? new URL(h.link) : null; } catch { link = null; }
-  if (!link || !['http:', 'https:'].includes(link.protocol)) return null;
+  if (!link || !['http:', 'https:'].includes(link.protocol) || link.username || link.password) return null;
   const about = oneLine(h.about, 120), city = oneLine(h.city, 40);
   if (about === null || city === null) return null;
   return { name, link: link.href, ...(about && { about }), ...(city && { city }) };

@@ -106,6 +106,9 @@ test('a holder is a trimmed name of up to 40 characters and an http or https lin
   for (const bad of [{ name: ' ', link: 'https://a.example' }, { name: 'x'.repeat(41), link: 'https://a.example' },
     { name: 'A', link: 'javascript:alert(1)' }, { name: 'A', link: `https://a.example/${'x'.repeat(290)}` }, { name: 'A', link: 3 },
     { name: 7, link: 'https://a.example' }, null]) assert.equal(cleanHolder(bad), null, JSON.stringify(bad));
+  // A user name or password in the address hides where it goes: trusted.example@evil.test is evil.test (G6).
+  for (const link of ['https://trusted.example@evil.test/', 'https://trusted.example:secret@evil.test/', 'https://:x@evil.test/'])
+    assert.equal(cleanHolder({ name: 'A', link }), null, link);
 });
 
 test('a holder may add a one-line introduction of up to 120 characters and a city of up to 40', () => {

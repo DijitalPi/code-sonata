@@ -44,6 +44,17 @@ test('a holder card shows the big logo, name, their line, city, link and seats, 
   assert.deepEqual([el.hidden, lit.at(-1), card.open()], [true, null, false], 'closing the card puts the light out');
 });
 
+test('the link on the card always shows the site it goes to: a long address loses its path, a long site its front (G6)', () => {
+  rects({});
+  const shown = (link) => { card.holder({ ...acme, link }, 300, 400); return el.querySelector('a').textContent; };
+  assert.equal(shown('https://acme.example/a/b?x=1'), 'acme.example/a/b?x=1 ↗');
+  assert.equal(shown(`https://acme.example/${'p'.repeat(60)}`), `acme.example/${'p'.repeat(35)} ↗`);
+  const long = `trusted.example.${'a'.repeat(40)}.evil.test`;
+  assert.equal(shown(`https://${long}/`), `…${long.slice(-47)} ↗`);
+  assert.ok(shown(`https://${long}/`).endsWith('.evil.test ↗'), 'the end of a site name is the part that tells whose it is');
+  card.hide(false);
+});
+
 test('no line, city or picture: no empty rows; a demo card is ours and translated', () => {
   rects({});
   demo = true;
