@@ -66,7 +66,7 @@ export const KO = {
   "Durdurma komutunu kopyala": "멈춤 명령어 복사",
   "Durdurma komutu kopyalandı. Herhangi bir Terminal’de çalıştır.": "멈춤 명령어를 복사했어요. 아무 터미널에서나 실행하세요.",
   "Ses başka sekmede çalıyor.": "다른 탭에서 소리가 나고 있어요.",
-  "Salon çalıyor, ses kapalı.": "홀은 연주 중인데 소리가 꺼져 있어요.",
+  "Salon çalıyor, ses kapalı.": "공연장은 연주 중, 소리는 꺼져 있어요.",
   "Burada çal": "여기서 재생",
   "Sesi aç": "소리 켜기",
   "Uyarıyı kapat": "알림 닫기",

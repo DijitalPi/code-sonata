@@ -66,7 +66,7 @@ export const PT = {
   "Durdurma komutunu kopyala": "Copiar comando para parar",
   "Durdurma komutu kopyalandı. Herhangi bir Terminal’de çalıştır.": "Comando para parar copiado. Execute-o em qualquer Terminal.",
   "Ses başka sekmede çalıyor.": "O som está tocando em outra aba.",
-  "Salon çalıyor, ses kapalı.": "A sala está tocando e seu som está desligado.",
+  "Salon çalıyor, ses kapalı.": "A sala de concertos toca, mas o som está desligado.",
   "Burada çal": "Tocar aqui",
   "Sesi aç": "Ligar o som",
   "Uyarıyı kapat": "Fechar aviso",
