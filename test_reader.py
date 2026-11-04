@@ -550,6 +550,36 @@ class BackgroundTests(unittest.TestCase):
         time.sleep(.3)
         self.assertIsNone(other.poll())
 
+    def test_stop_never_signals_a_program_that_only_names_the_reader(self):
+        """A pid handed on to another program whose command line says reader.py is not the reader (G2)."""
+        other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", "--input", "reader.py"])
+        self.addCleanup(other.wait)
+        self.addCleanup(other.kill)
+        self.cache().mkdir(parents=True)
+        (self.cache() / "reader.pid").write_text(str(other.pid))
+        stopped = self.reader("--stop")
+        self.assertIn("çalışan okuyucu yok", stopped.stdout)
+        time.sleep(.3)
+        self.assertIsNone(other.poll())
+
+    def readers(self):
+        """Readers of this test still running (their URL is this test's), whatever the pid file says."""
+        out = subprocess.run(["pgrep", "-f", f"{READER} {self.URL}"], capture_output=True, text=True).stdout
+        return [int(p) for p in out.split()]
+
+    def test_two_commands_at_once_leave_one_reader(self):
+        """Started side by side, the two commands still leave one reader, the one the pid file names (G3)."""
+        self.addCleanup(lambda: [os.kill(p, signal.SIGKILL) for p in self.readers()])
+        both = [subprocess.Popen([sys.executable, READER, self.URL], env=self.env, stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) for _ in range(2)]
+        for p in both:
+            p.wait(timeout=30)
+        time.sleep(.5)
+        self.assertEqual(self.readers(), [self.pid()])
+        self.reader("--stop")
+        self.assertTrue(self.gone(self.readers()[0]) if self.readers() else True)
+        self.assertEqual(self.readers(), [])
+
 
 if __name__ == "__main__":
     unittest.main()

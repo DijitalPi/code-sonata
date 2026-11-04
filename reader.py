@@ -19,6 +19,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import select
 import shlex
 import signal
 import sys
@@ -637,22 +638,44 @@ def run(url, duration=None, roots=ROOTS, background=False):
 
 
 # In the background the reader belongs to no terminal: closing the tab it was started from does not stop it.
-# One reader per machine: its pid is kept here, and a new command replaces the reader that is running.
+# One reader per machine: the running reader holds a lock on LOCK_FILE for as long as it runs and keeps its pid in
+# PID_FILE. A pid nobody holds the lock for is not a reader (the number may belong to another program by now).
+# Starting and stopping take START_FILE first, so two commands at once go one after the other.
 PID_FILE, LOG_FILE = CACHE / "reader.pid", CACHE / "reader.log"
+LOCK_FILE, START_FILE = CACHE / "reader.lock", CACHE / "reader.start"
+
+
+def take_lock(path, wait=0.0):
+    """An open file holding an exclusive lock on path; None if another process still holds it after `wait` seconds."""
+    import fcntl
+    CACHE.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    end = time.monotonic() + wait
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return fd
+        except OSError:
+            if time.monotonic() >= end:
+                os.close(fd)
+                return None
+            time.sleep(.05)
 
 
 def running_reader():
-    """The background reader's pid, only if the pid file names a live reader and not some other program."""
-    import subprocess
-    try:
-        pid = int(PID_FILE.read_text().strip())
-        command = subprocess.run(["ps", "-p", str(pid), "-o", "command="], capture_output=True, text=True, timeout=5).stdout
-    except (OSError, ValueError, subprocess.SubprocessError):
+    """The background reader's pid, only while a reader holds its lock: never some other program's."""
+    free = take_lock(LOCK_FILE)
+    if free is not None:   # nobody holds it: no reader runs, whatever the pid file says
+        os.close(free)
         return None
-    return pid if Path(__file__).name in command else None
+    try:
+        return int(PID_FILE.read_text().strip())
+    except (OSError, ValueError):
+        return None
 
 
-def stop_background(quiet=False):
+def stop_reader():
+    """Stop the running reader (the caller holds START_FILE); its pid, or None if none ran."""
     pid = running_reader()
     if pid is not None:
         try:
@@ -670,6 +693,16 @@ def stop_background(quiet=False):
             PID_FILE.unlink()
     except OSError:
         pass
+    return pid
+
+
+def stop_background(quiet=False):
+    start = take_lock(START_FILE, wait=20)   # a start under way ends first
+    try:
+        pid = stop_reader()
+    finally:
+        if start is not None:
+            os.close(start)
     if not quiet:
         print("Okuyucu durdu." if pid is not None else "Arka planda çalışan okuyucu yok.", flush=True)
     return 0
@@ -677,36 +710,55 @@ def stop_background(quiet=False):
 
 def start_background(url):
     """Start the reader away from this terminal, show its first lines, give the terminal back."""
-    stop_background(quiet=True)
-    CACHE.mkdir(parents=True, exist_ok=True)
-    child = os.fork()
-    if child == 0:
-        os.setsid()
-        if os.fork():
-            os._exit(0)
-        null = os.open(os.devnull, os.O_RDONLY)
-        log = os.open(LOG_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        os.dup2(null, 0)
-        os.dup2(log, 1)
-        os.dup2(log, 2)
-        PID_FILE.write_text(str(os.getpid()))
-        PID_FILE.chmod(0o600)
+    start = take_lock(START_FILE, wait=20)
+    try:
+        stop_reader()
+        ready, told = os.pipe()
+        child = os.fork()
+        if child == 0:
+            os.close(ready)
+            if start is not None:
+                os.close(start)   # the lock is the starting command's, not the reader's
+            os.setsid()
+            if os.fork():
+                os._exit(0)
+            held = take_lock(LOCK_FILE, wait=5)   # the reader it replaces lets go within a second
+            if held is None:
+                os._exit(1)
+            null = os.open(os.devnull, os.O_RDONLY)
+            log = os.open(LOG_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            os.dup2(null, 0)
+            os.dup2(log, 1)
+            os.dup2(log, 2)
+            PID_FILE.write_text(str(os.getpid()))
+            PID_FILE.chmod(0o600)
+            os.write(told, b"1")
+            os.close(told)
 
-        def stopped(*_):
-            raise KeyboardInterrupt
-        signal.signal(signal.SIGTERM, stopped)
-        signal.signal(signal.SIGHUP, signal.SIG_IGN)
-        code = 1
-        try:
-            code = run(url, background=True)
-        finally:
+            def stopped(*_):
+                raise KeyboardInterrupt
+            signal.signal(signal.SIGTERM, stopped)
+            signal.signal(signal.SIGHUP, signal.SIG_IGN)
+            code = 1
             try:
-                if int(PID_FILE.read_text()) == os.getpid():
-                    PID_FILE.unlink()
-            except (OSError, ValueError):
-                pass
-            os._exit(code)
-    os.waitpid(child, 0)
+                code = run(url, background=True)
+            finally:
+                try:
+                    if int(PID_FILE.read_text()) == os.getpid():
+                        PID_FILE.unlink()
+                except (OSError, ValueError):
+                    pass
+                os._exit(code)
+        os.close(told)
+        os.waitpid(child, 0)
+        started = select.select([ready], [], [], 10)[0] and os.read(ready, 1) == b"1"
+        os.close(ready)
+    finally:
+        if start is not None:
+            os.close(start)
+    if not started:
+        print("Önceki okuyucu kapanmadı, yeni okuyucu başlatılmadı. Birkaç saniye sonra yeniden dene.", flush=True)
+        return 1
     shown, end = 0, time.monotonic() + 5
     while time.monotonic() < end:   # until the hall answers (a seat, or why not)
         try:
