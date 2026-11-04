@@ -147,7 +147,7 @@ Geri yükleme: `docker compose stop orchestra && ./restore.sh /var/backups/orche
 Betik önce arşivi denetler: tek klasör, içinde yalnız dosya ve klasör (bağlantı yok), defterler sunucunun kendi kuralıyla okunur
 (`orchestra/check-data.mjs`; makinede `node` yoksa sunucunun imajında, ağsız). Bozuksa hiçbir şeyi değiştirmeden durur. Değiştirdiği
 dosyaları silmez, her çalışmada kendine ait `/srv/orchestra.before-<zaman>-<rastgele>` klasörüne taşır; hata ya da durdurma sinyalinde
-(TERM, INT, HUP) geri koyar. Sahibini `node` yapar. Panelde Genel bakış sayıları ve
+(TERM, INT, HUP) diskte gördüğüne bakarak geri koyar, koyamadığı parçayı ve eski dosyaların yerini yazar. Sahibini `node` yapar. Panelde Genel bakış sayıları ve
 onay bekleyenler yedekle aynı olmalı. Yedek alındıktan sonra ödenmiş siparişler Stripe
 panelinde (Payments) görünür, panelde yoktur: o sürede ödeme geldiyse alıcıyla iletişime geç ya da iade et. Geri yüklemeyi yayından
 önce bir kez dene.

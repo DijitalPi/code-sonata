@@ -123,6 +123,42 @@ class DeployScripts(unittest.TestCase):
         self.assertNotEqual(done.returncode, 0)
         self.assertEqual(self.snapshot(), was)
 
+    def test_a_signal_right_after_a_move_still_puts_that_file_back(self):
+        """The signal comes when the old auction.json is already aside: what is on disk is put back, not what was noted (Z1)."""
+        a = self.archive({"orders.json": json.dumps(ORDERS).encode(), "auction.json": json.dumps(AUCTION).encode(), "seats/o-1.webp": b"new"})
+        was = self.snapshot()
+        self.wrap("mv", f'case "$1" in {self.data}/auction.json) "$REAL" "$@" || exit; kill -TERM "$PPID"; sleep .1; exit 143;; esac\nexec "$REAL" "$@"')
+        done = self.run_script("restore.sh", str(a))
+        self.assertNotEqual(done.returncode, 0)
+        self.assertEqual(self.snapshot(), was)
+
+    def test_a_restore_that_cannot_put_everything_back_says_so(self):
+        """Putting the old orders back fails too: it does not say the volume is as it was, and says where they are (Z2)."""
+        a = self.archive({"orders.json": json.dumps(ORDERS).encode(), "auction.json": json.dumps(AUCTION).encode(), "seats/o-1.webp": b"new"})
+        self.wrap("mv", 'case "$1" in *.new/seats) exit 28;; *.before-*/orders.json) exit 30;; esac\nexec "$REAL" "$@"')
+        done = self.run_script("restore.sh", str(a))
+        self.assertNotEqual(done.returncode, 0)
+        self.assertNotIn("is as it was", done.stderr)
+        aside = [p for p in self.root.iterdir() if p.name.startswith("data.before-") and not p.name.endswith(".new")]
+        self.assertEqual(len(aside), 1)
+        self.assertTrue((aside[0] / "orders.json").exists(), "the old orders are kept aside")
+        self.assertIn(str(aside[0]), done.stderr)
+        self.assertIn("orders.json", done.stderr)
+
+    def test_an_archive_with_a_hard_link_changes_nothing(self):
+        """A hard link is a link too: the archive holds plain files only (Z3)."""
+        src = self.root / "src" / "2026-11-04"
+        src.mkdir(parents=True)
+        (src / "source.json").write_text(json.dumps(ORDERS))
+        os.link(src / "source.json", src / "orders.json")
+        a = self.root / "a.tgz"
+        with tarfile.open(a, "w:gz") as t:
+            t.add(src, arcname="2026-11-04")
+        was = self.snapshot()
+        done = self.run_script("restore.sh", str(a))
+        self.assertNotEqual(done.returncode, 0)
+        self.assertEqual(self.snapshot(), was)
+
     def test_two_restores_in_the_same_second_keep_both_copies_of_what_they_replaced(self):
         """The folder of what a restore replaced is its own, even with the same time in its name (Y5)."""
         self.wrap("date", 'echo 20261104-120000')
