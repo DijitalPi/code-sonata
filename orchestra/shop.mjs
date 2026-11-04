@@ -173,8 +173,11 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
   const auctionShown = () => auctionOpen && Boolean(ab.auction)
     && (ab.auction.state !== "won" || !winnerOrder() || ["paid", "problem"].includes(winnerOrder().state));
   const label = (o) => { const n = o.width * o.depth; return `${EN[tierOf(o.ring).label] || tierOf(o.ring).label} · ${n} seat${n === 1 ? "" : "s"}`; };
-  async function tell(text) {
+  // Slack reads <…> as a mention or a link and & as their escape: a buyer's name, link or e-mail in a message stays
+  // text. The messages themselves use neither; the panel's address is a plain URL Slack links on its own.
+  async function tell(message) {
     if (!env.SLACK_WEBHOOK_URL) return;
+    const text = message.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     try {
       const res = await fetch(env.SLACK_WEBHOOK_URL, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }), signal: AbortSignal.timeout(5000) });
       if (!res.ok) log(`slack: ${res.status}`);

@@ -175,3 +175,11 @@ test('wrong codes sent side by side still stop at ten: the limit is checked once
   const statuses = await Promise.all(sent.map((s) => s.status));
   assert.deepEqual([statuses.filter((s) => s === 400).length, statuses.filter((s) => s === 429).length], [10, 10]);
 });
+
+test('what a buyer writes reaches Slack as text: no mention, no link, no formatting of theirs (G1)', async () => {
+  await open('SLACK', 'back', 3);
+  const res = await post('/api/seats/checkout', { block: seat(2, 30), coupon: 'slack', name: '<!channel> <https://e.test|P> & co',
+    link: 'https://acme.example', image: webp(480, 240), terms: true }, 'ip-slack');
+  assert.equal(res.status, 200);
+  assert.equal(slack.at(-1), 'Kuponla bedava koltuk: &lt;!channel&gt; &lt;https://e.test|P&gt; &amp; co · Arka · 1 koltuk · 0 $ · kupon SLACK. Onay bekliyor: https://orchestra.example.test/yonetim/#bekleyen');
+});
