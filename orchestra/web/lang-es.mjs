@@ -246,6 +246,8 @@ export const ES = {
   'Teklifin kartında bloke edildi. Şu an öndesin.': 'El importe de tu puja se ha retenido en tu tarjeta. Vas en cabeza.',
   'Daha yüksek bir teklif geldi; blokesi kaldırıldı.': "Alguien ha superado tu puja; se ha liberado el importe retenido en tu tarjeta.",
   'Teklifin geçerli olmadı (açık artırma bitmişti ya da fiyat yükselmişti); blokesi kaldırıldı.': "Tu puja no ha sido válida (la subasta había terminado o el precio había subido); se ha liberado el importe retenido en tu tarjeta.",
+  'Daha yüksek bir teklif geldi; blokenin kaldırılması bekleniyor.': "Alguien ha superado tu puja; está pendiente la liberación del importe retenido en tu tarjeta.",
+  'Teklifin geçerli olmadı (açık artırma bitmişti ya da fiyat yükselmişti); blokenin kaldırılması bekleniyor.': "Tu puja no ha sido válida (la subasta había terminado o el precio había subido); está pendiente la liberación del importe retenido en tu tarjeta.",
   'Teklif verilmedi. Kartından bir şey bloke edilmedi.': 'No se ha realizado ninguna puja. No se ha retenido ningún importe en tu tarjeta.',
   'Kazandın! Logonu, adını ve linkini gönder; onaylanınca blok salonda görünür.': '¡Has ganado! Envía tu logo, nombre y enlace; cuando se aprueben, el bloque aparecerá en la sala.',
   'Teklifin kontrol ediliyor…': 'Comprobando tu puja…', 'Bu teklif bulunamadı.': 'No se ha encontrado esta puja.',

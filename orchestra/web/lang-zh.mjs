@@ -246,6 +246,8 @@ export const ZH = {
   'Teklifin kartında bloke edildi. Şu an öndesin.': '出价金额已在你的银行卡中冻结。你目前领先。',
   'Daha yüksek bir teklif geldi; blokesi kaldırıldı.': '已有更高出价，你的出价金额已解冻。',
   'Teklifin geçerli olmadı (açık artırma bitmişti ya da fiyat yükselmişti); blokesi kaldırıldı.': '你的出价未生效（拍卖已结束或价格已上涨），出价金额已解冻。',
+  'Daha yüksek bir teklif geldi; blokenin kaldırılması bekleniyor.': '已有更高出价，你的出价金额正在等待解冻。',
+  'Teklifin geçerli olmadı (açık artırma bitmişti ya da fiyat yükselmişti); blokenin kaldırılması bekleniyor.': '你的出价未生效（拍卖已结束或价格已上涨），出价金额正在等待解冻。',
   'Teklif verilmedi. Kartından bir şey bloke edilmedi.': '未出价。你的银行卡中未冻结任何金额。',
   'Kazandın! Logonu, adını ve linkini gönder; onaylanınca blok salonda görünür.': '你竞拍成功了！请提交标志、名称和链接，审核通过后，座位区块会显示在音乐厅中。',
   'Teklifin kontrol ediliyor…': '正在核查出价…', 'Bu teklif bulunamadı.': '未找到此出价。',

@@ -246,6 +246,8 @@ export const DE = {
   'Teklifin kartında bloke edildi. Şu an öndesin.': 'Der Betrag deines Gebots wurde auf deiner Karte reserviert. Du bist derzeit Höchstbietender.',
   'Daha yüksek bir teklif geldi; blokesi kaldırıldı.': 'Ein höheres Gebot ist eingegangen; dein reservierter Betrag wurde freigegeben.',
   'Teklifin geçerli olmadı (açık artırma bitmişti ya da fiyat yükselmişti); blokesi kaldırıldı.': 'Dein Gebot war ungültig (die Auktion war beendet oder der Preis gestiegen); der reservierte Betrag wurde freigegeben.',
+  'Daha yüksek bir teklif geldi; blokenin kaldırılması bekleniyor.': 'Ein höheres Gebot ist eingegangen; die Freigabe deines reservierten Betrags steht aus.',
+  'Teklifin geçerli olmadı (açık artırma bitmişti ya da fiyat yükselmişti); blokenin kaldırılması bekleniyor.': 'Dein Gebot war ungültig (die Auktion war beendet oder der Preis gestiegen); die Freigabe des reservierten Betrags steht aus.',
   'Teklif verilmedi. Kartından bir şey bloke edilmedi.': 'Es wurde kein Gebot abgegeben. Auf deiner Karte wurde kein Betrag reserviert.',
   'Kazandın! Logonu, adını ve linkini gönder; onaylanınca blok salonda görünür.': 'Du hast gewonnen! Sende dein Logo, deinen Namen und deinen Link; nach der Freigabe erscheint der Block im Saal.',
   'Teklifin kontrol ediliyor…': 'Dein Gebot wird geprüft…', 'Bu teklif bulunamadı.': 'Dieses Gebot wurde nicht gefunden.',

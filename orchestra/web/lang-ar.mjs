@@ -246,6 +246,8 @@ export const AR = {
   'Teklifin kartında bloke edildi. Şu an öndesin.': 'حُجز مبلغ عرضك على بطاقتك. أنت في الصدارة الآن.',
   'Daha yüksek bir teklif geldi; blokesi kaldırıldı.': 'وصل عرض أعلى؛ وأُلغي حجز مبلغك.',
   'Teklifin geçerli olmadı (açık artırma bitmişti ya da fiyat yükselmişti); blokesi kaldırıldı.': 'لم يُقبل عرضك (كان المزاد قد انتهى أو السعر قد ارتفع)؛ وأُلغي حجز المبلغ.',
+  'Daha yüksek bir teklif geldi; blokenin kaldırılması bekleniyor.': 'وصل عرض أعلى؛ ويجري إلغاء حجز مبلغك.',
+  'Teklifin geçerli olmadı (açık artırma bitmişti ya da fiyat yükselmişti); blokenin kaldırılması bekleniyor.': 'لم يُقبل عرضك (كان المزاد قد انتهى أو السعر قد ارتفع)؛ ويجري إلغاء حجز المبلغ.',
   'Teklif verilmedi. Kartından bir şey bloke edilmedi.': 'لم يُقدّم عرض. لم يُحجز أي مبلغ على بطاقتك.',
   'Kazandın! Logonu, adını ve linkini gönder; onaylanınca blok salonda görünür.': 'فزت! أرسل شعارك واسمك ورابطك؛ ستظهر مجموعة المقاعد في القاعة بعد الموافقة.',
   'Teklifin kontrol ediliyor…': 'جارٍ التحقق من عرضك…', 'Bu teklif bulunamadı.': 'لم يُعثر على هذا العرض.',

@@ -246,6 +246,8 @@ export const JA = {
   'Teklifin kartında bloke edildi. Şu an öndesin.': '入札額に相当するカードの利用枠を仮押さえしました。現在、あなたが最高額の入札者です。',
   'Daha yüksek bir teklif geldi; blokesi kaldırıldı.': 'より高い入札があったため、仮押さえが解除されました。',
   'Teklifin geçerli olmadı (açık artırma bitmişti ya da fiyat yükselmişti); blokesi kaldırıldı.': '入札は無効でした（オークションが終了していたか、価格が上がっていました）。仮押さえは解除されました。',
+  'Daha yüksek bir teklif geldi; blokenin kaldırılması bekleniyor.': 'より高い入札があったため、仮押さえの解除待ちです。',
+  'Teklifin geçerli olmadı (açık artırma bitmişti ya da fiyat yükselmişti); blokenin kaldırılması bekleniyor.': '入札は無効でした（オークションが終了していたか、価格が上がっていました）。仮押さえの解除待ちです。',
   'Teklif verilmedi. Kartından bir şey bloke edilmedi.': '入札は行われませんでした。カードの利用枠は仮押さえされていません。',
   'Kazandın! Logonu, adını ve linkini gönder; onaylanınca blok salonda görünür.': '落札しました！ロゴ・名前・リンクを送信してください。承認されるとブロックがホールに表示されます。',
   'Teklifin kontrol ediliyor…': '入札を確認中…', 'Bu teklif bulunamadı.': 'この入札は見つかりませんでした。',

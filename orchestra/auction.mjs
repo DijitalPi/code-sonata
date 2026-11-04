@@ -174,10 +174,12 @@ export function publicView(ab) {
     .slice(0, 20).map((b) => ({ amount: b.amount, at: b.settledAt }));
   return { state: a.state, block: AUCTION.block, endsAt: a.endsAt, current: leader(ab)?.amount ?? null, min: minBid(ab), bids };
 }
-// What a bidder sees of their own bid (they know its id from their return address).
+// What a bidder sees of their own bid (they know its id from their return address); `releasing`: its hold is still
+// being let go, so the page does not say it is gone.
 export function bidView(ab, id) {
   const b = findBid(ab, id);
-  return b && { state: b.state, auction: ab.bids.includes(b) ? ab.auction.state : "ended", amount: b.amount, current: leader(ab)?.amount ?? null, endsAt: ab.auction.endsAt, content: Boolean(ab.auction.order) };
+  return b && { state: b.state, auction: ab.bids.includes(b) ? ab.auction.state : "ended", amount: b.amount, current: leader(ab)?.amount ?? null,
+    endsAt: ab.auction.endsAt, content: Boolean(ab.auction.order), releasing: Boolean(b.releasing) };
 }
 const unaddressed = ({ ipKey, ...b }) => b;
 export const panelView = (ab) => ({ auction: ab.auction, bids: ab.bids.map(unaddressed), old: oldOf(ab).map(unaddressed), past: ab.past });

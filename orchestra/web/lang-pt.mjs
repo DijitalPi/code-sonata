@@ -246,6 +246,8 @@ export const PT = {
   'Teklifin kartında bloke edildi. Şu an öndesin.': 'O valor do seu lance foi bloqueado no cartão. Você está na liderança.',
   'Daha yüksek bir teklif geldi; blokesi kaldırıldı.': 'Chegou um lance maior; o valor bloqueado foi liberado.',
   'Teklifin geçerli olmadı (açık artırma bitmişti ya da fiyat yükselmişti); blokesi kaldırıldı.': 'Seu lance não foi válido (o leilão já havia terminado ou o preço havia subido); o valor bloqueado foi liberado.',
+  'Daha yüksek bir teklif geldi; blokenin kaldırılması bekleniyor.': 'Chegou um lance maior; a liberação do valor bloqueado está pendente.',
+  'Teklifin geçerli olmadı (açık artırma bitmişti ya da fiyat yükselmişti); blokenin kaldırılması bekleniyor.': 'Seu lance não foi válido (o leilão já havia terminado ou o preço havia subido); a liberação do valor bloqueado está pendente.',
   'Teklif verilmedi. Kartından bir şey bloke edilmedi.': 'Nenhum lance foi dado. Nenhum valor foi bloqueado no seu cartão.',
   'Kazandın! Logonu, adını ve linkini gönder; onaylanınca blok salonda görünür.': 'Você venceu! Envie seu logo, nome e link; o bloco aparecerá na sala de concertos após a aprovação.',
   'Teklifin kontrol ediliyor…': 'Verificando seu lance…', 'Bu teklif bulunamadı.': 'Este lance não foi encontrado.',

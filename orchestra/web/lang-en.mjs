@@ -246,6 +246,8 @@ export const EN = {
   'Teklifin kartında bloke edildi. Şu an öndesin.': 'Your bid is held on your card. You are in the lead.',
   'Daha yüksek bir teklif geldi; blokesi kaldırıldı.': 'A higher bid came in; your hold was released.',
   'Teklifin geçerli olmadı (açık artırma bitmişti ya da fiyat yükselmişti); blokesi kaldırıldı.': 'Your bid did not count (the auction had ended or the price had risen); the hold was released.',
+  'Daha yüksek bir teklif geldi; blokenin kaldırılması bekleniyor.': 'A higher bid came in; release of your hold is pending.',
+  'Teklifin geçerli olmadı (açık artırma bitmişti ya da fiyat yükselmişti); blokenin kaldırılması bekleniyor.': 'Your bid did not count (the auction had ended or the price had risen); release of the hold is pending.',
   'Teklif verilmedi. Kartından bir şey bloke edilmedi.': 'No bid was made. Nothing was held on your card.',
   'Kazandın! Logonu, adını ve linkini gönder; onaylanınca blok salonda görünür.': 'You won! Send your logo, name and link; once approved the block shows in the hall.',
   'Teklifin kontrol ediliyor…': 'Checking your bid…', 'Bu teklif bulunamadı.': 'This bid was not found.',

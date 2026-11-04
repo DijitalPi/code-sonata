@@ -246,6 +246,8 @@ export const RU = {
   'Teklifin kartında bloke edildi. Şu an öndesin.': 'Сумма ставки заблокирована на вашей карте. Сейчас вы лидируете.',
   'Daha yüksek bir teklif geldi; blokesi kaldırıldı.': 'Поступила более высокая ставка; блокировка вашей суммы снята.',
   'Teklifin geçerli olmadı (açık artırma bitmişti ya da fiyat yükselmişti); blokesi kaldırıldı.': 'Ставка не принята (аукцион уже завершился или цена выросла); блокировка суммы снята.',
+  'Daha yüksek bir teklif geldi; blokenin kaldırılması bekleniyor.': 'Поступила более высокая ставка; ожидается снятие блокировки вашей суммы.',
+  'Teklifin geçerli olmadı (açık artırma bitmişti ya da fiyat yükselmişti); blokenin kaldırılması bekleniyor.': 'Ставка не принята (аукцион уже завершился или цена выросла); ожидается снятие блокировки суммы.',
   'Teklif verilmedi. Kartından bir şey bloke edilmedi.': 'Ставка не сделана. На вашей карте ничего не заблокировано.',
   'Kazandın! Logonu, adını ve linkini gönder; onaylanınca blok salonda görünür.': 'Вы победили! Отправьте логотип, имя и ссылку; после одобрения блок появится в зале.',
   'Teklifin kontrol ediliyor…': 'Проверка ставки…', 'Bu teklif bulunamadı.': 'Ставка не найдена.',

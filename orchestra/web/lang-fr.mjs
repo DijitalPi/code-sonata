@@ -246,6 +246,8 @@ export const FR = {
   'Teklifin kartında bloke edildi. Şu an öndesin.': 'Le montant de votre offre a été bloqué sur votre carte. Vous êtes en tête.',
   'Daha yüksek bir teklif geldi; blokesi kaldırıldı.': "Une offre supérieure a été reçue ; le montant bloqué sur votre carte a été libéré.",
   'Teklifin geçerli olmadı (açık artırma bitmişti ya da fiyat yükselmişti); blokesi kaldırıldı.': 'Votre offre n’a pas été retenue (les enchères étaient terminées ou le prix avait augmenté) ; le montant bloqué a été libéré.',
+  'Daha yüksek bir teklif geldi; blokenin kaldırılması bekleniyor.': "Une offre supérieure a été reçue ; la libération du montant bloqué sur votre carte est en cours.",
+  'Teklifin geçerli olmadı (açık artırma bitmişti ya da fiyat yükselmişti); blokenin kaldırılması bekleniyor.': 'Votre offre n’a pas été retenue (les enchères étaient terminées ou le prix avait augmenté) ; la libération du montant bloqué est en cours.',
   'Teklif verilmedi. Kartından bir şey bloke edilmedi.': 'Aucune offre déposée. Aucun montant n’a été bloqué sur votre carte.',
   'Kazandın! Logonu, adını ve linkini gönder; onaylanınca blok salonda görünür.': 'Vous avez gagné ! Envoyez votre logo, votre nom et votre lien ; le bloc apparaîtra dans la salle après approbation.',
   'Teklifin kontrol ediliyor…': 'Vérification de votre offre…', 'Bu teklif bulunamadı.': 'Cette offre est introuvable.',

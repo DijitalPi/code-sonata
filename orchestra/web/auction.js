@@ -16,6 +16,12 @@ const SAID = {
   expired: 'Teklif verilmedi. Kartından bir şey bloke edilmedi.',
   winner: 'Kazandın! Logonu, adını ve linkini gönder; onaylanınca blok salonda görünür.',
 };
+// A hold the server is still letting go (Stripe did not answer yet; it is tried again) is not said to be gone.
+const LETTING = {
+  outbid: 'Daha yüksek bir teklif geldi; blokenin kaldırılması bekleniyor.',
+  late: 'Teklifin geçerli olmadı (açık artırma bitmişti ya da fiyat yükselmişti); blokenin kaldırılması bekleniyor.',
+};
+const letting = (v) => (v.releasing && LETTING[v.state]) || '';
 
 export function left(ms) {
   if (ms <= 0) return 'bitti';
@@ -30,15 +36,16 @@ async function follow(id, { cancelled = false, wait = 3000, tries = 20 } = {}) {
     if (res?.ok) { say(SAID.expired); return true; }
   }
   say('Teklifin kontrol ediliyor…');
+  let still = '';
   for (let i = 0; i < tries; i++) {
     try {
       const res = await fetch(`/api/auction/bid/${id}`, { cache: 'no-store' });
       if (res.status === 404) { say('Bu teklif bulunamadı.'); return true; }
-      if (res.ok) { const v = await res.json(); if (SAID[v.state]) { say(SAID[v.state]); return true; } }
+      if (res.ok) { const v = await res.json(); if (letting(v)) say(still = letting(v)); else if (SAID[v.state]) { say(SAID[v.state]); return true; } }
     } catch { /* asked again below */ }
     await new Promise((resolve) => setTimeout(resolve, wait));
   }
-  say('Stripe henüz bildirmedi. Birkaç dakika sonra sayfayı yenile.');
+  say(still || 'Stripe henüz bildirmedi. Birkaç dakika sonra sayfayı yenile.');
   return false;
 }
 
@@ -103,7 +110,7 @@ export function setupAuction({ go = (url) => location.assign(url), startWinner, 
         winning = id; $('auction-win').hidden = false;
         say(v.content ? 'Logon onay bekliyor. Değiştirmek istersen yeniden gönderebilirsin.' : SAID.winner);
       }
-      else if (v?.auction === 'open' && ['top', 'outbid'].includes(v.state)) say(SAID[v.state]);
+      else if (v?.auction === 'open' && ['top', 'outbid'].includes(v.state)) say(letting(v) || SAID[v.state]);
     }
   }
   return { show, remembered, stop: () => { clearInterval(timer); timer = 0; } };

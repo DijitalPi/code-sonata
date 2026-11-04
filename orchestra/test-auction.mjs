@@ -119,11 +119,15 @@ test('what the page sees: amounts and times, never e-mails or addresses; the pan
   const view = publicView(ab);
   assert.deepEqual([view.state, view.current, view.min, view.bids], ['open', 2400, 2500, [{ amount: 2400, at: T0 + 2000 }]]);
   assert.ok(!JSON.stringify(view).includes('x@y.example'));
-  assert.deepEqual(bidView(ab, a.id), { state: 'top', auction: 'open', amount: 2400, current: 2400, endsAt: ab.auction.endsAt, content: false });
+  assert.deepEqual(bidView(ab, a.id), { state: 'top', auction: 'open', amount: 2400, current: 2400, endsAt: ab.auction.endsAt, content: false, releasing: false });
   assert.equal(bidView(ab, 'b-0'), null);
   assert.ok(!JSON.stringify(panelView(ab)).includes('ipKey'));
   const ab2 = createAuctions(JSON.parse(JSON.stringify(ab, (k, v) => (k === 'ipKey' ? undefined : v))));
   assert.deepEqual(publicView(ab2), view, 'read back from its file');
+  const b = ask(ab, 2500); hold(ab, b);
+  assert.equal(bidView(ab, a.id).releasing, true, 'passed, its hold not let go yet (F4)');
+  released(ab, a.id);
+  assert.equal(bidView(ab, a.id).releasing, false);
 });
 
 test('a closed page before any hold expires its bid', () => {

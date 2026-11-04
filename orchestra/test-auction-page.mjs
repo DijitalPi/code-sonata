@@ -92,6 +92,26 @@ test('back from Stripe after the auction closed, the outcome still shows (B5)', 
   assert.match($('auction-status').textContent, /geçerli olmadı/);
 });
 
+test('a hold Stripe has not let go yet is not said to be gone; the address keeps the bid until it is (F4)', async () => {
+  const id = `b-${'a'.repeat(24)}`;
+  history.replaceState(null, '', `/?teklif=${id}`);
+  answer = () => ({ status: 200, body: { state: 'outbid', auction: 'open', amount: 3200, current: 3300, endsAt: now + 1000, content: false, releasing: true } });
+  await backFromBid({ wait: 0, tries: 2 });
+  assert.equal($('auction-status').textContent, 'Daha yüksek bir teklif geldi; blokenin kaldırılması bekleniyor.');
+  assert.equal(new URLSearchParams(location.search).get('teklif'), id, 'asked again on the next visit');
+  answer = () => ({ status: 200, body: { state: 'late', auction: 'unsold', amount: 3200, current: null, endsAt: now, content: false, releasing: true } });
+  await backFromBid({ wait: 0, tries: 2 });
+  assert.equal($('auction-status').textContent, 'Teklifin geçerli olmadı (açık artırma bitmişti ya da fiyat yükselmişti); blokenin kaldırılması bekleniyor.');
+  answer = () => ({ status: 200, body: { state: 'outbid', auction: 'open', amount: 3200, current: 3300, endsAt: now + 1000, content: false, releasing: false } });
+  await backFromBid({ wait: 0, tries: 2 });
+  assert.equal($('auction-status').textContent, 'Daha yüksek bir teklif geldi; blokesi kaldırıldı.');
+  assert.equal(new URLSearchParams(location.search).get('teklif'), null);
+  localStorage.setItem('teklifler', JSON.stringify([id]));
+  answer = () => ({ status: 200, body: { state: 'outbid', auction: 'open', amount: 3200, current: 3300, endsAt: now + 1000, content: false, releasing: true } });
+  await auction.remembered();
+  assert.equal($('auction-status').textContent, 'Daha yüksek bir teklif geldi; blokenin kaldırılması bekleniyor.', 'a remembered bid too');
+});
+
 test('a remembered winner whose logo waits for approval may send it again (B4)', async () => {
   localStorage.setItem('teklifler', JSON.stringify([`b-${'9'.repeat(24)}`]));
   answer = () => ({ status: 200, body: { state: 'winner', auction: 'won', amount: 3300, current: 3300, endsAt: now, content: true, editable: true } });

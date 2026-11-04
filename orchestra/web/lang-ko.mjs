@@ -246,6 +246,8 @@ export const KO = {
   'Teklifin kartında bloke edildi. Şu an öndesin.': '입찰 금액이 카드에 가승인 처리됐어요. 현재 최고 입찰자예요.',
   'Daha yüksek bir teklif geldi; blokesi kaldırıldı.': '더 높은 입찰이 들어와 카드 가승인이 취소됐어요.',
   'Teklifin geçerli olmadı (açık artırma bitmişti ya da fiyat yükselmişti); blokesi kaldırıldı.': '경매가 이미 끝났거나 가격이 올라 입찰이 유효하지 않았어요. 카드 가승인이 취소됐어요.',
+  'Daha yüksek bir teklif geldi; blokenin kaldırılması bekleniyor.': '더 높은 입찰이 들어와 카드 가승인 취소 처리 중이에요.',
+  'Teklifin geçerli olmadı (açık artırma bitmişti ya da fiyat yükselmişti); blokenin kaldırılması bekleniyor.': '경매가 이미 끝났거나 가격이 올라 입찰이 유효하지 않았어요. 카드 가승인 취소 처리 중이에요.',
   'Teklif verilmedi. Kartından bir şey bloke edilmedi.': '입찰되지 않았어요. 카드에 가승인된 금액은 없어요.',
   'Kazandın! Logonu, adını ve linkini gönder; onaylanınca blok salonda görünür.': '낙찰됐어요! 로고, 이름, 링크를 보내세요. 승인되면 좌석 블록이 공연장에 표시돼요.',
   'Teklifin kontrol ediliyor…': '입찰 확인 중…', 'Bu teklif bulunamadı.': '이 입찰을 찾지 못했어요.',
