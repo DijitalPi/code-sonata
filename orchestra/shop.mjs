@@ -9,7 +9,7 @@ import { createBook, hold, free, setSession, drop, paid, expire, sweep, approve,
 import { createStripe, verifySignature } from "./stripe.mjs";
 import { parseKeys, whoHasKey, sessionSecret, makeCookie, readCookie, SESSION_MS } from "./admin.mjs";
 import { webpSize } from "./webp.mjs";
-import { createAuctions, start, minBid, openBid, setBidSession, expireBid, confirmBid, released, toRelease, due, end, captured,
+import { createAuctions, auctionProblem, start, minBid, openBid, setBidSession, expireBid, confirmBid, released, toRelease, due, end, captured,
   captureRefused, close, setOrder, leader, winner, blocking, sweepBids, publicView, bidView, panelView, findBid, PAGE_MS } from "./auction.mjs";
 import { PLAN, tierOf, cleanSeats, cleanHolder, AUCTION, taken } from "./web/seats.mjs";
 import { addCoupon, stopCoupon, couponView, check } from "./coupons.mjs";
@@ -64,15 +64,20 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
       book = createBook(data);
     } catch (error) { readable = false; log(`orders: not read, payment stays closed (${error.message})`); }
   }
-  // The front-block auction (auction.mjs) lives in AUCTION_FILE; it needs payment open and its own file.
+  // The front-block auction (auction.mjs) lives in AUCTION_FILE; it needs payment open and its own file. A file that
+  // cannot be trusted may hide a block already paid for: payment stays closed and the block taken until it is fixed.
   const auctionFile = env.AUCTION_FILE || "";
   let ab = createAuctions(), auctionReadable = true;
   if (auctionFile && existsSync(auctionFile)) {
-    try { ab = createAuctions(JSON.parse(readFileSync(auctionFile, "utf8"))); }
-    catch (error) { auctionReadable = false; log(`auction: not read, stays closed (${error.message})`); }
+    try {
+      const data = JSON.parse(readFileSync(auctionFile, "utf8"));
+      const problem = auctionProblem(data);
+      if (problem) throw new Error(problem);
+      ab = createAuctions(data);
+    } catch (error) { auctionReadable = false; log(`auction: not read, payment stays closed (${error.message})`); }
   }
   // Payment opens only with someone to approve what is paid.
-  const open = Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET && ordersFile && seatsDir && readable && keys.size > 0);
+  const open = Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET && ordersFile && seatsDir && readable && auctionReadable && keys.size > 0);
   const panelOpen = keys.size > 0 && readable && Boolean(ordersFile);
   const auctionOpen = open && Boolean(auctionFile) && auctionReadable;
   const tries = new Map(), logins = new Map(), deciding = new Set();
@@ -160,7 +165,7 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
   };
   // A logo counts once its file is there, waiting or shown.
   const hasLogo = (id) => [pending(id), shown(id)].some((file) => { try { return statSync(file).isFile(); } catch { return false; } });
-  const auctionHolds = () => auctionOpen && blocking(ab) && !winnerOrder();
+  const auctionHolds = () => !auctionReadable || (auctionOpen && blocking(ab) && !winnerOrder());
   const occupied = () => (auctionHolds() ? [...hand(), AUCTION.block] : hand());
   // The hall shows a won auction ("sold, awaiting approval") until the winner's order is decided: live, the logo
   // is there; refunded or removed, the block is free again.

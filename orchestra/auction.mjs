@@ -21,14 +21,31 @@ const AUCTION_ID = /^a-[0-9a-f]{24}$/, BID_ID = /^b-[0-9a-f]{24}$/;
 
 // `old`: bids of earlier auctions that may still hold money (a page still open, a hold not let go yet). A new
 // auction never forgets them: a late hold is let go, a failed letting go is tried again.
+const validAuction = (a) => Boolean(a) && typeof a === "object" && AUCTION_ID.test(a.id) && AUCTION_STATES.has(a.state);
+const validBid = (b) => Boolean(b) && typeof b === "object" && BID_ID.test(b.id) && BID_STATES.has(b.state) && Number.isInteger(b.amount);
 export function createAuctions(data) {
   const a = data?.auction;
-  const auction = a && typeof a === "object" && AUCTION_ID.test(a.id) && AUCTION_STATES.has(a.state) ? a : null;
-  const valid = (list) => (Array.isArray(list) ? list : [])
-    .filter((b) => b && typeof b === "object" && BID_ID.test(b.id) && BID_STATES.has(b.state) && Number.isInteger(b.amount));
+  const auction = validAuction(a) ? a : null;
+  const valid = (list) => (Array.isArray(list) ? list : []).filter(validBid);
   const bids = auction ? valid(data.bids) : [], old = auction ? valid(data.old) : [];
   const past = (Array.isArray(data?.past) ? data.past : []).filter((p) => p && typeof p === "object").slice(-20);
   return { auction, bids, old, past };
+}
+
+// Why a written auction file cannot be trusted, or null. A file the server writes always has its auction (null
+// before the first) and every bid whole; anything else may hide a block sold, so it is never read as no auction.
+export function auctionProblem(data) {
+  if (!data || typeof data !== "object" || !("auction" in data)) return "no auction in the file";
+  if (data.auction !== null && !validAuction(data.auction)) return "an auction it cannot read";
+  for (const k of ["bids", "old"]) {
+    if (data[k] === undefined) continue;
+    if (!Array.isArray(data[k])) return `${k} is not a list`;
+    const bad = data[k].find((b) => !validBid(b));
+    if (bad !== undefined) return `a bid it cannot read (${bad?.id ?? "no id"})`;
+  }
+  const top = data.auction?.top;
+  if (top && ![...(data.bids || []), ...(data.old || [])].some((b) => b.id === top)) return "its top bid is not there";
+  return null;
 }
 
 const oldOf = (ab) => ab.old || [];

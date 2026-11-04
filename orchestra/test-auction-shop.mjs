@@ -369,3 +369,22 @@ test('an order found by its payment gets the logo and the pointer of the auction
     assert.equal((await f.request(`/api/yonetim/orders/${other}/approve`, {}, { cookie: await f.login(), 'x-yonetim': '1' })).status, 200);
   } finally { f.clear(); }
 });
+
+test('an auction file that cannot be trusted closes payment and keeps the block; it is never read as no auction (F2)', () => {
+  const badBid = { ...saved('won'), bids: [{ ...saved('won').bids[0], amount: '2400' }] };
+  const noTop = { ...saved('won'), bids: [] };
+  for (const [what, text] of [['empty', ''], ['broken', '{broken'], ['no auction', '{}'], ['null', 'null'],
+    ['a bid it cannot read', JSON.stringify(badBid)], ['a top bid that is not there', JSON.stringify(noTop)]]) {
+    const at = mkdtempSync(join(tmpdir(), 'auction-bad-'));
+    try {
+      const caseEnv = { ...env, SEATS_DIR: at, ORDERS_FILE: join(at, 'orders.json'), AUCTION_FILE: join(at, 'auction.json'), SLACK_WEBHOOK_URL: '' };
+      writeFileSync(caseEnv.AUCTION_FILE, text);
+      const one = createShop({ env: caseEnv, log: () => {}, fetch: offline });
+      assert.equal(one.open, false, `${what}: payment closed`);
+      assert.ok(one.seatsPayload().reserved.some((b) => b.ring === AUCTION.block.ring && b.col === AUCTION.block.col), `${what}: the block stays taken`);
+      assert.equal(readFileSync(caseEnv.AUCTION_FILE, 'utf8'), text, `${what}: the file is left as it is`);
+    } finally { rmSync(at, { recursive: true, force: true }); }
+  }
+  const fine = fixture(saved('won'));
+  try { assert.equal(fine.shop.open, true, 'a sound file opens payment'); } finally { fine.clear(); }
+});
