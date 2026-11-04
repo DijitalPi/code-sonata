@@ -4,7 +4,7 @@
 
 Repo kökünde `PORT=4480 node orchestra/server.mjs`, sonra http://127.0.0.1:4480. Sunucu varsayılan olarak yalnız 127.0.0.1'e bağlanır. Bazı tarayıcılar `localhost`'u engelliyor; o durumda 127.0.0.1 ile aç.
 
-Sayfadaki "Ajanımı bağla" komutu tek dosyalık okuyucuyu (`/reader.py`, repo kökündeki `reader.py`) siteden indirir; repo gerekmez. Okuyucu ses çalmaz, müziği tarayıcı çalar. Geçmiş oturumlar sessiz kalır, yalnız yeni adımlar gider. Okuyucu arka planda çalışır (Terminal kapanınca durmaz; makine başına bir tane, yeni komut eskisinin yerine geçer), `python3 reader.py --stop` kapatır; kaydı ve pid dosyası `~/Library/Caches/code-sonata/` (Linux'ta `~/.cache/code-sonata/`). Yerel müzik için `./install.sh`; `control.py` repoyu kendi gerçek konumundan bulur (`CODE_SONATA_APP` ile değiştirilebilir).
+Sayfadaki "Ajanımı bağla" komutu tek dosyalık okuyucuyu (`/reader.py`, repo kökündeki `reader.py`) siteden indirir; repo gerekmez. Okuyucu ses çalmaz, müziği tarayıcı çalar. Geçmiş oturumlar sessiz kalır, yalnız yeni adımlar gider. Okuyucu arka planda çalışır (Terminal kapanınca durmaz; makine başına bir tane, yeni komut eskisinin yerine geçer), `python3 reader.py --stop` kapatır; kaydı, pid ve kilit dosyaları `~/Library/Caches/code-sonata/` (Linux'ta `~/.cache/code-sonata/`). Yerel müzik için `./install.sh`; `control.py` repoyu kendi gerçek konumundan bulur (`CODE_SONATA_APP` ile değiştirilebilir).
 
 ## Test ve ölçüm
 
@@ -53,7 +53,7 @@ Kapsayıcı içinde `HOST=0.0.0.0`; örnek komut host portunu yalnız loopback'e
 `orchestra/deploy/` hazır bir kurulumdur: `compose.yaml` sunucuyu ve önündeki Caddy'yi açar. Sunucu portu dışarıya kapalıdır, ona yalnız
 Caddy ulaşır. `Caddyfile` sertifikayı Let's Encrypt'ten alır; HSTS, aşağıdaki gövde sınırları, yalnız statik dosyada sıkıştırma,
 tamponsuz akış ve HTTP/2-3 sağlar. Erişim kaydı ve ziyaretçi adresli hata kaydı yazmaz. İstek hızını sunucu kendisi sınırlar (Caddy'de
-hız sınırı eklentisi yok). `backup.sh` ve `restore.sh` aşağıdaki Yedek bölümünün betikleridir. Gereken: Docker + compose, 80 ve 443
+hız sınırı eklentisi yok). `backup.sh` ve `restore.sh` aşağıdaki Yedek bölümünün betikleridir. Gereken: Docker + compose, `python3` (geri yükleme arşivi okur; Ubuntu ve Debian'da hazır gelir), 80 ve 443
 (TCP), 443/UDP açık, build sırasında GitHub Pages erişimi.
 
 1. Alan adının A (varsa AAAA) kaydı sunucuya. Cloudflare'de "DNS only" kalsın; proxy açılacaksa Ayarlar'daki `TRUST_CF` satırı.
@@ -140,11 +140,13 @@ Günde bir kez, makine dışına yedek al.
   e-posta var; gizlilik metni "sunucuda tutulur, paylaşılmaz" diyor.
 - Saklama: 30 gün; daha eskisini sil.
 
-Betik `orchestra/deploy/backup.sh` (bu sırayla kopyalar, `.tgz`'yi 600 yapar, `rclone` ile makine dışına gönderir, 30 günden eskiyi
-siler): cron `15 4 * * * root /srv/code-sonata/orchestra/deploy/backup.sh`. `DATA`, `BACKUPS`, `REMOTE`, `KEEP_DAYS` ile ayarlanır.
+Betik `orchestra/deploy/backup.sh` (bu sırayla kopyalar, her şeyi yalnız sahibinin okuyacağı izinle yazar, hata olursa yarım arşiv ya da
+kopya bırakmaz, `rclone` ile makine dışına gönderir, 30 günden eskiyi siler): cron `15 4 * * * root /srv/code-sonata/orchestra/deploy/backup.sh`. `DATA`, `BACKUPS`, `REMOTE`, `KEEP_DAYS` ile ayarlanır.
 
 Geri yükleme: `docker compose stop orchestra && ./restore.sh /var/backups/orchestra/GÜN.tgz && docker compose start orchestra`.
-Betik değiştirdiği dosyaları silmez, `/srv/orchestra.before-<zaman>`'a taşır, sahibini `node` yapar. Panelde Genel bakış sayıları ve
+Betik önce arşivi denetler (tek klasör, defterler bütün JSON); bozuksa hiçbir şeyi değiştirmeden durur. Değiştirdiği dosyaları silmez,
+`/srv/orchestra.before-<zaman>`'a taşır, yarıda kalırsa geri koyar, sahibini `node` yapar. Sunucu açılışta her siparişi ve teklifi yeniden
+denetler: kayıtta `not read` görürsen ödeme kapalı kalmıştır, `.before-` klasöründen geri dön. Panelde Genel bakış sayıları ve
 onay bekleyenler yedekle aynı olmalı. Yedek alındıktan sonra ödenmiş siparişler Stripe
 panelinde (Payments) görünür, panelde yoktur: o sürede ödeme geldiyse alıcıyla iletişime geç ya da iade et. Geri yüklemeyi yayından
 önce bir kez dene.
