@@ -177,3 +177,25 @@ test('a capture without a clear answer is never a refusal: the hold is read, and
   steps.push([402, { error: { message: 'x' } }], [200, { id: 'pi_1', status: 'canceled' }]);
   await assert.rejects(s.captureIntent('pi_1', 'capture-b-1'), (e) => e.refused === true, 'the hold is gone: a clear no');
 });
+
+test('an answer cut short, or a hold that is not the one asked for, is not known: tried again, never refused (F1)', async () => {
+  const cut = () => new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode('{"id":"pi_1",')); c.error(new TypeError('reset')); } }), { status: 200 });
+  const steps = [];
+  const fetch = async () => { const step = steps.shift(); return step === 'cut' ? cut() : new Response(JSON.stringify(step[1]), { status: step[0] }); };
+  const s = createStripe({ key: 'sk', base: 'https://stripe.test', fetch });
+  const notRefused = (e) => e.refused !== true;
+  steps.push([400, { error: { message: 'x', code: 'payment_intent_unexpected_state' } }], 'cut');
+  await assert.rejects(s.captureIntent('pi_1', 'capture-b-1'), notRefused, 'the hold read from a cut answer');
+  steps.push('cut', 'cut');
+  await assert.rejects(s.captureIntent('pi_1', 'capture-b-1'), notRefused, 'the capture and the read both cut');
+  steps.push([400, { error: { message: 'x' } }], [200, {}]);
+  await assert.rejects(s.captureIntent('pi_1', 'capture-b-1'), notRefused, 'an empty answer');
+  steps.push([400, { error: { message: 'x' } }], [200, { id: 'pi_9', status: 'canceled' }]);
+  await assert.rejects(s.captureIntent('pi_1', 'capture-b-1'), notRefused, 'another hold');
+  steps.push([400, { error: { message: 'x' } }], [200, { id: 'pi_1', status: 'mystery' }]);
+  await assert.rejects(s.captureIntent('pi_1', 'capture-b-1'), notRefused, 'a state Stripe did not have before');
+  steps.push('cut');
+  await assert.rejects(s.intent('pi_1'), notRefused, 'a hold read for a bid');
+  steps.push([200, { id: 'pi_9', status: 'requires_capture' }]);
+  await assert.rejects(s.intent('pi_1'), notRefused, 'another hold for a bid');
+});

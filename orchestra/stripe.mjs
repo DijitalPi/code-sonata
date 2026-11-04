@@ -19,8 +19,17 @@ export function createStripe({ key, base = "https://api.stripe.com", fetch = glo
       method, body: method === "GET" ? undefined : new URLSearchParams(fields).toString(), signal: AbortSignal.timeout(10_000),
       headers: { authorization: `Bearer ${key}`, ...(method === "GET" ? {} : { "content-type": "application/x-www-form-urlencoded" }), ...extra },
     });
-    const data = await res.json().catch(() => ({}));
+    // A yes whose body cannot be read says nothing about what happened: it fails without a status, as a lost answer.
+    let data;
+    try { data = await res.json(); }
+    catch (error) { if (res.ok) throw new Error(`stripe ${path}: answer not readable (${error.message})`); data = {}; }
     if (!res.ok) throw Object.assign(new Error(`stripe ${path}: ${res.status} ${data?.error?.message || ""}`.trim()), { status: res.status, code: data?.error?.code });
+    return data;
+  }
+  // A hold as Stripe shows it, or a failure: an answer about another hold, or without a state, is not an answer.
+  async function intent(id) {
+    const data = await call(`/v1/payment_intents/${encodeURIComponent(id)}`, {}, {}, "GET");
+    if (data?.id !== id || typeof data.status !== "string") throw new Error(`stripe intent ${id}: not in the answer`);
     return data;
   }
   return {
@@ -61,22 +70,22 @@ export function createStripe({ key, base = "https://api.stripe.com", fetch = glo
       if (typeof data.id !== "string" || typeof data.url !== "string") throw new Error("stripe: no session in the answer");
       return { id: data.id, url: data.url };
     },
-    intent: (id) => call(`/v1/payment_intents/${encodeURIComponent(id)}`, {}, {}, "GET"),
+    intent,
     // Letting a hold go. A hold that is no longer there (let go by an earlier try, or run out) counts as let go.
     async cancelIntent(id, idempotencyKey) {
       try { return await call(`/v1/payment_intents/${encodeURIComponent(id)}/cancel`, {}, { "idempotency-key": idempotencyKey }); }
       catch (error) { if (error.code === "payment_intent_unexpected_state") return { status: "not_held" }; throw error; }
     },
     // Taking the held money. Whatever goes wrong, the hold itself is read: captured already (an earlier try whose
-    // answer was lost) is success; still held, or not readable, is tried again later; gone (run out, canceled) is the
-    // only clear no (`refused`). A refused retry never says what an earlier try did.
+    // answer was lost) is success; gone (run out, canceled) is the only clear no (`refused`); still held, not
+    // readable, or a state not known here is tried again later. A refused retry never says what an earlier try did.
     async captureIntent(id, idempotencyKey) {
       try { return await call(`/v1/payment_intents/${encodeURIComponent(id)}/capture`, {}, { "idempotency-key": idempotencyKey }); }
       catch (error) {
         let now;
-        try { now = await call(`/v1/payment_intents/${encodeURIComponent(id)}`, {}, {}, "GET"); } catch { throw error; }
+        try { now = await intent(id); } catch { throw error; }
         if (now.status === "succeeded") return now;
-        if (["requires_capture", "processing"].includes(now.status)) throw error;
+        if (!["canceled", "requires_payment_method"].includes(now.status)) throw error;
         throw Object.assign(new Error(`stripe capture: ${now.status}`), { refused: true });
       }
     },
