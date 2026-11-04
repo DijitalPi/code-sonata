@@ -143,6 +143,15 @@ test('the connect panel shows how to stop the reader, before pairing too, with a
   const source = await readFile(new URL('./web/experience.js', import.meta.url), 'utf8');
   assert.match(source, /\$\('stop-command'\)\.value = `curl -fsSL \$\{location\.origin\}\/reader\.py -o reader\.py && python3 reader\.py --stop`/);
 });
+test('the connect panel says what never leaves the computer above the command button, with the reader code one click away', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const html = await readFile(new URL('./web/index.html', import.meta.url), 'utf8');
+  const trust = html.slice(html.indexOf('<div class="trust"'), html.indexOf('</div>', html.indexOf('<div class="trust"')));
+  assert.ok(trust.length > 0 && html.indexOf('<div class="trust"') < html.indexOf('<button id="pair"'), 'before pairing, above the button');
+  assert.match(trust, /<a href="\/reader\.py" target="_blank" rel="noopener">/);
+  for (const word of ['Kodun', 'promptların', 'dosya adların', 'dosya yolların', 'proje adların']) assert.ok(trust.includes(word), word);
+  assert.equal((html.match(/Prompt, kod ve dosya yolu gönderilmez/g) || []).length, 0, 'the lead does not say it a second time');
+});
 
 test('notes with nothing to hear bring a line that says why, unless the listener stopped the sound or is elsewhere on purpose', () => {
   const live = { notes: true, running: false, stopped: false, personal: false, watchOnly: false, listenShown: false, elsewhere: false };

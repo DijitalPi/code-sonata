@@ -52,8 +52,12 @@
   <button class="close" data-open="home" aria-label="Paneli kapat">×</button>
   <section data-view="join" hidden aria-labelledby="join-title">
     <h2 id="join-title" tabindex="-1">Ajanını bağla</h2>
-    <p class="lead">Bilgisayarındaki yerel okuyucu (macOS ve Linux) yeni Claude Code, Codex, Gemini CLI ve Grok Build adımlarını sayıya çevirip salona gönderir. Prompt, kod ve dosya yolu gönderilmez.</p>
+    <p class="lead">Bilgisayarındaki yerel okuyucu (macOS ve Linux) yeni Claude Code, Codex, Gemini CLI ve Grok Build adımlarını sayıya çevirip salona gönderir.</p>
     <p class="note">Okuyucu şu ajanların kayıtlarını okur: Claude Code, Codex, Gemini CLI ve Grok Build. GitHub Copilot CLI, Cursor ve OpenCode, kayıt biçimleri doğrulanınca eklenecek.</p>
+    <div class="trust">
+      <p class="trust-title">Kodun bilgisayarında kalır</p>
+      <p>Okuyucu adımlarını sunucuya yalnız sayı olarak gönderir. Kodun, promptların, dosya adların, dosya yolların ve proje adların bilgisayarından çıkmaz. <a href="/reader.py" target="_blank" rel="noopener">Okuyucunun kodunu oku</a></p>
+    </div>
     <button id="pair">Bağlantı komutumu oluştur</button>
     <div id="setup" hidden>
       <ol class="steps">
