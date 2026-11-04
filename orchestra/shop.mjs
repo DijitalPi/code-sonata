@@ -9,7 +9,7 @@ import { createBook, bookProblem, hold, free, setSession, drop, paid, expire, sw
 import { createStripe, verifySignature } from "./stripe.mjs";
 import { parseKeys, whoHasKey, sessionSecret, makeCookie, readCookie, SESSION_MS } from "./admin.mjs";
 import { webpSize } from "./webp.mjs";
-import { createAuctions, auctionProblem, start, minBid, openBid, setBidSession, expireBid, confirmBid, released, toRelease, due, end, captured,
+import { createAuctions, auctionProblem, ledgersProblem, start, minBid, openBid, setBidSession, expireBid, confirmBid, released, toRelease, due, end, captured,
   captureRefused, close, setOrder, leader, winner, blocking, sweepBids, publicView, bidView, panelView, findBid, PAGE_MS } from "./auction.mjs";
 import { PLAN, tierOf, cleanSeats, cleanHolder, AUCTION, taken } from "./web/seats.mjs";
 import { addCoupon, stopCoupon, couponView, check } from "./coupons.mjs";
@@ -72,7 +72,7 @@ export function createShop({ env = process.env, hand = () => [], log = console.l
   if (auctionFile && existsSync(auctionFile)) {
     try {
       const data = JSON.parse(readFileSync(auctionFile, "utf8"));
-      const problem = auctionProblem(data);
+      const problem = auctionProblem(data) || (readable && ledgersProblem(data, book));
       if (problem) throw new Error(problem);
       ab = createAuctions(data);
     } catch (error) { auctionReadable = false; log(`auction: not read, payment stays closed (${error.message})`); }

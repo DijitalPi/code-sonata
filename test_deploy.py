@@ -95,10 +95,13 @@ class DeployScripts(unittest.TestCase):
         was = self.snapshot()
         bad_order = {**ORDERS, "orders": [{**ORDERS["orders"][0], "width": "1"}]}
         bids_alone = {**AUCTION, "bids": [{"id": "b-" + "7" * 24, "state": "winner", "amount": 2400}]}
+        won = {"auction": {"id": "a-" + "7" * 24, "state": "won", "top": "b-" + "7" * 24, "order": "o-" + "9" * 24},
+               "bids": [{"id": "b-" + "7" * 24, "state": "winner", "amount": 2400, "payment": "pi_w"}], "old": [], "past": []}
         for files in ({"orders.json": b"not-json"}, {"orders.json": b"{}"}, {"orders.json": json.dumps(ORDERS).encode(), "auction.json": b""},
                       {"auction.json": json.dumps(AUCTION).encode()}, {"orders.json": b'{"orders":[null]}'},
                       {"orders.json": json.dumps(bad_order).encode()},   # what the server would not read (Y3)
-                      {"orders.json": json.dumps(ORDERS).encode(), "auction.json": json.dumps(bids_alone).encode()}):
+                      {"orders.json": json.dumps(ORDERS).encode(), "auction.json": json.dumps(bids_alone).encode()},
+                      {"orders.json": json.dumps(ORDERS).encode(), "auction.json": json.dumps(won).encode()}):   # the two not agreeing
             a = self.archive(files)
             done = self.run_script("restore.sh", str(a))
             self.assertNotEqual(done.returncode, 0, files)

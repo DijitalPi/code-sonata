@@ -413,8 +413,9 @@ test('payment opens only with someone to approve it, and stays shut on an order 
   const sold = { id: `o-${'1'.repeat(24)}`, state: 'paid', ring: 0, col: 10, width: 1, depth: 1, name: 'Acme', link: 'https://acme.example',
     amount: 2500, currency: 'usd', payment: 'pi_old', createdAt: 1, heldUntil: 2 };
   for (const [what, bad] of [['a width as text', { ...sold, width: '1' }], ['a state it does not know', { ...sold, state: 'odd' }],
-    ['an id it does not know', { ...sold, id: 'o-1' }], ['not an order', null]]) {
-    const text = JSON.stringify({ orders: [{ ...sold, id: `o-${'2'.repeat(24)}` }, bad], events: [] });
+    ['an id it does not know', { ...sold, id: 'o-1' }], ['not an order', null],
+    ['the payment of another order', { ...sold, col: 20 }]]) {   // a refund would go to the other buyer's payment (N4)
+    const text = JSON.stringify({ orders: [{ ...sold, id: `o-${'2'.repeat(24)}` }, bad], events: [] });   // the first has pi_old too
     await writeFile(pay.ORDERS_FILE, text);
     const shop = createShop({ env: { ...pay, ADMIN_KEYS: `selim:${SELIM}` }, log: quiet });
     assert.equal(shop.open, false, `${what}: payment closed`);

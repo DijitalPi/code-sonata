@@ -405,3 +405,29 @@ test('an auction file that cannot be trusted closes payment and keeps the block;
     try { assert.equal(fine.shop.open, true, `${what}: a sound file opens payment`); } finally { fine.clear(); }
   }
 });
+
+test('the two ledgers must agree on the winner and its payment, or payment closes and the block stays (N4, N5)', () => {
+  const order = (id, payment, extra = {}) => ({ id, state: 'paid', ...AUCTION.block, name: 'Acme', link: 'https://acme.example/', amount: 240000,
+    currency: 'usd', payment, auction: true, created: FT, heldUntil: FT, paidAt: FT, ...extra });
+  const derived = `o-${AIDX.slice(2)}`, OLD = `o-${'1'.repeat(24)}`;
+  const pointing = (to) => { const d = saved('won'); d.auction.order = to; return d; };
+  const samePay = saved('open'); samePay.bids.push({ ...samePay.bids[0], id: `b-${'8'.repeat(24)}`, state: 'outbid', amount: 2300, releasing: true });
+  for (const [what, data, book] of [
+    ['pointing to an earlier, refunded order', pointing(OLD), { orders: [order(OLD, 'pi_1', { state: 'refunded' })], events: [] }],
+    ['pointing to an order that is not there', pointing(OLD), { orders: [], events: [] }],
+    ['pointing to an order that is not an auction', pointing(OLD), { orders: [order(OLD, 'pi_old', { auction: undefined })], events: [] }],
+    ['its own order with another payment', saved('won'), { orders: [order(derived, 'pi_other')], events: [] }],
+    ['two bids holding one payment', samePay, null]]) {
+    const f = fixture(data, offline, book);
+    try {
+      assert.equal(f.shop.open, false, `${what}: payment closed`);
+      assert.ok(f.shop.seatsPayload().reserved.some((b) => b.ring === AUCTION.block.ring && b.col === AUCTION.block.col), `${what}: the block stays taken`);
+    } finally { f.clear(); }
+  }
+  for (const [what, data, book] of [['its own order', saved('won'), { orders: [order(derived, 'pi_old')], events: [] }],
+    ['an order under an earlier id, with its payment', pointing(OLD), { orders: [order(OLD, 'pi_old')], events: [] }],
+    ['won, its order not written yet', saved('won'), { orders: [], events: [] }]]) {
+    const f = fixture(data, offline, book);
+    try { assert.equal(f.shop.open, true, `${what}: a sound pair opens payment`); } finally { f.clear(); }
+  }
+});

@@ -46,8 +46,9 @@ export function auctionProblem(data) {
     const bad = data[k].find((b) => !validBid(b));
     if (bad !== undefined) return `a bid it cannot read (${bad?.id ?? "no id"})`;
   }
-  const bids = data.bids || [], every = [...bids, ...(data.old || [])];
+  const bids = data.bids || [], every = [...bids, ...(data.old || [])], held = every.map((b) => b.payment).filter(Boolean);
   if (new Set(every.map((b) => b.id)).size !== every.length) return "two bids with one id";   // found by id, the wrong one would be used
+  if (new Set(held).size !== held.length) return "two bids with one payment";   // letting one go would let the other go
   if (a === null) return every.length ? "bids without their auction" : null;
   const leading = bids.filter((b) => ["top", "winner"].includes(b.state));
   if (leading.length > 1) return "more than one top bid";
@@ -56,6 +57,19 @@ export function auctionProblem(data) {
   if (wants && leading[0]?.state !== wants) return `${a.state} without its ${wants} bid`;
   if (a.state !== "won" && leading[0]?.state === "winner") return `a winner while ${a.state}`;
   return null;
+}
+
+// Why an auction file and an order file, each sound, cannot be trusted together, or null. A won auction's order (the
+// one it points to, or the one under the id taken from the auction's) is an auction order holding the winning bid's
+// payment, and only one order holds it: otherwise the block could read as handed over, or be refunded to another payment.
+export function ledgersProblem(auctions, book) {
+  const a = auctions?.auction;
+  if (a?.state !== "won") return null;
+  const payment = (auctions.bids || []).find((b) => b.id === a.top)?.payment;
+  const orders = book?.orders || [], byId = (id) => orders.find((o) => o.id === id);
+  if (a.order && !byId(a.order)) return "its order is not in the order book";
+  for (const o of [byId(a.order), byId(`o-${a.id.slice(2)}`)]) if (o && !(o.auction && payment && o.payment === payment)) return `order ${o.id} is not the winner's`;
+  return orders.filter((o) => o.auction && payment && o.payment === payment).length > 1 ? "two orders for the winner" : null;
 }
 
 const oldOf = (ab) => ab.old || [];

@@ -41,7 +41,10 @@ export function createBook(data) {
 export function bookProblem(data) {
   if (!Array.isArray(data?.orders)) return "no list of orders";
   const bad = data.orders.find((o) => !validOrder(o));
-  return bad === undefined ? null : `an order it cannot read (${typeof bad?.id === "string" ? bad.id : "no id"})`;
+  if (bad !== undefined) return `an order it cannot read (${typeof bad?.id === "string" ? bad.id : "no id"})`;
+  // Each payment is one order's: a refund looked up by the order would otherwise go to another buyer's payment.
+  const paid = data.orders.map((o) => o.payment).filter(Boolean);
+  return new Set(paid).size === paid.length ? null : "two orders with one payment";
 }
 
 const find = (book, id) => book.orders.find((o) => o.id === id) || null;
