@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { connect } from 'node:net';
+import { readFileSync } from 'node:fs';
 const port = 4493, base = `http://127.0.0.1:${port}`;
 const EVENT_KEY = 'event-test-key-0123456789', METRICS_KEY = 'metrics-test-key-0123456789';
 // Test tools may label simulated machines only on a server that allows it (never in production).
@@ -204,6 +205,27 @@ try {
     assert.match(engine.headers.get('content-type'), /javascript/);
     assert.match(engine.headers.get('cache-control'), /immutable/);
   });
+  await test('broken and oversized bodies still count against the address rate limit', async () => {
+    const from = { 'x-forwarded-for': '192.0.2.120' };
+    for (let i = 0; i < 9; i++) await fetch(base + '/api/metric', { method: 'POST', headers: from, body: '{not json' });
+    assert.equal((await fetch(base + '/api/metric', { method: 'POST', headers: from, body: JSON.stringify({ name: 'visit' }) })).status, 429);
+  });
+  await test('a valid body near the size limit is judged by its bytes, not by how it was split', async () => {
+    const head = '{"name":"visit","extra":"', tail = '"}';
+    const emoji = '\u{1F600}'.repeat(200);                       // 800 bytes
+    const body = head + emoji + 'a'.repeat(2046 - Buffer.byteLength(head + emoji + tail)) + tail;
+    const bytes = Buffer.from(body), cut = Buffer.byteLength(head) + 2;   // inside the first emoji
+    const status = await new Promise((resolve, reject) => {
+      const socket = connect(port, '127.0.0.1', () => {
+        socket.setNoDelay(true);
+        socket.write(`POST /api/metric HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Forwarded-For: 192.0.2.121\r\nContent-Length: ${bytes.length}\r\nConnection: close\r\n\r\n`);
+        socket.write(bytes.subarray(0, cut));
+        setTimeout(() => socket.write(bytes.subarray(cut)), 80);
+      });
+      let raw = ''; socket.on('data', d => raw += d); socket.on('end', () => resolve(Number(raw.split(' ')[1]))); socket.on('error', reject);
+    });
+    assert.equal(status, 204);
+  });
   await test('malformed input cannot crash conductor or expose unsupported values', async () => {
     for (const body of [null, [], 3, 'x', {}]) assert.equal((await post('/api/play', body)).status, 400);
     const pair = (await post('/api/pair', {})).body.pair;
@@ -236,6 +258,20 @@ try {
     assert.equal(page.headers.get('x-frame-options'),'DENY'); assert.equal(page.headers.get('x-content-type-options'),'nosniff');
     assert.equal((await fetch(base+'/%2e%2e/agents.py')).status,404);
     assert.equal((await fetch(base+'/og.png')).status,200);
+    const icons = html.match(/rel="(?:icon|apple-touch-icon)" href="[^"]+/g) || [];
+    assert.equal(icons.length, 2);
+    for (const icon of icons) {
+      const file = await fetch(base + icon.split('href="')[1]); await file.arrayBuffer();
+      assert.equal(file.status, 200, icon); assert.match(file.headers.get('content-type'), /^image\//);
+    }
+    // A link in another language carries the page head in it; Arabic reads right to left; an unknown ?lang= is left alone.
+    const { DE } = await import('./web/lang-de.mjs');
+    const german = await (await fetch(base + '/?lang=de')).text();
+    const title = html.match(/<title>([^<]+)<\/title>/)[1];
+    assert.ok(german.includes('<html lang="de">'));
+    assert.ok(german.includes(`<title>${DE[title].replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}</title>`));
+    assert.ok((await (await fetch(base + '/?lang=ar')).text()).includes('<html lang="ar" dir="rtl">'));
+    assert.ok((await (await fetch(base + '/?lang=__proto__')).text()).includes(`<html lang="tr">`));
     // Keep every response: an unread fetch body that is garbage collected closes its stream (and frees its slot).
     const controllers=[], open=[];
     try {
@@ -267,6 +303,34 @@ try {
     for (let i = 0; i < 12; i++) responses.push((await post('/api/me', { pair }, headers)).status);
     assert.ok(responses.includes(429));
   });
+  await test('Gemini CLI sessions sit in their own block of the audience', async () => {
+    assert.equal((await post('/api/play', { id: 'f1'.repeat(16), steps: 1, working: true, sessions: 2, tools: { gemini: 2 } })).status, 200);
+    const hello = await streamHello(base + '/api/stream');
+    assert.ok(hello.teams.agents.gemini >= 2, JSON.stringify(hello.teams.agents));
+    assert.ok('gemini' in hello.teams.fans);
+  });
+  await test('seat holders come cleaned from SEATS_FILE, and their images only from SEATS_DIR', async () => {
+    const { mkdtemp, writeFile, rm, symlink } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = await mkdtemp(join(tmpdir(), 'seats-'));
+    const holder = { id: 'acme', ring: 0, col: 0, width: 2, depth: 2, name: 'Acme', link: 'https://acme.example/', image: '/seat-images/acme.webp' };
+    await writeFile(join(dir, 'seats.json'), JSON.stringify({ seats: [holder, { ...holder, id: 'js', col: 9, link: 'javascript:alert(1)' }, { ...holder, id: 'far', col: 20, image: 'https://cdn.example/x.png' }] }));
+    await writeFile(join(dir, 'acme.webp'), 'RIFF0000WEBP');
+    const outside = await mkdtemp(join(tmpdir(), 'outside-'));
+    await writeFile(join(outside, 'secret.txt'), 'OUTSIDE');
+    await symlink(join(outside, 'secret.txt'), join(dir, 'logo.png'));   // a name that passes, pointing out of SEATS_DIR
+    const p = port + 8, url = `http://127.0.0.1:${p}`, child = await start(p, { SEATS_FILE: join(dir, 'seats.json'), SEATS_DIR: dir });
+    try {
+      assert.deepEqual((await (await fetch(url + '/api/seats')).json()).seats.map((s) => s.id), ['acme']);
+      const image = await fetch(url + '/seat-images/acme.webp');
+      assert.equal(image.status, 200); assert.equal(image.headers.get('content-type'), 'image/webp');
+      assert.equal((await image.text()), 'RIFF0000WEBP');
+      for (const path of ['/seat-images/seats.json', '/seat-images/..%2Fseats.json', '/seat-images/ACME.webp', '/seat-images/x.svg', '/seat-images/logo.png']) assert.equal((await fetch(url + path)).status, 404, path);
+    } finally { child.kill(); await once(child, 'exit'); await rm(dir, { recursive: true }); await rm(outside, { recursive: true }); }
+    assert.deepEqual((await (await fetch(base + '/api/seats')).json()).seats, [], 'no SEATS_FILE: no holders');
+    assert.equal((await fetch(base + '/seat-images/acme.webp')).status, 404, 'no SEATS_DIR: no images');
+  });
   await test('a machine that slept past its seat comes back to its own instrument', async () => {
     const { seats, newcomer, back } = await returning;
     assert.deepEqual(seats, ['piano', 'accordion', 'strings']);
@@ -274,3 +338,17 @@ try {
     assert.equal(back, 'strings');
   });
 } finally { server.kill(); await once(server, 'exit'); }
+
+// The image copies orchestra/*.mjs by name (web/ goes whole): a module the server reaches but the image lacks
+// stops the server at its first line.
+test('the Docker image gets every module the server imports', () => {
+  const need = new Set(), todo = ['server.mjs', 'check-data.mjs'];   // check-data: restore.sh runs it in the image
+  while (todo.length) {
+    const file = todo.pop();
+    if (need.has(file)) continue;
+    need.add(file);
+    for (const [, name] of readFileSync(`orchestra/${file}`, 'utf8').matchAll(/^import [^;]*? from "\.\/([a-z-]+\.mjs)";$/gm)) todo.push(name);
+  }
+  const copied = readFileSync('orchestra/Dockerfile', 'utf8').match(/^COPY .*$/gm).join(' ');
+  assert.deepEqual([...need].filter((file) => !copied.includes(`orchestra/${file}`)), []);
+});

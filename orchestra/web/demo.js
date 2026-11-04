@@ -1,8 +1,9 @@
 // Demo concert: a full hall played entirely in this browser, for a visitor who arrives while the
 // real hall is quiet. The machines are simulated and labelled as such; nothing is sent to or
 // counted by the server (the page closes its live connection while the demo plays). The music
-// comes from the same conductor the server uses, so the demo sounds like the real hall.
+// comes from the same conductor the server uses, playing tunes everyone knows (DEMO_SONGS).
 import { createConductor } from './conductor.mjs';
+import { TITLES } from './music.mjs';
 
 // [section, country, tool] seated as a real symphony fills its chairs, compatriots together:
 // 0 piano, 1 strings, 2 choir, 3 cello, 4 flute, 5 vibraphone, 6 horn, 7 harp, 8 accordion.
@@ -15,7 +16,13 @@ const PLAN = [
   [6, 'IN', 'codex'], [6, 'IN', 'claude'], [7, 'TR', 'claude'], [7, 'TR', 'codex'],
 ];
 export const DEMO_MACHINES = PLAN.length;
+// The page's one listen button: while no agent works the live hall has only the house pianist, so the
+// button plays this demo instead (a small link keeps the live hall). In the demo it leads back to the live hall.
+export const demoFirst = (frame) => !frame.demo && !frame.working;
 const SECTION_COUNT = 9, HALF_LIFE = 5 * 60_000;
+// Tunes everyone knows, played in this order and round again, so a first-time listener hears a melody they
+// recognise from the first note: Mozart opens, Bella Ciao follows. All in the score with their sources (songs.mjs).
+export const DEMO_SONGS = ['nachtmusik', 'bella-ciao', 'fur-elise', 'ode-to-joy', 'korobeiniki', 'mountain-king'];
 
 export function startDemo({ onFrame, tickMs = 25, frameMs = 250 }) {
   const seatsUsed = Array.from({ length: SECTION_COUNT }, () => 0);
@@ -25,7 +32,7 @@ export function startDemo({ onFrame, tickMs = 25, frameMs = 250 }) {
     working: true, pulse: 0,
   }));
   const conductor = createConductor({
-    flow: true,                          // the hall's own loops
+    songs: DEMO_SONGS, song: DEMO_SONGS[0], ordered: true,
     population: () => {
       const active = Array(SECTION_COUNT).fill(0);
       let working = 0;
@@ -72,7 +79,7 @@ export function startDemo({ onFrame, tickMs = 25, frameMs = 250 }) {
       players: machines.length, simulated: 0, simulatedListeners: 0, working, listeners: 1,
       claudes: machines.reduce((a, m) => a + m.sessions, 0),
       bpm: Math.round(conductor.bpm), intensity: Math.round(conductor.intensity * 100) / 100,
-      climax: Boolean(conductor.shift), song: conductor.flowTitle(), house: false,
+      climax: Boolean(conductor.shift), song: TITLES[conductor.song], house: false,
       lastActive: now, peak: machines.length,
       countries: [...members].sort((a, b) => b[1] - a[1]).slice(0, 12), countryCount: members.size,
       teams: { agents, fans: { claude: 0, codex: 0, other: 0, listen: 1 } },

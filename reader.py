@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Agent Orchestra reader: your Claude Code and Codex steps join the shared orchestra.
+"""Agent Orchestra reader: your Claude Code, Codex, Gemini CLI and Grok Build steps join the shared orchestra.
 
     python3 reader.py 'https://orchestra.example/#pair=...'
 
-Reads the session logs on this computer (~/.claude/projects, ~/.codex/sessions) and sends only
+Reads the session logs on this computer (~/.claude/projects, ~/.codex/sessions, ~/.gemini/tmp,
+~/.grok/sessions; Grok sessions sit with the other agents) and sends only
 counts once a second: how many steps of each kind, whether an agent is working, how many sessions
 of each tool. Prompts, code, file paths and tool output never leave this computer; test and
-commit results are read only as yes/no. Needs Python 3 and nothing else. Stop with Ctrl+C.
+commit results are read only as yes/no. Needs Python 3 and nothing else. It runs in the background,
+so the terminal can be closed; `python3 reader.py --stop` stops it (`--foreground` stays in the window).
 
 The local macOS tool (agents.py) imports this file for the same reading and reporting.
 """
@@ -17,7 +19,9 @@ import os
 from pathlib import Path
 import re
 import secrets
+import select
 import shlex
+import signal
 import sys
 import threading
 import time
@@ -26,10 +30,12 @@ import urllib.parse
 HOME = Path.home()
 CACHE = HOME / "Library/Caches/code-sonata" if sys.platform == "darwin" else \
     Path(os.environ.get("XDG_CACHE_HOME") or HOME / ".cache") / "code-sonata"
-ROOTS = (HOME / ".claude/projects", HOME / ".codex/sessions")
-EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch"}
-BASH_TOOLS = {"Bash", "BashOutput", "exec", "exec_command", "shell", "local_shell", "container.exec"}
-READ_TOOLS = {"Read", "Grep", "Glob", "LS", "WebFetch", "WebSearch", "ToolSearch"}
+ROOTS = (HOME / ".claude/projects", HOME / ".codex/sessions", HOME / ".gemini/tmp", HOME / ".grok/sessions")
+EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch", "write_file", "replace", "edit"}
+BASH_TOOLS = {"Bash", "BashOutput", "exec", "exec_command", "shell", "local_shell", "container.exec", "run_shell_command"}
+READ_TOOLS = {"Read", "Grep", "Glob", "LS", "WebFetch", "WebSearch", "ToolSearch",
+              "read_file", "read_many_files", "list_directory", "glob", "grep_search", "search_file_content",
+              "google_web_search", "web_fetch"}
 MAX_CHUNK = 512 * 1024
 FRESH = 15 * 60          # a log untouched this long is no longer polled; it resumes where it was
 FULL_SCAN = 30.0         # seconds between walks of the whole tree (an old session waking up)
@@ -45,6 +51,17 @@ def tool_kind(name):
     if name in READ_TOOLS or name.startswith(("mcp__codebase-memory", "mcp__context7")):
         return "read"
     return "tool"
+
+
+# Grok Build's own tool kinds (in the call's _meta), and the ACP kinds a later update adds.
+GROK_KINDS = {"execute": "bash", "edit": "edit", "write": "edit", "delete": "edit", "move": "edit",
+              "read": "read", "list": "read", "list_dir": "read", "search": "read", "fetch": "read",
+              "web_search": "read", "web_fetch": "read", "search_tool": "read"}
+
+
+def is_log(path, name):
+    # Grok Build keeps several .jsonl files in a session folder; only updates.jsonl is the conversation.
+    return name.endswith(".jsonl") and (name == "updates.jsonl" or "/.grok/" not in path)
 
 
 # Yes/no checks on a command's output (never on a file that was read). Nothing is kept.
@@ -152,6 +169,32 @@ def codex_result(output):
     return "\n".join(texts)[-4000:], any(codes)
 
 
+def gemini_result(call):
+    """The text a Gemini CLI tool call returned (read only to tell passed/failed tests and done commits)."""
+    shown = call.get("resultDisplay")
+    if isinstance(shown, str) and shown:
+        return shown[:20000]
+    parts = []
+    for part in call.get("result") if isinstance(call.get("result"), list) else []:
+        reply = part.get("functionResponse") if isinstance(part, dict) else None
+        response = reply.get("response") if isinstance(reply, dict) else None
+        if isinstance(response, dict):
+            parts += [str(response.get(key)) for key in ("output", "error") if response.get(key)]
+    return "\n".join(parts)[:20000]
+
+
+def grok_result(update):
+    """Output text and failure of a Grok Build tool call: a command that exits non-zero is still "completed"."""
+    raw = update.get("rawOutput") if isinstance(update.get("rawOutput"), dict) else {}
+    text = raw.get("output_for_prompt")
+    if not isinstance(text, str) or not text:
+        parts = update.get("content") if isinstance(update.get("content"), list) else []
+        text = " ".join(str(part["content"].get("text", "")) for part in parts
+                        if isinstance(part, dict) and isinstance(part.get("content"), dict))
+    code = raw.get("exit_code")
+    return text[-4000:], update.get("status") == "failed" or (isinstance(code, int) and code != 0)
+
+
 class Classifier:
     """Step kinds of one session's log lines.
 
@@ -162,9 +205,10 @@ class Classifier:
 
     def __init__(self):
         self.calls = {}
+        self.streak = None   # Grok: the chunk kind being streamed, so one reply counts once
 
     def remember(self, call_id, kind, source=""):
-        if call_id:
+        if call_id and isinstance(call_id, (str, int)):
             command = kind == "bash"
             self.calls[call_id] = (kind, command and bool(SHIP.search(source)), command and runs_tests(source))
             if len(self.calls) > 256:
@@ -172,7 +216,7 @@ class Classifier:
 
     def judge(self, call_id, text, error):
         # A result whose call this reader never saw (it came before the reader started) means nothing.
-        if call_id not in self.calls:
+        if not isinstance(call_id, (str, int)) or call_id not in self.calls:
             return []
         kind, ship, tests = self.calls.pop(call_id)
         if kind != "bash":
@@ -184,10 +228,41 @@ class Classifier:
             out.append("ship")
         return out
 
+    def grok(self, params):
+        """One Grok Build session update (ACP, or xAI's own for the end of a turn)."""
+        update = params.get("update") if isinstance(params, dict) else None
+        if not isinstance(update, dict):
+            return []
+        kind = update.get("sessionUpdate")
+        if kind in ("agent_message_chunk", "agent_thought_chunk"):
+            again, self.streak = self.streak == kind, kind
+            return [] if again else ["text" if kind == "agent_message_chunk" else "think"]
+        if kind in ("user_message_chunk", "tool_call", "turn_completed"):
+            self.streak = None
+        if kind == "user_message_chunk":
+            return ["busy"]
+        if kind == "turn_completed":
+            return ["done"]
+        call_id = update.get("toolCallId")
+        if kind == "tool_call":
+            if isinstance(call_id, str) and call_id in self.calls:
+                return []
+            meta = (update.get("_meta") or {}).get("x.ai/tool") if isinstance(update.get("_meta"), dict) else None
+            named = meta.get("kind") if isinstance(meta, dict) else update.get("kind")
+            step = GROK_KINDS.get(named) if isinstance(named, str) else None
+            command = (update.get("rawInput") or {}).get("command") if isinstance(update.get("rawInput"), dict) else None
+            self.remember(call_id, step or "tool", command[:2000] if isinstance(command, str) else "")
+            return [step or "tool"]
+        if kind == "tool_call_update" and update.get("status") in ("completed", "failed"):
+            return self.judge(call_id, *grok_result(update))
+        return []
+
     def __call__(self, entry):
         """One transcript line -> list of step kinds. Unknown shapes are ignored."""
         if not isinstance(entry, dict):
             return []
+        if entry.get("method") in ("session/update", "_x.ai/session/update"):  # Grok Build
+            return self.grok(entry.get("params"))
         kind = entry.get("type")
         if kind == "user":  # Claude Code: a prompt or a tool result -> the model is working now
             content = (entry.get("message") or {}).get("content")
@@ -216,6 +291,20 @@ class Classifier:
                     kinds.append("text")
             if message.get("stop_reason") == "end_turn":
                 kinds.append("done")
+            return kinds
+        if kind == "gemini":  # Gemini CLI: one reply, its thoughts, and its tool calls already finished
+            kinds = (["think"] if entry.get("thoughts") else []) + (["text"] if entry.get("content") else [])
+            calls = entry.get("toolCalls") if isinstance(entry.get("toolCalls"), list) else []
+            for call in calls:
+                if not isinstance(call, dict):
+                    continue
+                step = tool_kind(call.get("name"))
+                command = (call.get("args") or {}).get("command") if isinstance(call.get("args"), dict) else None
+                self.remember(call.get("id"), step, command[:2000] if isinstance(command, str) else "")
+                kinds.append(step)
+                kinds += self.judge(call.get("id"), gemini_result(call), call.get("status") == "error")
+            if not calls:
+                kinds.append("done")  # a reply that asks for no tool ends the turn
             return kinds
         payload = entry.get("payload")
         if not isinstance(payload, dict):
@@ -300,7 +389,7 @@ class AgentWatcher:
                 if entry.is_dir(follow_symlinks=False):
                     if deep or entry.path not in self.dirs:
                         self.scan_folder(entry.path, wall, initial, True)
-                elif entry.name.endswith(".jsonl"):
+                elif is_log(entry.path, entry.name):
                     self.consider(entry.path, entry.stat(), wall, initial)
             except OSError:
                 continue
@@ -366,9 +455,9 @@ class AgentWatcher:
                     continue
                 try:
                     entry = json.loads(raw)
-                except ValueError:
+                    events.extend((path, kind) for kind in parser(entry))
+                except Exception:  # one line in a shape nobody expected costs that step, not the reader
                     continue
-                events.extend((path, kind) for kind in parser(entry))
         return events
 
 
@@ -407,7 +496,8 @@ class Activity:
     def tools(self):
         tools = {}
         for path in self.sessions:
-            tool = "codex" if "/.codex/" in str(path) else "claude"
+            tool = "codex" if "/.codex/" in str(path) else "gemini" if "/.gemini/" in str(path) else \
+                "other" if "/.grok/" in str(path) else "claude"
             tools[tool] = tools.get(tool, 0) + 1
         return tools
 
@@ -516,14 +606,14 @@ class GlobalReporter:
                 self.failed, self.seat = True, None
 
 
-def run(url, duration=None, roots=ROOTS):
+def run(url, duration=None, roots=ROOTS, background=False):
     """Standalone reader: no sound here, the orchestra plays in the browser."""
     reporter = GlobalReporter(url)
     watcher = AgentWatcher(roots)
     activity = Activity()
     print("Agent Orchestra okuyucusu çalışıyor. Yalnız adım sayıları gönderilir; prompt, kod ve dosya yolu gönderilmez.\n"
           f"{len(watcher.offsets)} etkin oturum kaydı bulundu. Geçmiş sayılmaz, yeni adımlar orkestraya gider. "
-          "Durdurmak için Ctrl+C.", flush=True)
+          + ("" if background else "Durdurmak için Ctrl+C."), flush=True)
     started, last_note, counted = time.monotonic(), time.monotonic(), 0
     try:
         while duration is None or time.monotonic() - started < duration:
@@ -535,7 +625,8 @@ def run(url, duration=None, roots=ROOTS):
             reporter.add(events, activity.is_working(now), len(activity.sessions), activity.tools())
             counted += sum(1 for _, kind in events if kind in GlobalReporter.STEPS)
             if counted and now - last_note >= 30:
-                print(f"♫ son 30 sn: {counted} adım · {len(activity.sessions)} oturum", flush=True)
+                if not background:   # nobody reads a background log every half minute
+                    print(f"♫ son 30 sn: {counted} adım · {len(activity.sessions)} oturum", flush=True)
                 counted, last_note = 0, now
             time.sleep(.5)
     except KeyboardInterrupt:
@@ -546,12 +637,203 @@ def run(url, duration=None, roots=ROOTS):
     return 0
 
 
+# In the background the reader belongs to no terminal: closing the tab it was started from does not stop it.
+# One reader per machine: the running reader holds a lock on LOCK_FILE for as long as it runs and keeps its pid in
+# PID_FILE. A pid nobody holds the lock for is not a reader (the number may belong to another program by now).
+# Starting and stopping take START_FILE first, so two commands at once go one after the other.
+PID_FILE, LOG_FILE = CACHE / "reader.pid", CACHE / "reader.log"
+LOCK_FILE, START_FILE = CACHE / "reader.lock", CACHE / "reader.start"
+
+
+def take_lock(path, wait=0.0):
+    """An open file holding an exclusive lock on path; None if another process still holds it after `wait` seconds."""
+    CACHE.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        import fcntl
+    except ImportError:   # Windows: no locks, and no background reader to make way for
+        return fd
+    end = time.monotonic() + wait
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return fd
+        except OSError:
+            if time.monotonic() >= end:
+                os.close(fd)
+                return None
+            time.sleep(.05)
+
+
+def running_reader():
+    """The running reader's pid, only while a reader holds its lock: never some other program's."""
+    free = take_lock(LOCK_FILE)
+    if free is not None:   # nobody holds it: no reader runs, whatever the pid file says
+        os.close(free)
+        return None
+    try:
+        return int(PID_FILE.read_text().strip())
+    except (OSError, ValueError):
+        return None
+
+
+BUSY = "Başka bir okuyucu komutu sürüyor; bitince yeniden dene."
+NOT_STOPPED = "Çalışan okuyucu durmadı; birkaç saniye sonra yeniden dene."
+
+
+def stop_reader():
+    """Stop the running reader (the caller holds START_FILE): None if none ran, else whether it stopped."""
+    pid = running_reader()
+    if pid is None:
+        try:   # a file no reader stands behind
+            PID_FILE.unlink()
+        except OSError:
+            pass
+        return None
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        pass
+    free = take_lock(LOCK_FILE, wait=5)   # it lets go of its lock when it has stopped, within a second
+    if free is None:
+        return False   # still running: its pid stays, so it can be stopped again
+    os.close(free)
+    try:
+        if PID_FILE.read_text().strip() == str(pid):
+            PID_FILE.unlink()
+    except OSError:
+        pass
+    return True
+
+
+def hold_reader():
+    """Become the machine's reader (the caller holds START_FILE): its lock, held while the process lives, or None."""
+    held = take_lock(LOCK_FILE, wait=5)
+    if held is not None:
+        PID_FILE.write_text(str(os.getpid()))
+        PID_FILE.chmod(0o600)
+    return held
+
+
+def let_go_reader():
+    try:
+        if int(PID_FILE.read_text()) == os.getpid():
+            PID_FILE.unlink()
+    except (OSError, ValueError):
+        pass
+
+
+def stop_background(quiet=False):
+    start = take_lock(START_FILE, wait=20)   # a start under way ends first
+    if start is None:
+        print(BUSY, flush=True)
+        return 1
+    try:
+        stopped = stop_reader()
+    finally:
+        os.close(start)
+    if stopped is False:
+        print(NOT_STOPPED, flush=True)
+        return 1
+    if not quiet:
+        print("Okuyucu durdu." if stopped else "Arka planda çalışan okuyucu yok.", flush=True)
+    return 0
+
+
+def run_here(url, duration=None):
+    """In this window (Ctrl+C stops it), and still the machine's one reader: it replaces the running one."""
+    start = take_lock(START_FILE, wait=20)
+    if start is None:
+        print(BUSY, flush=True)
+        return 1
+    try:
+        held = hold_reader() if stop_reader() is not False else None
+    finally:
+        os.close(start)
+    if held is None:
+        print(NOT_STOPPED, flush=True)
+        return 1
+    try:
+        return run(url, duration)
+    finally:
+        let_go_reader()
+        os.close(held)
+
+
+def start_background(url):
+    """Start the reader away from this terminal, show its first lines, give the terminal back."""
+    start = take_lock(START_FILE, wait=20)
+    if start is None:
+        print(BUSY, flush=True)
+        return 1
+    try:
+        if stop_reader() is False:
+            print(NOT_STOPPED, flush=True)
+            return 1
+        ready, told = os.pipe()
+        child = os.fork()
+        if child == 0:
+            os.close(ready)
+            os.close(start)   # the lock is the starting command's, not the reader's
+            os.setsid()
+            if os.fork():
+                os._exit(0)
+            if hold_reader() is None:   # the reader it replaces lets go within a second
+                os._exit(1)
+            null = os.open(os.devnull, os.O_RDONLY)
+            log = os.open(LOG_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            os.dup2(null, 0)
+            os.dup2(log, 1)
+            os.dup2(log, 2)
+            os.write(told, b"1")
+            os.close(told)
+
+            def stopped(*_):
+                raise KeyboardInterrupt
+            signal.signal(signal.SIGTERM, stopped)
+            signal.signal(signal.SIGHUP, signal.SIG_IGN)
+            code = 1
+            try:
+                code = run(url, background=True)
+            finally:
+                let_go_reader()
+                os._exit(code)
+        os.close(told)
+        os.waitpid(child, 0)
+        started = select.select([ready], [], [], 10)[0] and os.read(ready, 1) == b"1"
+        os.close(ready)
+    finally:
+        os.close(start)
+    if not started:
+        print("Önceki okuyucu kapanmadı, yeni okuyucu başlatılmadı. Birkaç saniye sonra yeniden dene.", flush=True)
+        return 1
+    shown, end = 0, time.monotonic() + 5
+    while time.monotonic() < end:   # until the hall answers (a seat, or why not)
+        try:
+            lines = LOG_FILE.read_text().splitlines()
+        except OSError:
+            lines = []
+        for line in lines[shown:]:
+            print(line, flush=True)
+        shown = len(lines)
+        if any(line.startswith(("Dünya orkestrası", "Orkestra", "Sunucu")) for line in lines):
+            break
+        time.sleep(.2)
+    print("Okuyucu arka planda çalışıyor; bu pencereyi kapatabilirsin.\n"
+          f"Durdurmak için: python3 {shlex.quote(os.path.abspath(__file__))} --stop", flush=True)
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("url", nargs="?", help="Tarayıcının verdiği orkestra adresi")
     parser.add_argument("--global", dest="global_url", metavar="URL", help=argparse.SUPPRESS)
     parser.add_argument("--duration", type=float, help=argparse.SUPPRESS)
+    parser.add_argument("--stop", action="store_true", help="Arka planda çalışan okuyucuyu durdur")
+    parser.add_argument("--foreground", action="store_true", help="Bu pencerede çalış; Ctrl+C durdurur")
     args = parser.parse_args()
+    if args.stop:
+        return stop_background()
     url = args.url or args.global_url
     if not url:
         parser.error("Orkestra adresini ver: python3 reader.py 'https://…/#pair=…'")
@@ -560,7 +842,9 @@ def main():
         GlobalReporter.event(url)
     except ValueError as exc:
         parser.error(str(exc))
-    return run(url, args.duration)
+    if args.duration is None and not args.foreground and hasattr(os, "fork"):
+        return start_background(url)
+    return run_here(url, args.duration)
 
 
 if __name__ == "__main__":

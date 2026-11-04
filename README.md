@@ -49,8 +49,9 @@ python3 demo.py              # zero-token demo: fake sessions drive the real lis
 
 ## What you hear
 
-The listener watches `~/.claude/projects/**/*.jsonl` and `~/.codex/sessions/**/*.jsonl`, so every
-session on the Mac joins, whatever window or project it runs in.
+The listener watches the session logs of Claude Code (`~/.claude/projects`), Codex (`~/.codex/sessions`),
+Gemini CLI (`~/.gemini/tmp`) and Grok Build (`~/.grok/sessions`), so every session on the Mac joins,
+whatever window or project it runs in.
 
 | Step | Sound |
 |---|---|
@@ -149,9 +150,13 @@ PORT=4480 node orchestra/server.mjs    # http://127.0.0.1:4480
 ```
 
 The page gives you a one-line command that downloads `reader.py` (Python 3, stdlib only) from the
-server and joins. To play locally and join at the same time: `python3 agents.py --global <URL>`.
-There is no public hall yet; run your own. Self-hosting, Docker and reverse proxy settings are in
-[orchestra/docs/OPERATIONS.md](orchestra/docs/OPERATIONS.md), architecture details in
+server and joins. The reader runs in the background, so the terminal can be closed;
+`python3 reader.py --stop` stops it. To play locally and join at the same time: `python3 agents.py --global <URL>`.
+There is no public hall yet; run your own. Seats around the hall can be sold with Stripe Checkout and
+approved by hand at `/yonetim/`; this stays off until `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`,
+`SEATS_DIR`, `ORDERS_FILE` and `ADMIN_KEYS` are set. Self-hosting, Docker, payment and reverse proxy
+settings are in [orchestra/docs/OPERATIONS.md](orchestra/docs/OPERATIONS.md) (a ready Docker Compose + Caddy setup with
+backups is in `orchestra/deploy/`), architecture details in
 [orchestra/README.md](orchestra/README.md) (Turkish).
 
 ## Folder and editor modes

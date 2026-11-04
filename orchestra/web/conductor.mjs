@@ -320,7 +320,8 @@ export function createConductor({ population, song = "bella-ciao", leadMs = LEAD
       if (this.position >= score.length) {
         this.position = 0; this.songBeat = 0; this.turn++;
         // The form over, the next song; when things heat up, a wild one at once (ending: the same song closes).
-        const heatingUp = I >= .7 && this.songs.length > 1 && !this.moods.wild.includes(this.song);
+        // A queue has no wild one to jump to, so each of its songs plays its whole form.
+        const heatingUp = I >= .7 && !this.ordered && this.songs.length > 1 && !this.moods.wild.includes(this.song);
         if (!this.ending && (this.turn >= FORMS[this.melody].length || heatingUp)) this.nextSong(vel, beatMs, key);
       }
     },

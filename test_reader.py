@@ -1,6 +1,11 @@
 import json
 import os
 from pathlib import Path
+import pty
+import select
+import signal
+import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -24,6 +29,51 @@ def tool(name, call_id, command=None):
 
 def result(call_id, text, error=False):
     return {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": call_id, "is_error": error, "content": text}]}}
+
+
+# Gemini CLI writes one JSON object per line to ~/.gemini/tmp/<project>/chats/session-*.jsonl: the prompt as
+# a "user" line, each model reply as a "gemini" line with its thoughts and tool calls (already carrying their
+# status and result), tool results again as "user" functionResponse parts, and "$set" patches. Shapes as seen
+# in 18,000 session files on the maintainer's Mac; the text here is made up.
+def gemini(*calls, thoughts=True, text="ok"):
+    entry = {"id": "m", "timestamp": "2026-10-31T00:00:00Z", "type": "gemini", "content": text, "model": "gemini-2.5-pro",
+             "thoughts": [{"subject": "s", "description": "d", "timestamp": "t"}] if thoughts else [], "tokens": {"total": 1}}
+    if calls:
+        entry["toolCalls"] = [dict(call) for call in calls]
+    return entry
+
+
+def gcall(name, call_id, command=None, status="success", output=""):
+    args = {"command": command} if command is not None else {"file_path": "x"}
+    return {"id": call_id, "name": name, "args": args, "status": status, "timestamp": "t", "displayName": name,
+            "description": "", "renderOutputAsMarkdown": True, "resultDisplay": output,
+            "result": [{"functionResponse": {"id": call_id, "name": name, "response": {"error" if status == "error" else "output": output}}}]}
+
+
+# Grok Build appends ACP session updates to ~/.grok/sessions/<cwd>/<session>/updates.jsonl, one envelope a line:
+# chunks of the prompt, thoughts and reply (consecutive chunks are merged before writing), tool calls (the first
+# line names the tool only in Grok's own _meta; an update without a status adds the ACP kind), their results (a
+# command's exit code is in rawOutput; the status stays "completed" when it is not 0) and an xAI "turn_completed"
+# when the turn ends. Shapes as written by Grok Build 1.0.70 on the maintainer's Mac; the text is made up.
+def grok(update, method="session/update"):
+    return {"timestamp": 1793577600, "method": method, "params": {"sessionId": "s", "update": update}}
+
+
+def gtool(call_id, kind, command=None):
+    update = {"sessionUpdate": "tool_call", "toolCallId": call_id, "title": "t",
+              "_meta": {"x.ai/tool": {"version": 1, "name": "t", "kind": kind, "namespace": "grok_build"}}}
+    if command is not None:
+        update["rawInput"] = {"command": command, "description": "d"}
+    return grok(update)
+
+
+def gdone(call_id, output="", exit_code=None, status="completed"):
+    update = {"sessionUpdate": "tool_call_update", "toolCallId": call_id, "status": status,
+              "content": [{"type": "content", "content": {"type": "text", "text": output}}]}
+    if exit_code is not None:
+        update["rawOutput"] = {"type": "Bash", "output_for_prompt": output, "exit_code": exit_code, "command": "c",
+                               "truncated": False, "signal": None, "timed_out": False}
+    return grok(update)
 
 
 class ClassifyTests(unittest.TestCase):
@@ -106,6 +156,77 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(classify({"type": "event_msg", "payload": {"type": "user_message"}}), ["busy"])
         for entry in ({"type": "attachment"}, {"type": "system"}, [], "x", {"type": "event_msg", "payload": {"type": "token_count"}}):
             self.assertEqual(classify(entry), [])
+
+
+    def test_gemini_steps_results_and_end_of_turn(self):
+        state = Classifier()
+        self.assertEqual(classify({"kind": "main", "sessionId": "x", "projectHash": "h", "startTime": "t", "lastUpdated": "t"}, state), [])
+        self.assertEqual(classify({"id": "u", "timestamp": "t", "type": "user", "content": [{"text": "fix it"}]}, state), ["busy"])
+        self.assertEqual(classify(gemini(gcall("read_file", "r1"), gcall("replace", "e1"), gcall("update_topic", "t1")), state),
+                         ["think", "text", "read", "edit", "tool"])
+        self.assertEqual(classify(gemini(gcall("run_shell_command", "b1", "npm test", output="2 failed, 3 passed")), state),
+                         ["think", "text", "bash", "testfail"])
+        self.assertEqual(classify(gemini(gcall("run_shell_command", "b2", "git commit -m x", output="[main 1a2b3c4] x")), state),
+                         ["think", "text", "bash", "ship"])
+        self.assertEqual(classify(gemini(gcall("write_file", "w1", status="error", output="denied")), state), ["think", "text", "edit", "fail"])
+        # The same results come back as functionResponse parts: the model is busy, nothing is counted twice.
+        response = {"id": "u2", "timestamp": "t", "type": "user", "content": [{"functionResponse": {"id": "b1", "name": "run_shell_command", "response": {"output": "2 failed"}}}]}
+        self.assertEqual(classify(response, state), ["busy"])
+        self.assertEqual(classify(gemini(thoughts=False, text="All done."), state), ["text", "done"])
+        self.assertEqual(classify({"$set": {"lastUpdated": "t"}}, state), [])
+
+    def test_grok_steps_results_and_end_of_turn(self):
+        state = Classifier()
+
+        def chunk(kind):
+            return grok({"sessionUpdate": kind, "content": {"type": "text", "text": "x"}})
+
+        self.assertEqual(classify(chunk("user_message_chunk"), state), ["busy"])
+        # A thought or a reply that arrives in several chunks is one step.
+        self.assertEqual([classify(chunk(kind), state) for kind in ("agent_thought_chunk", "agent_thought_chunk",
+                                                                     "agent_message_chunk", "agent_message_chunk")],
+                         [["think"], [], ["text"], []])
+        self.assertEqual([classify(gtool(i, kind), state) for i, kind in (("r1", "read"), ("l1", "list"), ("e1", "edit"), ("m1", "memory_get"))],
+                         [["read"], ["read"], ["edit"], ["tool"]])
+        self.assertEqual(classify(gtool("r1", "read"), state), [])   # the same call sent again is not a new step
+        named = grok({"sessionUpdate": "tool_call_update", "toolCallId": "r1", "kind": "read", "title": "Read `x`"})
+        self.assertEqual(classify(named, state), [])
+        acp = grok({"sessionUpdate": "tool_call", "toolCallId": "a1", "kind": "search", "status": "pending"})
+        self.assertEqual(classify(acp, state), ["read"])   # an ACP kind alone is enough
+        self.assertEqual(classify(gtool("b1", "execute", "npm test"), state), ["bash"])
+        progress = grok({"sessionUpdate": "tool_call_update", "toolCallId": "b1", "status": "in_progress", "rawOutput": {"exit_code": 0}})
+        self.assertEqual(classify(progress, state), [])
+        self.assertEqual(classify(gdone("b1", "2 failed, 3 passed", exit_code=1), state), ["testfail"])
+        self.assertEqual(classify(gtool("b2", "execute", "git commit -m x"), state), ["bash"])
+        self.assertEqual(classify(gdone("b2", "[main 1a2b3c4] x", exit_code=0), state), ["ship"])
+        self.assertEqual(classify(gtool("b3", "execute", "ls yok"), state), ["bash"])
+        self.assertEqual(classify(gdone("b3", "No such file", exit_code=2), state), ["fail"])   # "completed", exit code 2
+        self.assertEqual(classify(gtool("b4", "execute", "pytest"), state), ["bash"])
+        passed = gdone("b4", "===== 3 passed in 0.1s =====", exit_code=0)
+        del passed["params"]["update"]["rawOutput"]["output_for_prompt"]   # the text is also in content
+        self.assertEqual(classify(passed, state), ["pass"])
+        self.assertEqual(classify(gdone("e1", "No match found", status="failed"), state), ["fail"])
+        self.assertEqual(classify(gdone("r1", "1 FAILED"), state), [])   # a file that was read is not a test result
+        self.assertEqual(classify(chunk("agent_message_chunk"), state), ["text"])   # a new reply after the tools
+        end = grok({"sessionUpdate": "turn_completed", "prompt_id": "p", "stop_reason": "end_turn"}, "_x.ai/session/update")
+        self.assertEqual(classify(end, state), ["done"])
+        for noise in (grok({"sessionUpdate": "available_commands_update", "availableCommands": []}),
+                      grok({"sessionUpdate": "auto_compact_started", "tokens_used": 1}, "_x.ai/session/update"),
+                      grok({"sessionUpdate": "tool_call_update", "toolCallId": "b9", "status": "completed", "rawOutput": [1]}),
+                      {"method": "session/update", "params": "x"}, {"method": "session/update", "params": {"update": []}}):
+            self.assertEqual(classify(noise, state), [])
+        odd = grok({"sessionUpdate": "tool_call", "toolCallId": ["x"], "kind": 3, "rawInput": "ls"})
+        self.assertEqual(classify(odd, state), ["tool"])
+
+    def test_odd_shapes_inside_a_line_are_ignored_not_raised(self):
+        state = Classifier()
+        odd = gemini({"id": "x", "name": "read_file", "result": [{"functionResponse": "unexpected"}]},
+                     {"id": "y", "name": "run_shell_command", "result": [{"functionResponse": {"response": "no"}}]},
+                     {"id": ["list"], "name": "glob", "args": ["x"], "result": "text"})
+        self.assertEqual(classify(odd, state), ["think", "text", "read", "bash", "read"])
+        self.assertEqual(classify(tool("Bash", {"a": 1}, "pytest"), state), ["bash"])
+        self.assertEqual(classify(result(["b1"], "1 failed"), state), ["busy"])
+        self.assertEqual(classify({"type": "response_item", "payload": {"type": "function_call_output", "call_id": {}, "output": "x"}}, state), ["busy"])
 
 
 class WatcherTests(unittest.TestCase):
@@ -196,6 +317,54 @@ class WatcherTests(unittest.TestCase):
         self.append(self.log, claude({"type": "tool_use", "name": "Write"}))
         self.assertEqual(self.kinds(watcher.poll(2)), ["edit"])
 
+    def test_gemini_sessions_are_found_and_counted_as_gemini(self):
+        chats = self.root / ".gemini/tmp/my-project/chats"
+        chats.mkdir(parents=True)
+        watcher = AgentWatcher([self.root / "proj", self.root / ".gemini/tmp"], rescan=0)
+        log = chats / "session-2026-10-31T00-00-a2a-serv.jsonl"
+        log.write_text("")
+        watcher.poll(1.0)
+        self.append(log, {"type": "user", "content": [{"text": "hi"}]}, gemini(gcall("glob", "g1")))
+        events = watcher.poll(2.0)
+        self.assertEqual(self.kinds(events), ["busy", "think", "text", "read"])
+        activity = reader.Activity()
+        for path, kind in events:
+            activity.see(path, kind, 2.0)
+        self.assertEqual(activity.tools(), {"gemini": 1})
+
+    def test_grok_sessions_are_found_and_counted_with_other_agents(self):
+        self.assertIn(Path.home() / ".grok/sessions", reader.ROOTS)
+        session = self.root / ".grok/sessions/%2FUsers%2Fme%2Fproj/0199a0b0-0000-7000-8000-000000000001"
+        session.mkdir(parents=True)
+        watcher = AgentWatcher([self.root / "proj", self.root / ".grok/sessions"], rescan=0)
+        log, chat = session / "updates.jsonl", session / "chat_history.jsonl"
+        for path in (log, chat):
+            path.write_text("")
+        watcher.poll(1.0)
+        # The same conversation as sent to the model: its "user" lines would read as Claude Code prompts.
+        self.append(chat, {"type": "user", "content": "hi"}, {"type": "assistant", "content": "ok", "tool_calls": []})
+        self.append(log, grok({"sessionUpdate": "user_message_chunk", "content": {"type": "text", "text": "hi"}}), gtool("g1", "search"))
+        events = watcher.poll(2.0)
+        self.assertEqual(self.kinds(events), ["busy", "read"])
+        activity = reader.Activity()
+        for path, kind in events:
+            activity.see(path, kind, 2.0)
+        self.assertEqual(activity.tools(), {"other": 1})
+
+    def test_a_line_the_parser_chokes_on_is_skipped_and_the_rest_still_heard(self):
+        watcher = AgentWatcher([self.root], rescan=0)
+        watcher.poll(0)
+        self.append(self.log, {"type": "boom"}, claude({"type": "tool_use", "name": "Edit"}))
+        real = Classifier.__call__
+
+        def choke(parser, entry):
+            if entry.get("type") == "boom":
+                raise ValueError("unexpected shape")
+            return real(parser, entry)
+
+        with patch.object(Classifier, "__call__", choke):
+            self.assertEqual(self.kinds(watcher.poll(1)), ["edit"])
+
     def test_results_are_judged_per_session(self):
         watcher = AgentWatcher([self.root], rescan=0)
         self.append(self.log, tool("Read", "r1"))
@@ -283,6 +452,181 @@ class ReporterTests(unittest.TestCase):
                 worker.start()
                 reporter.loop()
                 worker.join()
+
+
+READER = str(Path(__file__).with_name("reader.py"))
+
+
+class BackgroundTests(unittest.TestCase):
+    """Started from a terminal, the reader goes on after the terminal closes; --stop ends it."""
+    URL = "http://127.0.0.1:9/"   # nothing listens there: the reader retries and nothing leaves the machine
+
+    def setUp(self):
+        self.home = tempfile.mkdtemp()
+        self.env = {**os.environ, "HOME": self.home, "XDG_CACHE_HOME": os.path.join(self.home, "cache")}
+        self.addCleanup(self.kill_left_over)
+
+    def cache(self):
+        return Path(self.home, "Library/Caches/code-sonata") if sys.platform == "darwin" else Path(self.home, "cache/code-sonata")
+
+    def pid(self):
+        try:
+            return int((self.cache() / "reader.pid").read_text())
+        except (OSError, ValueError):
+            return None
+
+    @staticmethod
+    def alive(pid):
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+
+    def gone(self, pid):
+        for _ in range(50):
+            if not self.alive(pid):
+                return True
+            time.sleep(.1)
+        return False
+
+    def kill_left_over(self):
+        pid = self.pid()
+        if pid and self.alive(pid):
+            os.kill(pid, signal.SIGKILL)
+
+    def reader(self, *args):
+        return subprocess.run([sys.executable, READER, *args], env=self.env, stdin=subprocess.DEVNULL,
+                              capture_output=True, text=True, timeout=30)
+
+    def test_the_reader_goes_on_after_its_terminal_closes(self):
+        child, terminal = pty.fork()
+        if child == 0:
+            os.execve(sys.executable, [sys.executable, READER, self.URL], self.env)
+        out, end = b"", time.monotonic() + 10
+        while b"--stop" not in out and time.monotonic() < end:
+            if select.select([terminal], [], [], .2)[0]:
+                try:
+                    out += os.read(terminal, 4096)
+                except OSError:
+                    break
+        os.close(terminal)   # the tab is closed
+        os.waitpid(child, 0)
+        pid = self.pid()
+        self.assertIsNotNone(pid, out.decode(errors="replace"))
+        time.sleep(.5)
+        self.assertTrue(self.alive(pid))
+
+    def test_the_command_returns_at_once_and_stop_ends_the_reader(self):
+        started = self.reader(self.URL)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        self.assertIn("--stop", started.stdout)
+        pid = self.pid()
+        self.assertTrue(pid and self.alive(pid))
+        stopped = self.reader("--stop")
+        self.assertEqual(stopped.returncode, 0, stopped.stderr)
+        self.assertIn("Okuyucu durdu", stopped.stdout)
+        self.assertTrue(self.gone(pid))
+        self.assertIsNone(self.pid())
+
+    def test_a_new_command_replaces_the_running_reader(self):
+        self.reader(self.URL)
+        first = self.pid()
+        self.reader(self.URL)
+        second = self.pid()
+        self.assertNotEqual(first, second)
+        self.assertTrue(self.gone(first))
+        self.assertTrue(self.alive(second))
+
+    def test_stop_never_signals_a_program_that_is_not_the_reader(self):
+        other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        self.addCleanup(other.wait)
+        self.addCleanup(other.kill)
+        self.cache().mkdir(parents=True)
+        (self.cache() / "reader.pid").write_text(str(other.pid))
+        stopped = self.reader("--stop")
+        self.assertEqual(stopped.returncode, 0, stopped.stderr)
+        self.assertIn("çalışan okuyucu yok", stopped.stdout)
+        time.sleep(.3)
+        self.assertIsNone(other.poll())
+
+    def test_stop_never_signals_a_program_that_only_names_the_reader(self):
+        """A pid handed on to another program whose command line says reader.py is not the reader (G2)."""
+        other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", "--input", "reader.py"])
+        self.addCleanup(other.wait)
+        self.addCleanup(other.kill)
+        self.cache().mkdir(parents=True)
+        (self.cache() / "reader.pid").write_text(str(other.pid))
+        stopped = self.reader("--stop")
+        self.assertIn("çalışan okuyucu yok", stopped.stdout)
+        time.sleep(.3)
+        self.assertIsNone(other.poll())
+
+    def readers(self):
+        """Readers of this test still running (their URL is this test's), whatever the pid file says."""
+        found = subprocess.run(["pgrep", "-f", f"{READER} {self.URL}"], capture_output=True, text=True)
+        if found.returncode not in (0, 1):   # 1: none; anything else: this machine does not list processes here
+            self.skipTest(f"pgrep: {found.stderr.strip()}")
+        return [int(p) for p in found.stdout.split()]
+
+    def test_two_commands_at_once_leave_one_reader(self):
+        """Started side by side, the two commands still leave one reader, the one the pid file names (G3)."""
+        self.addCleanup(lambda: [os.kill(p, signal.SIGKILL) for p in self.readers()])
+        both = [subprocess.Popen([sys.executable, READER, self.URL], env=self.env, stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) for _ in range(2)]
+        for p in both:
+            p.wait(timeout=30)
+        time.sleep(.5)
+        self.assertEqual(self.readers(), [self.pid()])
+        self.reader("--stop")
+        self.assertTrue(self.gone(self.readers()[0]) if self.readers() else True)
+        self.assertEqual(self.readers(), [])
+
+    def test_a_reader_in_its_window_is_the_one_reader_too(self):
+        """--foreground holds the same lock: a new command replaces it, --stop ends it (Y1)."""
+        here = subprocess.Popen([sys.executable, READER, "--foreground", self.URL], env=self.env, stdin=subprocess.DEVNULL,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.addCleanup(here.wait)
+        self.addCleanup(lambda: here.poll() is None and here.kill())
+        for _ in range(50):
+            if self.pid() == here.pid:
+                break
+            time.sleep(.1)
+        self.assertEqual(self.pid(), here.pid, "the window's reader is the machine's reader")
+        self.reader(self.URL)
+        here.wait(timeout=10)
+        background = self.pid()
+        self.assertNotEqual(background, here.pid)
+        self.assertTrue(background and self.alive(background))
+        self.reader("--stop")
+        self.assertTrue(self.gone(background))
+
+    def test_a_reader_that_does_not_stop_is_not_said_to_have_stopped(self):
+        """A reader that cannot stop (here: paused) keeps its pid, so it can be stopped again (Y2)."""
+        self.reader(self.URL)
+        pid = self.pid()
+        os.kill(pid, signal.SIGSTOP)
+        self.addCleanup(lambda: self.alive(pid) and os.kill(pid, signal.SIGCONT))
+        stopped = self.reader("--stop")
+        self.assertNotEqual(stopped.returncode, 0)
+        self.assertNotIn("Okuyucu durdu", stopped.stdout)
+        self.assertEqual(self.pid(), pid)
+        self.assertTrue(self.alive(pid))
+        os.kill(pid, signal.SIGCONT)   # the stop it was sent ends it now
+        self.assertTrue(self.gone(pid))
+
+    def test_a_command_that_cannot_take_its_turn_changes_nothing(self):
+        """While another command holds reader.start, --stop gives up and leaves the reader running (Y6)."""
+        import fcntl
+        self.reader(self.URL)
+        pid = self.pid()
+        turn = open(self.cache() / "reader.start", "w")
+        self.addCleanup(turn.close)
+        fcntl.flock(turn, fcntl.LOCK_EX)
+        stopped = self.reader("--stop")
+        self.assertNotEqual(stopped.returncode, 0)
+        self.assertTrue(self.alive(pid))
+        self.assertEqual(self.pid(), pid)
 
 
 if __name__ == "__main__":

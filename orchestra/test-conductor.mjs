@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createConductor, DRUMS } from './web/conductor.mjs';
-import { startDemo, DEMO_MACHINES } from './web/demo.js';
+import { startDemo, DEMO_MACHINES, DEMO_SONGS, demoFirst } from './web/demo.js';
 import { readFile } from 'node:fs/promises';
 
 // Drives a conductor for `ms` of virtual time in 25 ms ticks, as the server's timer does.
@@ -52,6 +52,38 @@ test('the demo concert plays in the browser alone: labelled, local, never the se
   assert.ok(frames.every((f) => f.notes.every((n) => n[4] === DRUMS || (n[1] >= 0 && n[1] <= 127))));
   const source = await readFile(new URL('./web/demo.js', import.meta.url), 'utf8');
   assert.equal(/fetch\(|EventSource|sendBeacon|XMLHttpRequest/.test(source), false);
+});
+
+test('the demo plays tunes everyone knows, Mozart first, one after another and round again', async () => {
+  const { PLAYLIST, TITLES } = await import('./web/music.mjs');
+  assert.deepEqual(DEMO_SONGS, ['nachtmusik', 'bella-ciao', 'fur-elise', 'ode-to-joy', 'korobeiniki', 'mountain-king']);
+  assert.ok(DEMO_SONGS.every((id) => PLAYLIST.includes(id)), 'all in the score, with their sources');
+  const frames = [];
+  const stop = startDemo({ onFrame: (f) => frames.push(f), tickMs: 25, frameMs: 250 });
+  await new Promise((r) => setTimeout(r, 600));
+  stop();
+  assert.equal(frames[0].song, TITLES.nachtmusik, 'not the loops: a melody from the first note');
+});
+
+test('the page has one listen button: the demo concert while no agent works, the live hall otherwise', async () => {
+  assert.equal(demoFirst({ working: 0, house: true }), true);
+  assert.equal(demoFirst({ working: 0 }), true, 'before the first frame, or with the hall unreachable');
+  assert.equal(demoFirst({ working: 3 }), false);
+  assert.equal(demoFirst({ working: 24, demo: true }), false, 'in the demo the button goes back to the live hall');
+  const html = await readFile(new URL('./web/index.html', import.meta.url), 'utf8');
+  const hero = html.match(/<div class="hero"[\s\S]*?\n  <\/div>/)[0];
+  const shown = [...hero.matchAll(/<button\b([^>]*)>/g)].filter((m) => !/\bhidden\b/.test(m[1]));
+  assert.equal(shown.length, 1, 'one visible button in the hero');
+  assert.match(hero, /<button id="simple-sound"[^>]*\bhidden\b/, 'plain tone appears only when the sound fails');
+  assert.doesNotMatch(html, /id="demo-concert"/);
+});
+
+test('the help for an agent that will not connect starts with what to do, the privacy note last', async () => {
+  const html = await readFile(new URL('./web/index.html', import.meta.url), 'utf8');
+  const help = html.match(/<summary>Bağlanmazsa ne yapmalı<\/summary>([\s\S]*?)<\/details>/)[1];
+  const paragraphs = [...help.matchAll(/<p>([\s\S]*?)<\/p>/g)].map((m) => m[1]);
+  assert.match(paragraphs[0], /^Bağlanmıyorsa/);
+  assert.match(paragraphs.at(-1), /^Sunucuya anonim makine kimliği/);
 });
 
 test('flow plays loops: bounded notes, a beat, scenes; without the option a conductor plays songs', () => {

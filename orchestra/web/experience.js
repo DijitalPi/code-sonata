@@ -1,10 +1,12 @@
-import { KINDS, personalNotes, liveNotes, deltaActivity, wavBytes, wavFromChannels, publicInvite, eventKey, momentLayout } from './moment.js';
+import { KINDS, personalNotes, liveNotes, deltaActivity, wavBytes, wavFromChannels, publicInvite, eventKey, momentLayout, captureCommon } from './moment.js';
 import { renderWithSamples } from './instruments.js';
+import { t, num } from './i18n.js';
 const EVENT = eventKey(location.search);
 const $ = id => document.getElementById(id);
 const labels = { edit: 'düzenleme', bash: 'komut', read: 'okuma', think: 'düşünme', done: 'bitiş' };
 let token = null, me = null, baseline = {}, polling = false, recent = [], moment = null, revision = 0;
-let simulationUntil = 0, simulationLabel = 'TEST';
+let demoPlaying = false;   // the demo concert plays alone: no private polling meanwhile
+export function setDemoPlaying(on) { demoPlaying = on; }
 let synth = null, nodes = [], demoTimer = null, recorder = null, recordingCleanup = null;
 let personalEnabled = false, synthBus = null;
 const soundTabs = 'BroadcastChannel' in window ? new BroadcastChannel('agent-orchestra-audio') : null;
@@ -29,10 +31,10 @@ const SECTION_NAMES = ['piyano', 'yaylılar', 'koro', 'çello', 'flüt', 'vibraf
 const LAYERS = ['ana ezgi', 'akorlar', 'koro hattı', 'bas', 'karşı ezgi', 'çanlar', 'vuruşlar', 'arpej', 'riff'];
 export const layerName = section => `${SECTION_NAMES[section]} · ${LAYERS[section]}`;
 export function receiveFrame(frame) {
-  if (frame.simulated || frame.demo) { simulationUntil = Date.now() + 12000; simulationLabel = frame.demo ? 'DEMO' : 'TEST'; }
-  const cutoff = Date.now() - 12000;
-  recent.push(...(frame.notes || []).map(n => [n[0] - frame.t + Date.now(), ...n.slice(1)]));
-  recent = recent.filter(n => n[0] >= cutoff).slice(-400);
+  // Every heard note keeps where it came from, so a moment can say if it holds simulated music.
+  const source = frame.demo ? 'demo' : frame.simulated ? 'test' : 'live', cutoff = Date.now() - 12000;
+  recent.push(...(frame.notes || []).map(n => ({ at: n[0] - frame.t + Date.now(), note: n.slice(1), source })));
+  recent = recent.filter(h => h.at >= cutoff).slice(-400);
 }
 // The server keeps anonymous daily totals (no cookie, no identity); this device's own counters
 // below stay opt-in and never leave the browser.
@@ -126,7 +128,7 @@ $('mode').onchange = async () => {
     $('mode-status').textContent = me?.connected ? 'Yeni faaliyetler yalnız kendi motifinde duyulur.' : 'Önce ajanını bağla. Yeni faaliyet geldiğinde kendi sesin çalar.';
     // Unlock on the gesture, so polling can play subsequent activity.
     try { synth ||= newAudioContext(); await synth.resume(); } catch {}
-  } else $('mode-status').textContent = $('mode').value === 'mine' && !ownSeat ? 'Önce ajanını bağla; bağlanınca kendi katmanın öne çıkar.' : 'Ortak ses için Orkestrayı dinle düğmesine bas.';
+  } else $('mode-status').textContent = $('mode').value === 'mine' && !ownSeat ? 'Önce ajanını bağla; bağlanınca kendi katmanın öne çıkar.' : 'Ortak ses için önce dinlemeyi başlat.';
 };
 // The pairing outlives a reload of this tab (it lives an hour on the server: a new one on every reload would use
 // up an office's share of pairings).
@@ -134,6 +136,8 @@ const SAVED_PAIR = 'orchestra-pair';
 function savePair() { try { if (token) sessionStorage.setItem(SAVED_PAIR, JSON.stringify({ token, command: $('command').value })); else sessionStorage.removeItem(SAVED_PAIR); } catch {} }
 // The reader is one file from this site (Python 3 only): no repository, no install.
 const readerCommand = fragment => `curl -fsSL ${location.origin}/reader.py -o reader.py && python3 reader.py '${location.origin}/${fragment}'`;
+// The reader runs in the background, so stopping it is a command of its own; it fetches the reader again and works in any folder.
+$('stop-command').value = `curl -fsSL ${location.origin}/reader.py -o reader.py && python3 reader.py --stop`;
 $('pair').onclick = async () => {
   $('pair').disabled = true;
   try {
@@ -158,14 +162,15 @@ try {
   if (saved?.token) { token = saved.token; $('command').value = saved.command; $('setup').hidden = false; $('pair').textContent = 'Yeni bağlantı oluştur'; }
 } catch {}
 $('copy-command').onclick = async () => { const ok = await clipboard($('command').value, $('command')); $('personal-status').textContent = ok ? 'Komut kopyalandı. Repo Terminal’inde çalıştır.' : 'Otomatik kopyalama olmadı. Seçili komutu elle kopyala.'; };
+$('copy-stop').onclick = async () => { const ok = await clipboard($('stop-command').value, $('stop-command')); $('personal-status').textContent = ok ? 'Durdurma komutu kopyalandı. Herhangi bir Terminal’de çalıştır.' : 'Otomatik kopyalama olmadı. Seçili komutu elle kopyala.'; };
 $('unpair').onclick = async () => {
   $('unpair').disabled = true;
-  try { await api('/api/unpair', { pair: token }); token = null; savePair(); me = null; ownSeat = null; stopPersonalAudio(); $('setup').hidden = true; $('personal').hidden = true; $('command').value = ''; $('personal-status').textContent = 'Eşleştirme kaldırıldı. Ortak katılımı da durdurmak için Terminal’de Ctrl+C.'; }
+  try { await api('/api/unpair', { pair: token }); token = null; savePair(); me = null; ownSeat = null; stopPersonalAudio(); $('setup').hidden = true; $('personal').hidden = true; $('command').value = ''; $('personal-status').textContent = 'Eşleştirme kaldırıldı. Ortak katılımı da durdurmak için Terminal’de python3 reader.py --stop.'; }
   catch (error) { $('personal-status').textContent = error.message; }
   finally { $('unpair').disabled = false; }
 };
 async function poll() {
-  if (polling || !token) return; polling = true; const requested = token;
+  if (polling || !token || demoPlaying) return; polling = true; const requested = token;
   try {
     const data = await api('/api/me', { pair: requested });
     if (requested !== token) return;
@@ -173,8 +178,8 @@ async function poll() {
     if (data.connected && !me?.connected) metric('connection');
     me = data; ownSeat = data.connected ? [data.section, data.seat] : null; ownPulseAt = data.lastActivity;
     $('personal').hidden = !data.connected;
-    $('personal-status').textContent = data.waiting ? 'Okuyucunun bağlanması bekleniyor. Komutu Terminal’de çalıştır.' : !data.connected ? 'Bağlantı kesildi. Okuyucu ve sunucuyu kontrol et; yeniden bağlanınca güncellenir.' : data.steps ? 'Bağlı · kendi faaliyetlerin alınıyor.' : 'Bağlı · ilk yeni faaliyetini bekliyor. Claude/Codex ile çalışmaya başla.';
-    $('my-steps').textContent = data.steps.toLocaleString('tr');
+    $('personal-status').textContent = data.waiting ? 'Okuyucunun bağlanması bekleniyor. Komutu Terminal’de çalıştır.' : !data.connected ? 'Bağlantı kesildi. Okuyucu ve sunucuyu kontrol et; yeniden bağlanınca güncellenir.' : data.steps ? 'Bağlı · kendi faaliyetlerin alınıyor.' : 'Bağlı · ilk yeni faaliyetini bekliyor. Ajanınla çalışmaya başla.';
+    $('my-steps').textContent = num(data.steps);
     $('seat-label').textContent = data.connected ? `Senin koltuğun: ${SECTION_NAMES[data.section]} · ${data.seat + 1}. koltuk · ${data.sessions} oturum. Salondaki katmanın: ${LAYERS[data.section]}.` : '';
     $('activity-label').textContent = KINDS.map(k => `${data.activity[k]} ${labels[k]}`).join(' · ');
     if (isPersonal() && personalEnabled && data.connected && Object.values(difference).some(Boolean)) await playSynth(liveNotes(difference));
@@ -194,7 +199,7 @@ async function drawMoment(title, notes, { personal, showCount, total, label }) {
   light.addColorStop(0, '#2b1f10'); light.addColorStop(1, '#0b0907');
   c.fillStyle = light; c.fillRect(0, 0, W, H);
   c.fillStyle = '#e6b45a'; c.font = '600 16px "Instrument Sans", system-ui, sans-serif'; c.letterSpacing = '3px';
-  c.fillText(`${personal ? 'KENDİ ÇALIŞMA ANIM' : label === 'DEMO' ? 'DEMO KONSERİNDEN BİR AN' : 'ORTAK ORKESTRADAN BİR AN'}  ·  AGENT ORCHESTRA`, 64, 84);
+  c.fillText(`${t(personal ? 'KENDİ ÇALIŞMA ANIM' : label === 'DEMO' ? 'DEMO KONSERİNDEN BİR AN' : 'ORTAK ORKESTRADAN BİR AN')}  ·  AGENT ORCHESTRA`, 64, 84);
   c.letterSpacing = '0px';
   c.fillStyle = '#f3e9d6'; c.font = '300 66px Fraunces, Georgia, serif';
   const lines = []; let line = '';
@@ -211,9 +216,9 @@ async function drawMoment(title, notes, { personal, showCount, total, label }) {
   }
   c.globalAlpha = 1;
   c.fillStyle = '#b3a58f'; c.font = '400 20px "Instrument Sans", system-ui, sans-serif';
-  c.fillText(personal ? (showCount ? `${total} gerçek adım · adım sayılarından üretilen müzik` : 'Gerçek adımlardan üretilen müzik') : label === 'DEMO' ? 'Demo konserinden 12 saniye · makineler simüle edilmiştir' : label === 'TEST' ? 'Test salonundan 12 saniye · simülasyon içerir' : 'Ortak orkestranın 12 saniyesi · anonim', 64, 534);
-  c.fillStyle = '#f3e9d6'; c.font = 'italic 300 24px Fraunces, Georgia, serif'; c.fillText('Agent Orchestra', 64, 588);
-  c.textAlign = 'right'; c.fillStyle = '#b3a58f'; c.font = '400 17px "Instrument Sans", system-ui, sans-serif'; c.fillText('DijitalPi tarafından geliştirildi', 1136, 588); c.textAlign = 'left';
+  c.fillText(t(personal ? (showCount ? `${total} gerçek adım · adım sayılarından üretilen müzik` : 'Gerçek adımlardan üretilen müzik') : label === 'DEMO' ? 'Demo konserinden 12 saniye · makineler simüle edilmiştir' : label === 'TEST' ? 'Test salonundan 12 saniye · simülasyon içerir' : 'Ortak orkestranın 12 saniyesi · anonim'), 64, 534);
+  c.fillStyle = '#f3e9d6'; c.font = '400 24px Fraunces, Georgia, serif'; c.fillText('Agent Orchestra', 64, 588);
+  c.textAlign = 'right'; c.fillStyle = '#b3a58f'; c.font = '400 17px "Instrument Sans", system-ui, sans-serif'; c.fillText(t('DijitalPi tarafından geliştirildi'), 1136, 588); c.textAlign = 'left';
 }
 function revokeMoment() {
   revision++; if (recordingCleanup) recordingCleanup(true);
@@ -224,13 +229,13 @@ $('create-moment').onclick = async () => {
   const personal = $('capture-kind').value === 'personal';
   const counts = deltaActivity(me?.activity || {}, baseline);
   if (personal && (!me?.connected || !Object.values(counts).some(Boolean))) { $('moment-status').textContent = 'Yeni gerçek faaliyet yok. Ajanını bağla ve son anından sonra yeni bir adım bekle.'; return; }
-  const time = Date.now(), captured = recent.filter(n => n[0] >= time - 12000 && n[0] <= time);
-  if (!personal && !captured.length) { $('moment-status').textContent = 'Ortak nota henüz alınmadı. Salona bağlan ve birkaç saniye bekle.'; return; }
+  const common = captureCommon(recent, Date.now());
+  if (!personal && !common.notes.length) { $('moment-status').textContent = 'Ortak nota henüz alınmadı. Salona bağlan ve birkaç saniye bekle.'; return; }
   $('create-moment').disabled = true;
   try {
     revokeMoment(); const current = revision;
-    const notes = personal ? personalNotes(counts) : captured.map(n => [n[0] - time + 12000, ...n.slice(1)]);
-    const simulated = !personal && Date.now() < simulationUntil;
+    const notes = personal ? personalNotes(counts) : common.notes;
+    const label = personal ? '' : common.label, simulated = Boolean(label);
     // The hall's own samples and reverb, rendered here; the plain synthesis only when the listener
     // chose the simple timbre (no downloads) or the samples cannot load.
     let bytes = null, sampled = false;
@@ -241,16 +246,16 @@ $('create-moment').onclick = async () => {
       if (current !== revision) return;
     }
     bytes ||= wavBytes(notes);
-    const wav = new Blob([bytes], { type: 'audio/wav' }), title = (simulated ? `${simulationLabel} · ` : '') + ($('moment-title-input').value.trim() || 'Bugünkü çalışmanın sesi');
+    const wav = new Blob([bytes], { type: 'audio/wav' }), title = (simulated ? `${label} · ` : '') + ($('moment-title-input').value.trim() || t('Bugünkü çalışmanın sesi'));
     const total = Object.values(counts).reduce((a, b) => a + b, 0);
-    await drawMoment(title, notes, { personal, showCount: $('show-count').checked, total, label: simulated ? simulationLabel : '' });
+    await drawMoment(title, notes, { personal, showCount: $('show-count').checked, total, label });
     const png = await new Promise(resolve => $('moment-canvas').toBlob(resolve, 'image/png'));
     if (!png) throw new Error('Görsel oluşturulamadı. Yeniden dene.');
     if (current !== revision) return;
     const wavUrl = URL.createObjectURL(wav), pngUrl = URL.createObjectURL(png);
-    moment = { bytes, notes, total, personal, simulated, label: simulationLabel, urls: [wavUrl, pngUrl] };
+    moment = { bytes, notes, total, personal, simulated, label, urls: [wavUrl, pngUrl] };
     $('moment-audio').src = wavUrl; $('download-wav').href = wavUrl; $('download-png').href = pngUrl;
-    $('visible-info').textContent = `Görünür bilgi: “${title}”, ${personal ? 'kişisel faaliyet yorumu' : simulated ? (simulationLabel === 'DEMO' ? 'demo konserinden simüle an' : 'simülasyon içeren ortak test anı') : 'anonim ortak an'}, ${personal && $('show-count').checked ? 'faaliyet sayısı, ' : ''}DijitalPi imzası. Makine kimliği, anahtar, kod veya prompt yok.`;
+    $('visible-info').textContent = `Görünür bilgi: “${title}”, ${personal ? 'kişisel faaliyet yorumu' : simulated ? (label === 'DEMO' ? 'demo konserinden simüle an' : 'simülasyon içeren ortak test anı') : 'anonim ortak an'}, ${personal && $('show-count').checked ? 'faaliyet sayısı, ' : ''}DijitalPi imzası. Makine kimliği, anahtar, kod veya prompt yok.`;
     $('preview').hidden = false;
     $('moment-status').textContent = sampled ? 'Anın hazır. Ses salondaki enstrüman örnekleriyle üretildi.' : 'Anın hazır. Ses sade bir sentez yorumudur; salondaki örnekler kullanılmadı.';
     if (personal) baseline = { ...me.activity };
@@ -263,7 +268,7 @@ let previewRevision = 0;
 async function refreshVisibleInfo() {
   if (!moment || recorder) return;
   const active = moment, current = ++previewRevision;
-  const title = (active.simulated ? `${active.label} · ` : '') + ($('moment-title-input').value.trim() || 'Bugünkü çalışmanın sesi');
+  const title = (active.simulated ? `${active.label} · ` : '') + ($('moment-title-input').value.trim() || t('Bugünkü çalışmanın sesi'));
   await drawMoment(title, active.notes, { personal: active.personal, showCount: $('show-count').checked, total: active.total, label: active.simulated ? active.label : '' });
   const png = await new Promise(resolve => $('moment-canvas').toBlob(resolve, 'image/png'));
   if (!png || current !== previewRevision || moment !== active) return;

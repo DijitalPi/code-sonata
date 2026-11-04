@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { personalNotes, liveNotes, deltaActivity, wavBytes, wavFromChannels, publicInvite, eventKey, momentLayout } from './web/moment.js';
+import { personalNotes, liveNotes, deltaActivity, wavBytes, wavFromChannels, publicInvite, eventKey, momentLayout, captureCommon } from './web/moment.js';
 import { SONGS, PLANS, METERS, PLAYLIST } from './web/music.mjs';
 import { createConductor } from './web/conductor.mjs';
+import { soundNudge } from './web/nudge.mjs';
 import { NOTE_RANGE, drumKit } from './web/instruments.js';
 test('personal output requires activity and has bounded harmonious notes', () => {
   assert.deepEqual(personalNotes({}), []);
@@ -118,4 +119,50 @@ test('rendered moments become valid stereo WAV without clipping', () => {
   assert.equal(view.getUint16(22, true), 2); assert.equal(view.getUint32(24, true), 44100); assert.equal(view.getUint32(40, true), 44100 * 4);
   let peak = 0; for (let i = 44; i < bytes.byteLength; i += 2) peak = Math.max(peak, Math.abs(view.getInt16(i, true)));
   assert.ok(peak > 28000 && peak < 32767);
+});
+test('a shared-hall moment that contains any demo or test note keeps that label', () => {
+  const t = 1_700_000_000_000;
+  // Demo notes are scheduled ahead of time, so they stay in the 12 s window after the demo ends.
+  const heard = [{ at: t - 11_000, note: [69, 58, .5, 0], source: 'demo' }, { at: t - 2000, note: [72, 58, .5, 0], source: 'live' }];
+  const moment = captureCommon(heard, t);
+  assert.equal(moment.label, 'DEMO');
+  assert.equal(moment.notes.length, 2);
+  assert.deepEqual(moment.notes[0], [1000, 69, 58, .5, 0]);
+  assert.equal(captureCommon([{ at: t - 1000, note: [60, 58, .5, 0], source: 'live' }], t).label, '');
+  assert.equal(captureCommon([{ at: t - 13_000, note: [60, 58, .5, 0], source: 'demo' }], t).notes.length, 0);
+});
+test('the connect panel shows how to stop the reader, before pairing too, with a command that works from any folder', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const html = await readFile(new URL('./web/index.html', import.meta.url), 'utf8');
+  const start = html.indexOf('<div id="setup"');
+  let depth = 0, end = start;
+  for (const m of html.slice(start).matchAll(/<\/?div\b/g)) { depth += m[0] === '<div' ? 1 : -1; if (!depth) { end = start + m.index; break; } }
+  const setup = html.slice(start, end);
+  assert.ok(html.includes('<textarea id="stop-command"') && html.includes('id="copy-stop"'));
+  assert.equal(setup.includes('stop-command'), false, 'outside the part that appears only after pairing');
+  const source = await readFile(new URL('./web/experience.js', import.meta.url), 'utf8');
+  assert.match(source, /\$\('stop-command'\)\.value = `curl -fsSL \$\{location\.origin\}\/reader\.py -o reader\.py && python3 reader\.py --stop`/);
+});
+test('the connect panel says what never leaves the computer above the command button, with the reader code one click away', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const html = await readFile(new URL('./web/index.html', import.meta.url), 'utf8');
+  const trust = html.slice(html.indexOf('<div class="trust"'), html.indexOf('</div>', html.indexOf('<div class="trust"')));
+  assert.ok(trust.length > 0 && html.indexOf('<div class="trust"') < html.indexOf('<button id="pair"'), 'before pairing, above the button');
+  assert.match(trust, /<a href="\/reader\.py" target="_blank" rel="noopener">/);
+  for (const word of ['Kodun', 'promptların', 'dosya adların', 'dosya yolların', 'proje adların']) assert.ok(trust.includes(word), word);
+  assert.equal((html.match(/Prompt, kod ve dosya yolu gönderilmez/g) || []).length, 0, 'the lead does not say it a second time');
+});
+
+test('notes with nothing to hear bring a line that says why, unless the listener stopped the sound or is elsewhere on purpose', () => {
+  const live = { notes: true, running: false, stopped: false, personal: false, watchOnly: false, listenShown: false, elsewhere: false };
+  assert.equal(soundNudge(live), 'off');                                   // the browser still waits for a tap
+  assert.equal(soundNudge({ ...live, elsewhere: true }), 'elsewhere');     // another tab took the sound
+  assert.equal(soundNudge({ ...live, elsewhere: true, listenShown: true }), 'elsewhere');
+  assert.equal(soundNudge({ ...live, listenShown: true }), null);          // the big listen button is already in sight
+  assert.equal(soundNudge({ ...live, running: true }), null);
+  assert.equal(soundNudge({ ...live, stopped: true }), null);              // the listener pressed stop: no nagging
+  assert.equal(soundNudge({ ...live, stopped: true, elsewhere: true }), null);
+  assert.equal(soundNudge({ ...live, personal: true }), null);             // own sound only: the shared hall is quiet on purpose
+  assert.equal(soundNudge({ ...live, watchOnly: true }), null);            // a wall display has no sound
+  assert.equal(soundNudge({ ...live, notes: false }), null);
 });

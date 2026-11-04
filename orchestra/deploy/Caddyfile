@@ -1,0 +1,31 @@
+# Certificates come from Let's Encrypt once DOMAIN points at this machine (ports 80 and 443 open).
+{
+	# No access log, and no error log with the visitor's address: the page says IP addresses are not recorded.
+	log default {
+		exclude http.log.error http.handlers.reverse_proxy
+	}
+}
+
+{$DOMAIN} {
+	header Strict-Transport-Security "max-age=31536000"
+
+	# The server checks the same sizes; the proxy stops a large body before it reaches Node.
+	@image path /api/seats/checkout /api/auction/content
+	@stripe path /api/stripe
+	@small not path /api/seats/checkout /api/auction/content /api/stripe
+	request_body @image {
+		max_size 450KiB
+	}
+	request_body @stripe {
+		max_size 64KiB
+	}
+	request_body @small {
+		max_size 2KiB
+	}
+
+	# Static files only: /api/stream is an event stream and must not be compressed or buffered.
+	@static not path /api/*
+	encode @static zstd gzip
+
+	reverse_proxy orchestra:4480
+}

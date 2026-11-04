@@ -1,0 +1,158 @@
+// Languages. The page and the code are written in Turkish; another language is a dictionary keyed by the
+// Turkish text (lang-en.mjs, lang-de.mjs…). Text the code writes later is translated as it appears, so a
+// status line set anywhere follows the chosen language; canvas drawings call t() themselves. Adding a
+// language means one more dictionary file and one more entry in langs.mjs.
+import { EN } from './lang-en.mjs';
+import { LANGS as ALL } from './langs.mjs';
+
+export const LANGS = Object.fromEntries(Object.entries(ALL).map(([code, { name }]) => [code, name]));
+// English comes with the page; another dictionary loads when it is chosen.
+const DICTS = { en: EN };
+const load = async (code) => { if (code !== 'tr' && !DICTS[code]) DICTS[code] = (await import(`./lang-${code}.mjs`))[code.toUpperCase()]; };
+const tables = {};
+let lang = pick();
+try { await load(lang); } catch { lang = 'en'; }   // a dictionary that cannot load (offline): English
+
+// The link's ?lang=, then the listener's last choice, then the first of the browser's languages the site has.
+function pick() {
+  const asked = new URLSearchParams(location.search).get('lang');
+  if (asked in LANGS) return asked;
+  try { const saved = localStorage.getItem('lang'); if (saved in LANGS) return saved; } catch { /* private mode */ }
+  for (const wanted of navigator.languages?.length ? navigator.languages : [navigator.language || '']) {
+    const code = wanted.slice(0, 2).toLowerCase();
+    if (code in LANGS) return code;
+  }
+  return 'en';
+}
+
+// Exact keys, and keys with {placeholders} as patterns, the most specific (longest fixed text) first.
+// A key another dictionary lacks is shown in English rather than Turkish.
+function table(code) {
+  if (tables[code]) return tables[code];
+  const exact = new Map(), patterns = [];
+  for (const [key, value] of Object.entries({ ...EN, ...DICTS[code] })) {
+    if (!/\{\w+\}/.test(key)) { exact.set(key, value); continue; }
+    const fixed = key.replace(/\{\w+\}/g, '').length;
+    // {own} takes as much as it can: someone's title may itself contain the sentence's separators.
+    const group = (name) => `(?<${name}>[\\s\\S]*${name === 'own' ? '' : '?'})`;
+    const source = key.split(/(\{\w+\})/).map((part) => /^\{\w+\}$/.test(part) ? group(part.slice(1, -1)) : part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('');
+    patterns.push({ re: new RegExp(`^${source}$`), value, fixed });
+  }
+  patterns.sort((a, b) => b.fixed - a.fixed);
+  return (tables[code] = { exact, patterns });
+}
+
+function translate(text, depth = 0) {
+  if (lang === 'tr' || !text || depth > 3) return text;
+  const lead = text.match(/^\s*/)[0], tail = text.slice(lead.length).match(/\s*$/)[0], core = text.trim();
+  if (!core) return text;
+  const { exact, patterns } = table(lang);
+  if (exact.has(core)) return lead + exact.get(core) + tail;
+  for (const { re, value } of patterns) {
+    const m = core.match(re);
+    // {own} holds someone's own words (a typed title): kept as written, never looked up.
+    if (m) return lead + value.replace(/\{(\w+)\}/g, (_, name) => name === 'own' ? m.groups[name] : translate(m.groups[name] ?? '', depth + 1)) + tail;
+  }
+  return text;
+}
+
+export const getLang = () => lang;
+export function t(text, vars) {
+  const out = translate(text);
+  return vars ? out.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '') : out;
+}
+export const num = (n) => Number(n).toLocaleString(ALL[lang].numbers || ALL[lang].tag);
+
+// ---------- the page ----------
+const ATTRS = ['aria-label', 'placeholder', 'title'];
+const seen = new WeakMap();          // node -> { tr, shown } so a language switch can go back to Turkish
+// People's own words (holder names, typed titles) carry translate="no" and are never looked up.
+const skip = (node) => node.parentElement?.closest('script, style, textarea, [translate="no"]');
+
+function textNode(node) {
+  if (skip(node)) return;
+  let rec = seen.get(node);
+  if (!rec || node.nodeValue !== rec.shown) seen.set(node, rec = { tr: node.nodeValue, shown: null });
+  const out = translate(rec.tr);
+  rec.shown = out;
+  if (node.nodeValue !== out) node.nodeValue = out;
+}
+function element(el) {
+  for (const name of ATTRS) {
+    if (!el.hasAttribute(name)) continue;
+    const key = `${name}:`, store = seen.get(el) || {};
+    const now = el.getAttribute(name);
+    if (!store[key] || now !== store[key].shown) store[key] = { tr: now, shown: null };
+    store[key].shown = translate(store[key].tr);
+    seen.set(el, store);
+    if (now !== store[key].shown) el.setAttribute(name, store[key].shown);
+  }
+}
+function walk(root) {
+  if (root.nodeType === 3) return textNode(root);
+  if (root.nodeType !== 1 || root.closest?.('script, style')) return;
+  element(root);
+  const it = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+  for (let node = it.nextNode(); node; node = it.nextNode()) node.nodeType === 3 ? textNode(node) : element(node);
+}
+
+// The server may have sent the head in another language already (?lang=en): keep its Turkish original either
+// way. The share preview's texts (og:, twitter:) follow the language with the title and the description.
+const turkish = (text) => {
+  for (const dict of Object.values(DICTS)) { const key = Object.keys(dict).find((k) => dict[k] === text); if (key) return key; }
+  return text;
+};
+const SHARED = 'meta[name="description"], meta[property="og:title"], meta[property="og:description"], meta[name="twitter:title"], meta[name="twitter:description"]';
+const head = { title: turkish(document.title), metas: [...document.querySelectorAll(SHARED)].map((meta) => [meta, turkish(meta.content)]) };
+// The moment's title starts as a suggestion; follow the language until the listener types their own.
+const titleInput = document.getElementById('moment-title-input');
+let typedTitle = false;
+titleInput?.addEventListener('input', () => { typedTitle = true; });
+// The language menus list every language: the bar's short one by code, the folded menu's by name.
+for (const control of document.querySelectorAll('[data-lang]')) {
+  if (control.tagName !== 'SELECT') continue;
+  control.replaceChildren(...Object.entries(LANGS).map(([code, name]) => {
+    const option = document.createElement('option');
+    option.value = code; option.textContent = control.dataset.lang === 'names' ? name : code.toUpperCase();
+    return option;
+  }));
+}
+function apply() {
+  document.documentElement.lang = ALL[lang].tag;
+  document.documentElement.dir = ALL[lang].dir || 'ltr';
+  document.title = translate(head.title);
+  for (const [meta, text] of head.metas) if (text) meta.content = translate(text);
+  const suggestions = ['Bugünkü çalışmanın sesi', ...Object.values(DICTS).map((dict) => dict['Bugünkü çalışmanın sesi'])];
+  if (titleInput && !typedTitle && suggestions.includes(titleInput.value)) titleInput.value = translate('Bugünkü çalışmanın sesi');
+  walk(document.body);
+  for (const control of document.querySelectorAll('[data-lang]')) {
+    if (control.tagName === 'SELECT') control.value = lang;
+    else control.hidden = control.dataset.lang === lang;
+  }
+}
+
+// A language whose dictionary is already here switches at once; another one switches once it has loaded.
+export function setLang(code) {
+  if (!(code in LANGS)) return Promise.resolve();
+  if (!(code === 'tr' || DICTS[code])) return load(code).then(() => setLang(code), () => {});
+  lang = code;
+  try { localStorage.setItem('lang', code); } catch { /* private mode */ }
+  const url = new URL(location.href);
+  if (url.searchParams.has('lang')) { url.searchParams.set('lang', code); history.replaceState(null, '', url); }
+  apply();
+  dispatchEvent(new CustomEvent('lang', { detail: code }));
+  return Promise.resolve();
+}
+
+new MutationObserver((changes) => {
+  if (lang === 'tr') return;
+  for (const change of changes) {
+    if (change.type === 'characterData') textNode(change.target);
+    else if (change.type === 'attributes') element(change.target);
+    else for (const node of change.addedNodes) walk(node);
+  }
+}).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ATTRS });
+
+document.addEventListener('change', (event) => { if (event.target.matches('select[data-lang]')) setLang(event.target.value); });
+document.addEventListener('click', (event) => { const b = event.target.closest('button[data-lang]'); if (b) setLang(b.dataset.lang); });
+apply();

@@ -1,20 +1,30 @@
-import { receiveFrame, ownSeat, ownPulseAt, motionPaused, isPersonal, stopPersonalAudio, togglePersonalAudio, metric, newAudioContext, layerName } from './experience.js';
+import { receiveFrame, ownSeat, ownPulseAt, motionPaused, isPersonal, stopPersonalAudio, togglePersonalAudio, metric, newAudioContext, layerName, setDemoPlaying } from './experience.js';
 import { eventKey } from './moment.js';
-import { startDemo } from './demo.js';
+import { startDemo, demoFirst } from './demo.js';
+import { createAmfi, demoHolders } from './amfi.js';
+import { setupBuying, listHolders } from './buy.js';
+import { setupAuction, backFromBid, left } from './auction.js';
+import { t, getLang, num } from './i18n.js';
+import { PLAN, AUCTION } from './seats.mjs';
+import { createCard } from './card.js';
+import { soundNudge } from './nudge.mjs';
 import { SECTIONS, SOUNDFONT, loadInstrument, voiceOfSection, hall, masterChain, drumKit } from './instruments.js';
 // Agent Orchestra listener: draws the hall and plays the conductor's notes in sync.
 // One warm family under stage light: distinguishable sections, no rainbow.
 const COLORS = { piano: "#f3e9d6", strings: "#e6b45a", choir: "#c9a7d8", cello: "#d9785a", flute: "#8cc9b5", vibraphone: "#93b4d6", horn: "#f0cc7a", harp: "#e8a1a6", accordion: "#d96a5e" };
 const $ = (id) => document.getElementById(id);
+const amfi = createAmfi({ t });   // the seats around the stage (see "seats for sale" below)
+const wide = matchMedia("(min-width: 960px)");
 
 // ---------- state from the server ----------
 let seats = SECTIONS.map(() => []);      // section -> [[sessions, country] or 0]
 let you = null;                          // {cc, team}
 let leader = null, soloAt = 0, ranks = [];
-const countryName = (() => { try { const d = new Intl.DisplayNames(["tr"], { type: "region" }); return (cc) => d.of(cc) || cc; } catch { return (cc) => cc; } })();
+const countryName = (() => { const names = {}; return (cc) => { try { names[getLang()] ||= new Intl.DisplayNames([getLang()], { type: "region" }); return names[getLang()].of(cc) || cc; } catch { return cc; } }; })();
 const flag = (cc) => (cc && cc.length === 2 ? String.fromCodePoint(...[...cc].map((c) => 0x1f1a5 + c.charCodeAt(0))) : "");
 const glow = new Map();                  // "s:i" -> 0..1
-let info = { bpm: 64, intensity: 0, climax: false, song: "", working: 0 };
+const QUIET = { bpm: 64, intensity: 0, climax: false, song: "", working: 0 };   // until the hall's first frame
+let info = QUIET;
 const offsets = [];
 let offset = 0;                          // serverTime - localTime (best estimate)
 // Frames give the server's clock as it was when a frame left, so `offset` alone runs late by the way here (a far
@@ -68,7 +78,7 @@ function showLeague(lg) {
   const mine = $("mine");
   if (you && you.cc) {
     const rank = ranks.indexOf(you.cc);
-    mine.textContent = `Ülken: ${flag(you.cc)} ${rank >= 0 ? `#${rank + 1}` : "henüz notası yok"}`;
+    mine.textContent = `Ülken: ${flag(you.cc)} ${rank >= 0 ? "#" + (rank + 1) : "henüz notası yok"}`;
   } else mine.textContent = "";
 }
 
@@ -95,18 +105,18 @@ function showNow(frame) {
   now.replaceChildren();
   if (!frame.working) {
     // Empty hall: the house pianist plays; say so plainly, with when an agent last played.
-    const parts = [frame.house ? "Salon sakin. Salon piyanisti çalıyor; gerçek ajan faaliyeti bekleniyor." : "İlk ajan faaliyeti bekleniyor."];
-    if (frame.lastActive) parts.push(`Son faaliyet ${ago(frame.lastActive)}.`);
-    if (frame.peak) parts.push(`Bugünün zirvesi: ${frame.peak.toLocaleString()} makine.`);
+    const parts = [t(frame.house ? "Şu an çalışan ajan yok; salon piyanisti çalıyor. Ajanlar adım attıkça orkestra katılır." : "Şu an çalışan ajan yok. Ajanlar adım attıkça orkestra çalar.")];
+    if (frame.lastActive) parts.push(t(`Son faaliyet ${ago(frame.lastActive)}.`));
+    if (frame.peak) parts.push(t(`Bugünün zirvesi: ${frame.peak.toLocaleString()} makine.`));
     now.textContent = parts.join(" ");
     return;
   }
   const song = document.createElement("strong");
   song.textContent = frame.song;
-  now.append(frame.demo ? "Demo konseri · " : "Şimdi ", song, ` · ${frame.bpm} BPM`);
+  now.append(frame.demo ? `${t("Demo konseri")} · ` : `${t("Şimdi")} `, song, ` · ${frame.bpm} BPM`);
   if (frame.climax) {
     const climax = document.createElement("strong");
-    climax.textContent = "doruk";
+    climax.textContent = t("doruk");
     now.append(" · ", climax);
   }
   const heat = document.createElement("span"), bar = document.createElement("i");
@@ -116,8 +126,8 @@ function showNow(frame) {
   now.append(heat);
 }
 
-const TEAM_NAMES = { claude: "Claude Code", codex: "Codex", other: "Diğer", listen: "Dinleyiciler" };
-const TOOL_NAMES = { claude: "Claude Code", codex: "Codex", other: "other tools" };
+const TEAM_NAMES = { claude: "Claude Code", codex: "Codex", gemini: "Gemini CLI", other: "Diğer ajanlar", listen: "Dinleyiciler" };
+const TOOL_NAMES = { claude: "Claude Code", codex: "Codex", gemini: "Gemini CLI", other: "other tools" };
 let team = "listen";
 try { team = localStorage.getItem("team") || "listen"; } catch {}
 let teams = { agents: {}, fans: {} };
@@ -136,10 +146,11 @@ function connect() {
   source.onerror = () => {
     if (stream !== source) return;
     $("connection").textContent = "Bağlantı kesildi · yeniden bağlanıyor…";
-    for (const id of ["claudes", "players", "listeners", "countries"]) $(id).textContent = "—";
+    for (const id of ["claudes", "players", "listeners", "countries"]) $(id).textContent = "-";
     $("now").textContent = "Canlı bilgi alınamıyor. Bağlantı geldiğinde salon güncellenecek.";
     lastNow = ""; offsets.length = 0;
     seats = SECTIONS.map(() => []); teams = { agents: {}, fans: {} }; glow.clear(); version++;
+    info = QUIET; showListen();           // with no live news the button offers the demo, which needs no server
     // The browser retries a dropped connection by itself, but never an answer it refused: a full hall, or the
     // proxy's 502 while the server restarts. Then this page tries again, waiting longer each time (1 s .. 30 s),
     // spread out so a restarted server is not hit by everyone in the same second.
@@ -185,6 +196,7 @@ function applyFrame(frame) {
   if (frame.players !== undefined) {
     info = frame;
     $("demo-offer").hidden = Boolean(frame.demo) || !frame.house;
+    showListen();
     $("connection").textContent = frame.demo ? "Demo konseri · simüle edilmiş makineler" : frame.simulated || frame.simulatedListeners ? `Test salonu · ${frame.simulated} simülasyon makinesi / ${frame.simulatedListeners || 0} test dinleyicisi / ${frame.players - frame.simulated} gerçek makine` : HALL;
     $("claudes").textContent = frame.claudes.toLocaleString();
     $("players").textContent = frame.players.toLocaleString();
@@ -192,9 +204,13 @@ function applyFrame(frame) {
     showNow(frame);
   }
   if (frame.notes?.length) { scoreNotes.push(...frame.notes); if (scoreNotes.length > 900) scoreNotes.splice(0, scoreNotes.length - 900); }
-  for (const [at, , , , voice] of frame.notes || []) { const s = sectionOfVoice(voice); if (s >= 0 && sectionHits.length < 400) sectionHits.push([at, s]); }
+  for (const [at, pitch, , , voice] of frame.notes || []) {
+    const s = sectionOfVoice(voice); if (s >= 0 && sectionHits.length < 400) sectionHits.push([at, s]);
+    if (voice !== 10) amfi.note(at, pitch);   // drums have no direction
+  }
   if (frame.players !== undefined) { document.body.classList.toggle("is-climax", Boolean(frame.climax)); }
   if (audio && !isPersonal()) for (const note of frame.notes || []) schedule(note);
+  if (frame.notes?.length) nudge(true);
 }
 connect();
 // A connection can die without closing (a phone moving from Wi-Fi to mobile data, a laptop waking up). The hall
@@ -214,6 +230,7 @@ if (tabs) tabs.onmessage = (event) => {
     wanted = false;
     audio.ctx.suspend();
     $("loading").textContent = "Ses başka sekmede. Burada dinlemek için tekrar başlat.";
+    elsewhere = true;
     document.querySelectorAll("[data-team]").forEach((b) => { b.disabled = false; });
     $("enter").classList.remove("hidden");
   }
@@ -356,33 +373,64 @@ function schedule([at, pitch, velocity, duration, voice]) {
   audio.standIn?.start({ note: pitch, velocity, time, duration });   // until its samples arrive
 }
 
-for (const button of document.querySelectorAll("[data-team]")) {
-  button.addEventListener("click", async () => {
-    leaveDemo();
-    stopPersonalAudio();
-    if (isPersonal()) { $("mode").value = "common"; $("mode-status").textContent = ""; }
-    team = button.dataset.team;
-    try { localStorage.setItem("team", team); } catch {}
-    connect();                            // take a seat in the chosen stand
-    document.querySelectorAll("[data-team]").forEach((b) => { b.disabled = true; });
-    $("simple-sound").disabled = true; $("demo").disabled = true; $("mode").disabled = true; $("sound").disabled = true;
-    $("loading").textContent = "Ses yükleniyor…";
-    try {
-      await startAudio();
-      wanted = true;
-      const running = audio?.ctx.state === "running";
-      $("loading").textContent = running ? playingText() : "Tarayıcı sesi henüz açmadı. Başlatmak için Sesi başlat'a bas.";
-      $("sound").disabled = false; $("sound").textContent = running ? "Sesi durdur" : "Sesi başlat";
-      document.querySelectorAll("[data-team]").forEach(b => { b.disabled = false; b.textContent = "Orkestrayı dinle"; });
-      metric("listen");
-    } catch (error) {
-      document.querySelectorAll("[data-team]").forEach((b) => { b.disabled = false; });
-      if (audio) { await audio.ctx.close(); audio = null; }
-      $("loading").textContent = "Ses başlatılamadı. Tarayıcının ses iznini kontrol edip yeniden dene veya sade tınıyla dinle.";
-    } finally {
-      $("simple-sound").disabled = false; $("demo").disabled = false; $("mode").disabled = false;
-    }
-  });
+// Notes arriving with nothing to hear (nudge.mjs): a line under the bar says why and one tap starts the live hall.
+// What the listener stopped here stays stopped; sound playing here again clears both reasons.
+let stoppedHere = false, elsewhere = false;
+// In sight: in the window, not faded out and not under anything (an open panel fades the hero, or covers it on a phone).
+const onScreen = (el) => { const r = el.getBoundingClientRect();
+  return (el.checkVisibility?.({ checkOpacity: true, opacityProperty: true }) ?? true)
+    && el.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)); };
+function nudge(notes) {
+  const running = audio?.ctx.state === "running";
+  if (running && wanted) stoppedHere = elsewhere = false;   // suspend() is not instant: a stop just pressed still reads running
+  const why = soundNudge({ notes, running, stopped: stoppedHere, personal: isPersonal(), watchOnly: location.hash === "#tv",
+    listenShown: onScreen($("listen")), elsewhere });
+  const box = $("sound-nudge");
+  box.hidden = !why;
+  if (!why || box.dataset.why === why) return;
+  box.dataset.why = why;
+  $("sound-nudge-text").textContent = why === "elsewhere" ? "Ses başka sekmede çalıyor." : "Salon çalıyor, ses kapalı.";
+  $("sound-nudge-go").textContent = why === "elsewhere" ? "Burada çal" : "Sesi aç";
+}
+$("sound-nudge-go").onclick = () => { $("sound-nudge").hidden = true; listenLive(); };
+$("sound-nudge-close").onclick = () => { stoppedHere = true; nudge(false); };   // silence chosen: it does not come back
+
+// One listen button: the demo concert while no agent works (demoFirst), the live hall otherwise; a small link
+// under it keeps the live hall, with its house pianist, one tap away.
+function showListen() {
+  const demo = demoFirst(info);
+  $("listen").textContent = demo ? "Demo konserini dinle" : "Orkestrayı dinle";
+  $("listen-live").hidden = !demo;
+}
+showListen();
+$("listen").onclick = () => (demoFirst(info) ? enterDemo() : listenLive());
+$("listen-live").onclick = listenLive;
+async function listenLive() {
+  leaveDemo();
+  stopPersonalAudio();
+  if (isPersonal()) { $("mode").value = "common"; $("mode-status").textContent = ""; }
+  team = "listen";
+  try { localStorage.setItem("team", team); } catch {}
+  connect();                            // take a seat in the chosen stand
+  document.querySelectorAll("[data-team]").forEach((b) => { b.disabled = true; });
+  $("simple-sound").disabled = true; $("demo").disabled = true; $("mode").disabled = true; $("sound").disabled = true;
+  $("loading").textContent = "Ses yükleniyor…";
+  try {
+    await startAudio();
+    wanted = true;
+    const running = audio?.ctx.state === "running";
+    $("loading").textContent = running ? playingText() : "Tarayıcı sesi henüz açmadı. Başlatmak için Sesi başlat'a bas.";
+    $("sound").disabled = false; $("sound").textContent = running ? "Sesi durdur" : "Sesi başlat";
+    document.querySelectorAll("[data-team]").forEach((b) => { b.disabled = false; });
+    metric("listen");
+  } catch (error) {
+    document.querySelectorAll("[data-team]").forEach((b) => { b.disabled = false; });
+    if (audio) { await audio.ctx.close(); audio = null; }
+    $("simple-sound").hidden = false;
+    $("loading").textContent = "Ses başlatılamadı. Tarayıcının ses iznini kontrol edip yeniden dene veya sade tınıyla dinle.";
+  } finally {
+    $("simple-sound").disabled = false; $("demo").disabled = false; $("mode").disabled = false;
+  }
 }
 
 // ---------- hall ----------
@@ -435,8 +483,8 @@ const REGIONS = {
   choir:      { band: [.89, 1.0], arc: [-72, 72], label: "koro" },
 };
 // Teams in the strip under the stage, left to right.
-const BLOCKS = ["claude", "listen", "codex", "other"];
-const BLOCK_COLORS = { claude: "#d9785a", codex: "#6fb8a0", other: "#a99bd6", listen: "#e6b45a" };
+const BLOCKS = ["claude", "codex", "listen", "gemini", "other"];
+const BLOCK_COLORS = { claude: "#d9785a", codex: "#6fb8a0", gemini: "#7ea6e8", other: "#a99bd6", listen: "#e6b45a" };
 const rad = (d) => (d * Math.PI) / 180;
 
 // Fill a wedge row by row from the front; null if it does not fit at this spacing.
@@ -475,7 +523,9 @@ function fit(build, start = 26) {
 function geometry() {
   if (cached && cached.version === version) return cached;
   const cx = width / 2, cy = height - Math.max(104, height * .14);   // the audience needs ~104 px below the stage
-  const R = Math.min(width * .42, height * .6);
+  // The amphitheatre (PLAN.outer radii) fits around the stage; on a narrow phone its far sides may run off
+  // the edges rather than shrink the orchestra below 70 % of its old size.
+  const R = Math.max(Math.min(width * .98 / (2 * PLAN.outer), (cy - 6) / PLAN.outer), Math.min(width * .42, height * .6) * .7);
   const stagePoint = (r, a) => ({ x: cx + Math.sin(rad(a)) * r, y: cy - Math.cos(rad(a)) * r });
   // Each section fills its own region (a lone harpist gets a big chair, violins pack tight).
   // Few people: big flags. A crowd: they shrink to fit.
@@ -505,6 +555,7 @@ function geometry() {
   const chairs = {}, chairSpacing = Math.max(11, R * .055);
   for (const [name, reg] of Object.entries(REGIONS)) chairs[name] = wedgePoints(reg.band[0] * R, reg.band[1] * R, reg.arc[0], reg.arc[1], chairSpacing, stagePoint);
   cached = { version, cx, cy, R, stage, order, chairs };
+  placeHero(cached);
   return cached;
 }
 
@@ -522,6 +573,7 @@ function drawHall(now, dt) {
   const G = geometry();
   const { cx, cy, R } = G;
   g.clearRect(0, 0, width, height);
+  amfi.draw(g, G, { width, height, dpr, heard: Date.now() + offset, dt, still: motionPaused });
   // Stage: a quiet outline only (a full-screen gradient every frame was heavy and loud).
   g.fillStyle = "rgba(244, 234, 216, .025)";
   g.beginPath(); g.moveTo(cx, cy); g.arc(cx, cy, R * 1.05, rad(-182), rad(2)); g.closePath(); g.fill();
@@ -538,15 +590,17 @@ function drawHall(now, dt) {
   }
   // Section names, quietly, at the front edge of each region.
   // Drawn under the musicians, and quieter once a section has players, so flags never sit on text.
-  g.font = "italic 300 14px Fraunces, Georgia, serif"; g.textAlign = "center";
-  for (const [name, reg] of Object.entries(REGIONS)) {
+  g.font = "500 13px 'Instrument Sans', system-ui, sans-serif"; g.textAlign = "center";
+  // While the title sits on the stage (wide screen, before the music) the names would run under it.
+  const titled = wide.matches && !document.body.classList.contains("is-playing") && !document.body.classList.contains("is-demo");
+  for (const [name, reg] of Object.entries(titled ? {} : REGIONS)) {
     if (name === "accordion") continue;        // piano and accordion share one label
     // On a small stage the three names around the podium cannot fit apart: name only the outer rows.
     if (R < 260 && reg.band[0] < .5) continue;
-    const a = rad(name === "piano" ? 0 : (reg.arc[0] + reg.arc[1]) / 2), r = reg.band[0] * R - 7;
+    const a = rad(name === "piano" ? 0 : (reg.arc[0] + reg.arc[1]) / 2), r = reg.band[0] * R - 7, label = t(reg.label);
     g.fillStyle = (seats[SECTIONS.indexOf(name)] || []).some(Boolean) ? "rgba(230, 180, 90, .3)" : "rgba(230, 180, 90, .62)";
-    if (name === "piano") { g.fillText("solistler", cx, cy - reg.band[1] * R - 9); continue; }
-    g.fillText(reg.label, cx + Math.sin(a) * r, cy - Math.cos(a) * r);
+    if (name === "piano") { g.fillText(t("solistler"), cx, cy - reg.band[1] * R - 9); continue; }
+    g.fillText(label, cx + Math.sin(a) * r, cy - Math.cos(a) * r);
   }
   // Musicians.
   const soloGlow = motionPaused ? 0 : Math.max(0, 1 - (Date.now() + offset - soloAt) / 500);
@@ -588,11 +642,12 @@ function drawHall(now, dt) {
       g.globalAlpha = 1;
       if (ownSeat && ownSeat[0] === s && ownSeat[1] === i) {
         g.strokeStyle = "#f4ead8"; g.lineWidth = 2; g.beginPath(); g.arc(x, y, size * 1.7, 0, Math.PI * 2); g.stroke();
-        g.fillStyle = "#f4ead8"; g.font = "bold 12px system-ui"; g.textAlign = "center"; g.fillText("SEN", x, y - size * 2 - 6);
+        g.fillStyle = "#f4ead8"; g.font = "bold 12px system-ui"; g.textAlign = "center"; g.fillText(t("SEN"), x, y - size * 2 - 6);
       }
     });
   }
-  if (info.house) {                       // the house pianist: a grand piano seen from above, glowing on each note
+  // The house pianist: a grand piano seen from above, glowing on each note. Like the names, not under the title.
+  if (info.house && !titled) {
     const reg = REGIONS.piano, a = rad((reg.arc[0] + reg.arc[1]) / 2), r = ((reg.band[0] + reg.band[1]) / 2) * R;
     const s = Math.max(10, R * .04);
     g.save(); g.translate(cx + Math.sin(a) * r, cy - Math.cos(a) * r); g.rotate(a);
@@ -636,12 +691,12 @@ function drawTeams(G, now) {
     }
     const labelY = top + AUDIENCE_ROWS * step + 9;
     g.font = "600 10px 'Instrument Sans', system-ui, sans-serif"; g.fillStyle = "rgba(243, 233, 214, .9)";
-    g.fillText(TEAM_NAMES[team].toLocaleUpperCase("tr"), mx, labelY);
-    g.font = "italic 300 13px Fraunces, Georgia, serif"; g.fillStyle = "rgba(179, 165, 143, .95)";
-    g.fillText(`${count.toLocaleString("tr")} ${team === "listen" ? "dinleyen" : "ajan"}`, mx, labelY + 15);
+    g.fillText(t(TEAM_NAMES[team]).toLocaleUpperCase(getLang()), mx, labelY);
+    g.font = "400 12.5px 'Instrument Sans', system-ui, sans-serif"; g.fillStyle = "rgba(179, 165, 143, .95)";
+    g.fillText(t(`${count.toLocaleString(getLang())} ${team === "listen" ? "dinleyen" : "ajan"}`), mx, labelY + 15);
     if (you && you.team === team) {
-      g.fillStyle = "#e6b45a"; g.font = "italic 400 12px Fraunces, Georgia, serif";
-      g.fillText("sen buradasın", mx, top - 13);
+      g.fillStyle = "#e6b45a"; g.font = "600 12px 'Instrument Sans', system-ui, sans-serif";
+      g.fillText(t("sen buradasın"), mx, top - 13);
     }
   });
   g.textBaseline = "alphabetic";
@@ -695,6 +750,7 @@ requestAnimationFrame(frame);
 
 function pauseCommon() {
   wanted = false;
+  stoppedHere = true; nudge(false);
   if (audio?.ctx.state === "running") audio.ctx.suspend();
   $("sound").textContent = "Sesi başlat";
   $("loading").textContent = "Ortak ses durduruldu. Kontrollerden yeniden başlatabilirsin.";
@@ -739,17 +795,18 @@ $("mode").addEventListener("change", () => {
 // the server carries none of it, and the stage says plainly that the machines are simulated.
 let stopDemo = null;
 function resetHall() {
-  seats = SECTIONS.map(() => []); teams = { agents: {}, fans: {} }; glow.clear();
+  seats = SECTIONS.map(() => []); teams = { agents: {}, fans: {} }; glow.clear(); info = QUIET;
   offsets.length = 0; latency = 0; lastNow = ""; lastLeague = ""; version++;
 }
 async function enterDemo() {
   if (stopDemo) return;
   stopPersonalAudio();
   if (isPersonal()) { $("mode").value = "common"; $("mode-status").textContent = ""; }
-  clearTimeout(retryTimer); stream?.close(); stream = null;
+  clearTimeout(retryTimer); stream?.close(); stream = null; setDemoPlaying(true);
   resetHall();
   document.body.classList.add("is-demo"); $("demo-banner").hidden = false;
   stopDemo = startDemo({ onFrame: applyFrame });
+  amfi.setHolders(demoHolders(), { demo: true }); amfi.setReserved([]);
   metric("demo");
   if (audio?.ctx.state === "running") return;
   $("loading").textContent = "Ses yükleniyor…";
@@ -761,11 +818,77 @@ async function enterDemo() {
 }
 function leaveDemo() {
   if (!stopDemo) return;
-  stopDemo(); stopDemo = null;
+  stopDemo(); stopDemo = null; setDemoPlaying(false);
   document.body.classList.remove("is-demo"); $("demo-banner").hidden = true;
-  resetHall(); connect();
+  // The last demo frame is forgotten: if the live hall does not answer, the button offers the demo again.
+  resetHall(); showListen(); connect(); amfi.setHolders(liveHolders); amfi.setReserved(liveReserved);
   $("loading").textContent = "Canlı salona dönüldü.";
 }
-$("demo-concert").onclick = enterDemo;
 $("demo-offer").onclick = enterDemo;
 $("demo-exit").onclick = leaveDemo;
+
+// ---------- seats for sale ----------
+// The amphitheatre around the stage (amfi.js). Real holders come from the server; the demo concert shows
+// generated examples instead, labelled as such, and the real ones return after it.
+// Blocks someone is paying for, or waiting to have approved, are taken but nameless.
+let liveHolders = [], liveReserved = [];
+async function loadHolders() {
+  try {
+    const data = await (await fetch("/api/seats", { cache: "no-store" })).json();
+    if (!Array.isArray(data.seats)) return;
+    liveHolders = data.seats; liveReserved = Array.isArray(data.reserved) ? data.reserved : [];
+    if (!stopDemo) { amfi.setHolders(liveHolders); amfi.setReserved(liveReserved); }
+    dispatchEvent(new CustomEvent("holders", { detail: liveHolders }));
+    dispatchEvent(new CustomEvent("shop", { detail: { checkout: data.checkout === true } }));
+    dispatchEvent(new CustomEvent("auction", { detail: data.auction || null }));
+  } catch { /* the seats stay as they were */ }
+}
+addEventListener("holders", (event) => listHolders(event.detail));
+addEventListener("seats-stale", loadHolders);
+loadHolders();
+setInterval(loadHolders, 60_000);
+// Placing a block can resize the hall (on a phone it grows wider than the screen): measure it again first.
+const buying = setupBuying({ canvas, geometry: () => { if (canvas.clientWidth !== width || canvas.clientHeight !== height) resize(); return geometry(); }, amfi });
+// The front-block auction (auction.js): its box in the seat panel, fed by the same /api/seats answer as the hall.
+const auction = setupAuction({ startWinner: (id) => buying.startWinner?.(id) });
+addEventListener("auction", (event) => { auction.show(event.detail); amfi.setAuction?.(event.detail); });
+auction.remembered(); backFromBid();
+
+// The title sits in the middle of the stage on a wide screen, over the orchestra it describes.
+function placeHero(G) {
+  const hero = $("hero");
+  if (hero && wide.matches) hero.style.top = `${Math.round(G.cy - G.R * .7)}px`;
+}
+
+// Pointing at a sold block shows who holds it; a tap does the same on a phone. The card (card.js) holds the link.
+const card = createCard({ stage: document.querySelector(".stage"), canvas, amfi });
+// The front block while its auction takes bids: what it is, the price now, the time left, and the way to bid.
+let auctionView = null;
+addEventListener("auction", (event) => { auctionView = event.detail; });
+const { ring, col, width: aw, depth: ad } = AUCTION.block;
+const bidding = (place) => Boolean(place) && !place.holder && auctionView?.state === "open" && !amfi.isDemo()
+  && place.k >= ring && place.k < ring + ad && place.c >= col && place.c < col + aw;
+function showAuctionCard(x, y) {
+  const v = auctionView, ends = left(v.endsAt - Date.now());
+  const title = document.createElement("b"); title.textContent = "Sahnenin önü · 96 koltuk";
+  const price = document.createElement("small");
+  price.textContent = v.current ? `Şu an ${num(v.current)} $ · bitişe ${ends}` : `Açılış ${num(v.min)} $ · bitişe ${ends}`;
+  const go = document.createElement("button"); go.className = "link"; go.textContent = "Teklif ver";
+  go.onclick = () => { card.hide(false); document.querySelector('[data-open="seats"]')?.click(); };
+  card.other([title, price, go], x, y);
+}
+function pointAt(event) {
+  const rect = canvas.getBoundingClientRect(), x = event.clientX - rect.left, y = event.clientY - rect.top;
+  return { x, y, place: amfi.hit(geometry(), x, y) };
+}
+canvas.addEventListener("pointermove", (event) => {
+  if (event.pointerType !== "mouse" || document.body.classList.contains("is-placing")) return;
+  const { x, y, place } = pointAt(event);
+  canvas.style.cursor = place?.holder || bidding(place) ? "pointer" : "";
+  if (place?.holder) card.holder(place.holder, x, y); else if (bidding(place)) showAuctionCard(x, y); else if (card.open()) card.hide(true);
+});
+canvas.addEventListener("pointerleave", () => { if (card.open()) card.hide(true); });
+canvas.addEventListener("click", (event) => {
+  const { x, y, place } = pointAt(event);
+  if (place?.holder) card.holder(place.holder, x, y); else if (bidding(place)) showAuctionCard(x, y); else card.hide(false);
+});

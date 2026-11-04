@@ -1,0 +1,38 @@
+# The orchestra behind Caddy: automatic HTTPS, HSTS, request size limits, streams unbuffered.
+# cp .env.example .env; cp orchestra.env.example orchestra.env (chmod 600); docker compose up -d --build
+# Steps and the checklist: orchestra/docs/OPERATIONS.md "Sunucuya kurulum".
+name: orchestra
+services:
+  orchestra:
+    build:
+      context: ../..
+      dockerfile: orchestra/Dockerfile
+    image: agent-orchestra:local
+    restart: unless-stopped
+    env_file: ${ORCHESTRA_ENV:-orchestra.env}
+    environment:
+      TRUST_PROXY: "1"
+      PUBLIC_URL: ${PUBLIC_URL:-https://${DOMAIN:?set DOMAIN in .env}}
+      SEATS_DIR: /data/seats
+      ORDERS_FILE: /data/orders.json
+      AUCTION_FILE: /data/auction.json
+    volumes:
+      - ${DATA_DIR:-/srv/orchestra}:/data
+    # No ports: only Caddy reaches the server, so X-Forwarded-For cannot be forged from outside.
+  caddy:
+    image: caddy:2-alpine@sha256:e70b164da81ef698b3ad19af799ea6086ce6d9e48ed4079eb9fe26f6fbf14ee5
+    restart: unless-stopped
+    depends_on: [orchestra]
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+volumes:
+  caddy-data:
+  caddy-config:

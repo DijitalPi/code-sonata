@@ -252,6 +252,25 @@ class ArrangementTests(unittest.TestCase):
         for form in turns[:-1]:
             self.assertEqual(form, ["tema", "varyasyon", "nefes"])   # each song: two melody turns, then a breath
 
+    def test_a_queue_plays_each_song_through_even_when_the_hall_heats_up(self):
+        def forms(ordered):
+            c = self.solo(song="nachtmusik", songs=("nachtmusik", "bella-ciao", "fur-elise"), ordered=ordered)
+            visits, turns = [], []
+            for i in range(24_000):   # ten minutes, the work growing all the while
+                c.steps = round(2 * 1.00025 ** i)
+                c.tick(1_700_000_000_000 + i * 25, 25)
+                c.out = []
+                if not visits or visits[-1] != c.song:
+                    visits.append(c.song)
+                    turns.append([])
+                if not turns[-1] or turns[-1][-1] != c.part():
+                    turns[-1].append(c.part())
+            return turns[:-1]
+        self.assertTrue(any(form != ["tema", "varyasyon", "nefes"] for form in forms(False)))   # heat cuts a song short
+        queue = forms(True)
+        self.assertGreaterEqual(len(queue), 3)
+        self.assertTrue(all(form == ["tema", "varyasyon", "nefes"] for form in queue), queue)
+
     def test_the_breath_plays_the_accompaniment_without_the_tune(self):
         c = self.solo(song="ode-to-joy", songs=("ode-to-joy",))
         notes = []

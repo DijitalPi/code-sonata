@@ -1,0 +1,265 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { createBook, hold, setSession, drop, paid, expire, sweep, approve, reject, remove, liveSeats, reserved, summary, buyerState,
+  won, free, HOLD_MS, GRACE_MS } from './orders.mjs';
+import { addCoupon } from './coupons.mjs';
+import { TIERS, blockPrice, AUCTION } from './web/seats.mjs';
+
+const T0 = Date.UTC(2026, 9, 31, 10, 0);
+const front = TIERS[0].rings[0];
+const block = (col, width = 3, depth = 2) => ({ ring: front, col, width, depth });
+let n = 0;
+const nextId = () => `o-${(++n).toString(16).padStart(24, '0')}`;
+const ask = (book, extra = {}, hand = []) =>
+  hold(book, { id: nextId(), block: block(0), name: 'Acme', link: 'https://acme.example', ipKey: 'ip-a', now: T0, ...extra }, hand);
+const pay = (book, order, extra = {}) =>
+  paid(book, { id: order.id, amount: order.amount, currency: 'usd', email: 'ali@acme.example', payment: 'pi_1', session: 'cs_1', now: T0 + 60_000, ...extra });
+
+test('a hold keeps a free block for 31 minutes at the price the server sets', () => {
+  const book = createBook();
+  const { order } = ask(book);
+  assert.equal(order.state, 'held');
+  assert.equal(order.amount, blockPrice(block(0)) * 100);
+  assert.equal(order.currency, 'usd');
+  assert.equal(order.heldUntil, T0 + HOLD_MS);
+  assert.equal(HOLD_MS, 31 * 60_000);
+  assert.deepEqual([order.name, order.link], ['Acme', 'https://acme.example/']);
+  assert.deepEqual(book.events.at(-1), { at: T0, order: order.id, what: 'held', by: null });
+});
+
+test('a hold is refused off the plan, with a bad name or link, or on a seat that is sold, held or paid', () => {
+  const book = createBook();
+  assert.deepEqual(ask(book, { block: { ring: front, col: -1, width: 3, depth: 2 } }), { error: 'block' });
+  assert.deepEqual(ask(book, { block: null }), { error: 'block' });
+  assert.deepEqual(ask(book, { link: 'javascript:alert(1)' }), { error: 'holder' });
+  assert.deepEqual(ask(book, { name: '' }), { error: 'holder' });
+  const hand = [{ id: 'hand', ...block(20), name: 'Hand', link: 'https://h.example/' }];
+  assert.deepEqual(ask(book, { block: block(21) }, hand), { error: 'taken' }, 'a seat added by hand');
+  const { order } = ask(book, { block: block(40) });
+  assert.deepEqual(ask(book, { block: block(41), ipKey: 'ip-b' }), { error: 'taken' }, 'a held seat');
+  pay(book, order);
+  assert.deepEqual(ask(book, { block: block(41), ipKey: 'ip-b' }), { error: 'taken' }, 'a paid seat');
+  approve(book, order.id, 'selim', T0);
+  assert.deepEqual(ask(book, { block: block(41), ipKey: 'ip-b' }), { error: 'taken' }, 'a live seat');
+});
+
+test('one address holds at most two blocks at once, and the hall at most fifty', () => {
+  const book = createBook();
+  assert.ok(ask(book, { block: block(0) }).order);
+  assert.ok(ask(book, { block: block(10) }).order);
+  assert.deepEqual(ask(book, { block: block(20) }), { error: 'busy' });
+  for (let i = 0; i < 48; i++) assert.ok(ask(book, { block: block(30 + i * 3, 1, 1), ipKey: `ip-${i}` }).order, String(i));
+  assert.deepEqual(ask(book, { block: block(190, 1, 1), ipKey: 'ip-new' }), { error: 'full' });
+});
+
+test('a payment of the right amount makes the hold paid, once; a second report changes nothing', () => {
+  const book = createBook();
+  const { order } = ask(book);
+  setSession(book, order.id, 'cs_1');
+  assert.equal(order.session, 'cs_1');
+  assert.deepEqual(pay(book, order), { order, changed: true });
+  assert.equal(order.state, 'paid');
+  assert.deepEqual([order.email, order.payment, order.paidAt], ['ali@acme.example', 'pi_1', T0 + 60_000]);
+  assert.equal(order.ipKey, null, 'the address digest is only needed while holding');
+  assert.deepEqual(pay(book, order), { order, changed: false });
+  assert.equal(book.events.filter((e) => e.what === 'paid').length, 1);
+  assert.deepEqual(paid(book, { id: 'o-unknown', amount: 1, currency: 'usd', now: T0 }), { order: null, changed: false });
+});
+
+test('a payment that does not match the order, or comes too late for its seats, is a problem to refund', () => {
+  const book = createBook();
+  const wrong = ask(book, { block: block(0) }).order;
+  pay(book, wrong, { amount: wrong.amount - 1 });
+  assert.deepEqual([wrong.state, wrong.reason], ['problem', 'amount']);
+  const euro = ask(book, { block: block(10) }).order;
+  pay(book, euro, { currency: 'eur' });
+  assert.deepEqual([euro.state, euro.reason], ['problem', 'amount']);
+  const late = ask(book, { block: block(20), ipKey: 'ip-b' }).order;
+  expire(book, late.id, T0 + HOLD_MS);
+  const other = ask(book, { block: block(20), ipKey: 'ip-c' }).order;
+  assert.ok(other, 'the seats were free again');
+  pay(book, late);
+  assert.deepEqual([late.state, late.reason], ['problem', 'taken']);
+  const slow = ask(book, { block: block(30), ipKey: 'ip-d' }).order;
+  expire(book, slow.id, T0 + HOLD_MS);
+  pay(book, slow);
+  assert.equal(slow.state, 'paid', 'late but its seats are still free');
+});
+
+test('a hold runs out only after Stripe could still be paying; its logo goes a day later, the order after Stripe stops retrying', () => {
+  const book = createBook();
+  const { order } = ask(book);
+  assert.deepEqual(sweep(book, T0 + HOLD_MS + GRACE_MS), { expired: [], pruned: [], stale: [] });
+  assert.deepEqual(sweep(book, T0 + HOLD_MS + GRACE_MS + 1), { expired: [order], pruned: [], stale: [] });
+  assert.equal(order.state, 'expired');
+  assert.equal(order.ipKey, null, 'the address digest is only needed while holding');
+  assert.deepEqual(reserved(book), []);
+  const day = T0 + HOLD_MS + 24 * 3600_000 + 1;
+  assert.deepEqual(sweep(book, day), { expired: [], pruned: [], stale: [order] });
+  assert.equal(book.orders.length, 1, 'Stripe retries an event for three days: a late payment still finds its order');
+  const late = ask(book, { block: block(20) }).order;
+  sweep(book, T0 + HOLD_MS + GRACE_MS + 1);
+  assert.equal(pay(book, late, { now: day }).order.state, 'paid');
+  assert.deepEqual(sweep(book, T0 + HOLD_MS + 4 * 24 * 3600_000 + 1), { expired: [], pruned: [order], stale: [] });
+  assert.deepEqual(book.orders, [late]);
+  const failed = ask(book).order;
+  assert.equal(drop(book, failed.id, T0), failed);
+  assert.equal(failed.state, 'expired');
+  assert.equal(book.events.at(-1).what, 'checkout-failed');
+  assert.equal(expire(book, failed.id, T0), null, 'only a held order expires');
+});
+
+test('approve, reject and remove move an order only from the state they are meant for, and record who', () => {
+  const book = createBook();
+  const a = ask(book, { block: block(0) }).order, b = ask(book, { block: block(10) }).order;
+  assert.deepEqual(approve(book, a.id, 'selim', T0), { error: 'state' }, 'not paid yet');
+  pay(book, a); pay(book, b);
+  assert.deepEqual(approve(book, a.id, 'selim', T0 + 1, [{ id: 'hand', ring: front, col: 2, width: 1, depth: 1, name: 'Hand' }]), { error: 'taken' },
+    'seats added by hand after the payment are not sold twice');
+  assert.equal(a.state, 'paid');
+  assert.equal(approve(book, a.id, 'selim', T0 + 1), a);
+  assert.deepEqual([a.state, a.decidedBy, a.decidedAt], ['live', 'selim', T0 + 1]);
+  assert.equal(reject(book, b.id, 'ozer', '  Logo okunmuyor ', T0 + 2), b);
+  assert.deepEqual([b.state, b.refunded, b.reason, b.decidedBy], ['refunded', true, 'Logo okunmuyor', 'ozer']);
+  assert.deepEqual(reject(book, a.id, 'ozer', '', T0), { error: 'state' }, 'a live block is removed, not rejected');
+  assert.equal(remove(book, a.id, 'selim', 'şikâyet', false, T0 + 3), a);
+  assert.deepEqual([a.state, a.refunded], ['removed', false]);
+  assert.deepEqual(remove(book, a.id, 'selim', '', true, T0), { error: 'state' });
+  assert.deepEqual(approve(book, 'o-unknown', 'selim', T0), { error: 'state' });
+  assert.deepEqual(book.events.slice(-3).map((e) => [e.what, e.by]), [['live', 'selim'], ['refunded', 'ozer'], ['removed', 'selim']]);
+  const problem = ask(book, { block: block(50) }).order;
+  pay(book, problem, { amount: 1 });
+  assert.deepEqual(approve(book, problem.id, 'selim', T0), { error: 'state' }, 'a problem is refunded, never shown');
+  assert.equal(reject(book, problem.id, 'selim', 'tutar', T0).state, 'refunded');
+});
+
+test('the hall sees live blocks with their logo and where held or paid ones are, nothing about the buyer', () => {
+  const book = createBook();
+  const live = ask(book, { block: block(0) }).order, waiting = ask(book, { block: block(10) }).order;
+  pay(book, live); approve(book, live.id, 'selim', T0); pay(book, waiting);
+  const held = ask(book, { block: block(20), ipKey: 'ip-b' }).order;
+  assert.deepEqual(liveSeats(book), [{ id: live.id, ...block(0), name: 'Acme', link: 'https://acme.example/', image: `/seat-images/${live.id}.webp` }]);
+  assert.deepEqual(reserved(book), [block(10), block(20)]);
+  assert.deepEqual([buyerState(live), buyerState(waiting), buyerState(held)], ['live', 'paid', 'held']);
+  pay(book, held, { amount: 1 });
+  assert.equal(buyerState(held), 'paid', 'a problem looks like waiting to the buyer');
+});
+
+test('the summary counts waiting orders, live seats and money kept, this month too', () => {
+  const book = createBook();
+  const a = ask(book, { block: block(0) }).order, b = ask(book, { block: block(10) }).order;
+  pay(book, a); pay(book, b);
+  approve(book, a.id, 'selim', T0);
+  const c = ask(book, { block: block(20), ipKey: 'ip-b' }).order;
+  pay(book, c); reject(book, c.id, 'selim', '', T0);
+  const old = ask(book, { block: block(30), ipKey: 'ip-c' }).order;
+  pay(book, old, { now: Date.UTC(2026, 8, 30) }); approve(book, old.id, 'selim', T0);
+  assert.deepEqual(summary(book, T0), { pending: 1, liveSeats: 12, revenue: a.amount + b.amount + old.amount, month: a.amount + b.amount });
+});
+
+test('a book read back keeps well-formed orders and the last 500 events only', () => {
+  const book = createBook();
+  const { order } = ask(book);
+  const events = Array.from({ length: 600 }, (_, i) => ({ at: i, order: order.id, what: 'held', by: null }));
+  const copy = createBook(JSON.parse(JSON.stringify({ orders: [...book.orders, { id: 'bad' }, null, { ...order, id: 'o-x', state: 'odd' }], events })));
+  assert.deepEqual(copy.orders, [order]);
+  assert.deepEqual([copy.events.length, copy.events[0].at], [500, 100]);
+  assert.deepEqual(createBook(null), { orders: [], events: [], coupons: [] });
+});
+
+test('the auction block is never held seat by seat', () => {
+  const book = createBook();
+  assert.deepEqual(hold(book, { id: nextId(), block: AUCTION.block, name: 'Acme', link: 'https://acme.example', ipKey: 'ip', now: T0 }), { error: 'block' });
+});
+
+test('the auction winner becomes a paid order waiting for approval; sent again, its name and link change', () => {
+  const book = createBook(), id = nextId();
+  const { order } = won(book, { id, name: 'Acme', link: 'https://acme.example', amount: 310_000, payment: 'pi_w', email: 'w@acme.example', now: T0 });
+  assert.deepEqual([order.state, order.width, order.depth, order.amount, order.payment, order.auction], ['paid', 24, 4, 310_000, 'pi_w', true]);
+  assert.equal(won(book, { id, name: 'Acme Ltd', link: 'https://acme.example/x', amount: 1, payment: 'pi_other', email: null, now: T0 }).order.name, 'Acme Ltd');
+  assert.equal(order.amount, 310_000, 'the amount stays what was captured');
+  assert.equal(approve(book, id, 'selim', T0).state, 'live');
+  assert.deepEqual(won(book, { id, name: 'Late', link: 'https://late.example', amount: 1, payment: 'p', email: null, now: T0 }), { error: 'state' });
+  assert.deepEqual(won(book, { id: nextId(), name: '', link: 'nope', amount: 1, payment: 'p', email: null, now: T0 }), { error: 'holder' });
+  assert.equal(createBook(JSON.parse(JSON.stringify(book))).orders.length, 1, 'the 24-wide block survives a reload');
+});
+
+test('a hold and a won auction keep the introduction and city; sent again without them, the old ones go', () => {
+  const book = createBook();
+  const { order } = ask(book, { about: 'Kod yazan bir ekip', city: 'İzmir, Türkiye' });
+  assert.deepEqual([order.about, order.city], ['Kod yazan bir ekip', 'İzmir, Türkiye']);
+  pay(book, order); approve(book, order.id, 'selim', T0);
+  assert.deepEqual(liveSeats(book).map((s) => [s.about, s.city]), [['Kod yazan bir ekip', 'İzmir, Türkiye']]);
+  assert.deepEqual(ask(book, { block: block(30), about: 'x'.repeat(121) }), { error: 'holder' });
+  const id = nextId(), base = { id, name: 'Acme', link: 'https://acme.example', amount: 1, payment: 'pi_c', email: null, now: T0 };
+  assert.equal(won(book, { ...base, about: 'Eski', city: 'Ankara' }).order.about, 'Eski');
+  const again = won(book, base).order;
+  assert.ok(!('about' in again) && !('city' in again), 'a field left empty the second time is gone');
+});
+
+test('read back, a line a hand edit broke is left out instead of hiding the whole seat; good ones are cleaned', () => {
+  const book = createBook();
+  const bad = ask(book, { block: block(40) }).order, good = ask(book, { block: block(50), ipKey: 'ip-c' }).order;
+  Object.assign(bad, { about: 'x'.repeat(121), city: 7 });
+  Object.assign(good, { about: '  A\u202eB\nC ', city: '  İzmir\tTR ' });
+  const again = createBook(JSON.parse(JSON.stringify(book)));
+  for (const o of again.orders) { pay(again, o, { payment: `pi_${o.id}` }); approve(again, o.id, 'selim', T0); }
+  assert.deepEqual(liveSeats(again).map((s) => [s.col, s.name, s.about, s.city]), [[40, 'Acme', undefined, undefined], [50, 'Acme', 'A B C', 'İzmir TR']]);
+});
+
+test('one order per auction payment: a logo sent under another id updates the order that payment already has', () => {
+  const book = createBook(), first = nextId();
+  won(book, { id: first, name: 'Acme', link: 'https://acme.example', amount: 310_000, payment: 'pi_w', email: null, now: T0 });
+  const { order } = won(book, { id: nextId(), name: 'Acme Ltd', link: 'https://acme.example', amount: 310_000, payment: 'pi_w', email: null, now: T0 });
+  assert.deepEqual([book.orders.length, order.id, order.name], [1, first, 'Acme Ltd']);
+});
+
+test("a coupon takes one seat of the block's tier off the price; a single seat costs nothing and waits for approval without Stripe", () => {
+  const book = createBook();
+  addCoupon(book, { code: 'ONSIRA', tier: 'front', max: 5, days: 7, now: T0 });
+  const big = ask(book, { coupon: 'onsira' }).order;   // block(0): 3 × 2 front seats
+  assert.equal(big.amount, blockPrice(block(0)) * 100 - TIERS[0].price * 100);
+  assert.deepEqual([big.coupon, big.discount, big.state], ['ONSIRA', TIERS[0].price * 100, 'held']);
+  const one = ask(book, { block: block(10, 1, 1), coupon: 'ONSIRA', ipKey: 'ip-b' }).order;
+  assert.equal(one.amount, 0);
+  assert.equal(free(book, big.id, T0), null, 'an order with something to pay is not free');
+  assert.equal(free(book, one.id, T0 + 1000).state, 'paid');
+  assert.deepEqual([one.paidAt, one.payment, one.ipKey], [T0 + 1000, null, null]);
+  assert.deepEqual(book.events.at(-1), { at: T0 + 1000, order: one.id, what: 'free', by: null });
+  assert.equal(free(book, one.id, T0), null, 'only once');
+});
+
+test('a hold with a code that does not work is refused and holds nothing', () => {
+  const book = createBook();
+  addCoupon(book, { code: 'ORTA', tier: 'middle', max: 1, days: 7, now: T0 });
+  assert.equal(ask(book, { coupon: 'ORTA' }).error, 'tier');   // block(0) is in the front tier
+  assert.equal(ask(book, { coupon: 'YOK' }).error, 'code');
+  const middle = { ring: TIERS[1].rings[0], col: 0, width: 1, depth: 1 };
+  assert.equal(ask(book, { block: middle, coupon: 'ORTA' }).order.amount, 0);
+  assert.equal(ask(book, { block: { ...middle, col: 5 }, coupon: 'ORTA', ipKey: 'ip-b' }).error, 'used');
+  assert.equal(book.orders.length, 1);
+});
+
+test('rejecting a free order refunds nothing', () => {
+  const book = createBook();
+  addCoupon(book, { code: 'HER', tier: 'any', max: 5, days: 7, now: T0 });
+  const one = ask(book, { block: block(20, 1, 1), coupon: 'HER' }).order;
+  free(book, one.id, T0);
+  assert.equal(reject(book, one.id, 'selim', 'logo', T0).refunded, false);
+  assert.equal(one.state, 'refunded');
+});
+
+test("a late payment whose coupon use went to someone else is a problem; with uses left it is paid", () => {
+  const book = createBook();
+  addCoupon(book, { code: 'TEK', tier: 'any', max: 1, days: 7, now: T0 });
+  addCoupon(book, { code: 'BOL', tier: 'any', max: 5, days: 7, now: T0 });
+  const late = ask(book, { block: block(40, 2, 1), coupon: 'TEK', ipKey: 'ip-b' }).order;
+  expire(book, late.id, T0 + HOLD_MS);
+  assert.ok(ask(book, { block: block(50, 1, 1), coupon: 'TEK', ipKey: 'ip-c' }).order, 'the use came back and went to another buyer');
+  pay(book, late);
+  assert.deepEqual([late.state, late.reason], ['problem', 'coupon']);
+  const slow = ask(book, { block: block(60, 2, 1), coupon: 'BOL', ipKey: 'ip-d' }).order;
+  expire(book, slow.id, T0 + HOLD_MS);
+  pay(book, slow);
+  assert.equal(slow.state, 'paid');
+});

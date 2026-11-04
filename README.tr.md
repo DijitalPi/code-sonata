@@ -23,8 +23,8 @@ kurmaz. Sonra Claude Code ya da Codex'e "kod müziğini aç" demek yeterli.
 ## Varsayılan: bütün Claude / Codex oturumlarını dinle
 
 Müzik klasöre değil ajanların çalışmasına bağlıdır. Mac'teki bütün Claude Code
-(`~/.claude/projects/**/*.jsonl`) ve Codex (`~/.codex/sessions/**/*.jsonl`) oturum
-kayıtları izlenir; hangi pencere/proje olursa olsun her adım duyulur.
+(`~/.claude/projects`), Codex (`~/.codex/sessions`), Gemini CLI (`~/.gemini/tmp`) ve Grok Build
+(`~/.grok/sessions`) oturum kayıtları izlenir; hangi pencere/proje olursa olsun her adım duyulur.
 
 ```sh
 python3 agents.py            # sesli (repo klasöründe)

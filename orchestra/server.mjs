@@ -5,12 +5,16 @@
 //   PORT=4480 node orchestra/server.mjs
 import http from "node:http";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { readFileSync, renameSync, writeFileSync } from "node:fs";
+import { constants, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TITLES } from "./web/music.mjs";
 import { createConductor } from "./web/conductor.mjs";
+import { cleanSeats } from "./web/seats.mjs";
+import { createShop } from "./shop.mjs";
+import { EN } from "./web/lang-en.mjs";
+import { LANGS } from "./web/langs.mjs";
 import { loadGeo, country } from "./geo.mjs";
 
 const PORT = Number(process.env.PORT || 4480);
@@ -37,8 +41,8 @@ const STEP_RATE = 12, STEP_BURST = 40;   // steps per second a machine can score
 // A team in one office shares one address: a pilot of 12 people must all hear the hall. One script still
 // cannot take the whole hall (1000 seats) from one address.
 const LISTENERS_PER_IP = 32, MAX_LISTENERS = 1000;
-const TEAMS = ["claude", "codex", "other", "listen"];   // stadium stands
-const TOOLS = ["claude", "codex", "other"];
+const TEAMS = ["claude", "codex", "gemini", "other", "listen"];   // stadium stands
+const TOOLS = ["claude", "codex", "gemini", "other"];
 try { console.log(`geo: ${loadGeo(join(fileURLToPath(new URL(".", import.meta.url)), "geo/dbip-country-ipv4.csv.gz"))} ranges`); }
 catch (error) { console.log(`geo: disabled (${error.message})`); }
 
@@ -461,9 +465,10 @@ function count(name, key, now) {
 }
 function saveUsage() {
   if (!METRICS_FILE || !usageDirty) return;
-  usageDirty = false;
-  try { writeFileSync(`${METRICS_FILE}.tmp`, JSON.stringify({ days: usage })); renameSync(`${METRICS_FILE}.tmp`, METRICS_FILE); }
-  catch (error) { console.log(`metrics: not saved (${error.message})`); }
+  try {
+    writeFileSync(`${METRICS_FILE}.tmp`, JSON.stringify({ days: usage })); renameSync(`${METRICS_FILE}.tmp`, METRICS_FILE);
+    usageDirty = false;     // only after the file is really written; a failed write is retried
+  } catch (error) { console.log(`metrics: not saved, will retry (${error.message})`); }
 }
 if (METRICS_FILE) {
   setInterval(saveUsage, 60_000).unref();
@@ -471,30 +476,59 @@ if (METRICS_FILE) {
 }
 const sameSecret = (given, secret) => { const a = Buffer.from(given), b = Buffer.from(secret); return a.length === b.length && timingSafeEqual(a, b); };
 
+// ---------- seat holders ----------
+// Seats added by hand live in SEATS_FILE (JSON) and every holder's image in SEATS_DIR; paid ones come from shop.mjs.
+// The file is read again within a minute of a change; anything malformed is left out (see web/seats.mjs).
+const SEATS_FILE = process.env.SEATS_FILE || "", SEATS_DIR = process.env.SEATS_DIR || "";
+let seatHolders = [], seatsRead = 0;
+function loadSeats() {
+  if (!SEATS_FILE) return;
+  try {
+    const changed = statSync(SEATS_FILE).mtimeMs;
+    if (changed === seatsRead) return;
+    seatHolders = cleanSeats(JSON.parse(readFileSync(SEATS_FILE, "utf8"))); seatsRead = changed;
+  } catch (error) { console.log(`seats: not read (${error.message})`); }
+}
+loadSeats();
+if (SEATS_FILE) setInterval(loadSeats, 60_000).unref();
+// Selling seats (shop.mjs): open once Stripe, ORDERS_FILE and SEATS_DIR are set; the panel once ADMIN_KEYS is.
+const shop = createShop({ hand: () => seatHolders });
+setInterval(() => { shop.sweep(wall()); shop.auctionSweep(wall()); }, 60_000).unref();
+
 // ---------- http ----------
-const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".json": "application/json", ".py": "text/plain; charset=utf-8", ".txt": "text/plain; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2" };
+// Every dictionary but Turkish (the page's own words), for the head of a ?lang= link.
+const DICTS = Object.fromEntries(await Promise.all(Object.keys(LANGS).filter((code) => code !== "tr")
+  .map(async (code) => [code, (await import(`./web/lang-${code}.mjs`))[code.toUpperCase()]])));
+const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".json": "application/json", ".py": "text/plain; charset=utf-8", ".txt": "text/plain; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2", ".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg": "image/jpeg" };
 const hits = new Map();         // ip key -> [windowStart, count]: pages and pairing
 const polls = new Map(), pollIPs = new Map();   // pairing / ip key -> [windowStart, count]: a page asking for its own view
 const plays = new Map();        // ip key -> [windowStart, count]: machines reporting
 const listenerIPs = new Map();
 
-function limited(map, key, now, max) {
+// Counts a request in its one-second window and returns how many came so far.
+function tally(map, key, now) {
   const h = map.get(key) || [now, 0];
   if (now - h[0] > 1000) { h[0] = now; h[1] = 0; }
   h[1]++;
   map.set(key, h);
   if (map.size > 50_000) for (const [k, w] of map) if (now - w[0] > 1000) map.delete(k);   // many addresses: drop finished windows only
-  return h[1] > max;
+  return h[1];
 }
+const limited = (map, key, now, max) => tally(map, key, now) > max;
+// Every request counts against its address before its body is read, broken and oversized ones too. Whether
+// it carries an event key is known only after reading, so until then the event allowance applies, if any.
+const anyEvent = EVENT_KEYS.size > 0;
 // Each machine reports once a second, so one address may send as many reports as it may seat
 // machines (twice that: a slow second can bunch two reports together).
 const PAGE_RATE = 8, playRate = (event) => 2 * (event ? EVENT_PER_IP : MAX_MACHINES_PER_IP);
 
 // Small JSON objects only: over 2 KiB, unreadable or not an object is answered here and gives null.
 async function readJson(req, res, empty) {
-  let raw = "";
-  try { for await (const chunk of req) { raw += chunk; if (Buffer.byteLength(raw) > 2048) { json(res, 413, { error: "too big" }); return null; } } }
+  const chunks = [];
+  let size = 0;     // real bytes: a character split across two chunks must not count twice
+  try { for await (const chunk of req) { size += chunk.length; if (size > 2048) { json(res, 413, { error: "too big" }); return null; } chunks.push(chunk); } }
   catch { json(res, 400, { error: "body" }); return null; }
+  const raw = Buffer.concat(chunks).toString("utf8");
   let body;
   try { body = JSON.parse(raw || empty); } catch { json(res, 400, { error: "json" }); return null; }
   if (!body || typeof body !== "object" || Array.isArray(body)) { json(res, 400, { error: "object" }); return null; }
@@ -526,15 +560,19 @@ const server = http.createServer({ connectionsCheckingInterval: 1000, requestTim
   res.setHeader("x-frame-options", "DENY");
   // Code, fonts and sound come only from this site; blob: is for moments made in the browser.
   res.setHeader("content-security-policy", "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+  const home = PUBLIC_URL || `${TRUST_PROXY ? "https" : "http"}://${req.headers.host}`;
+  if (await shop.handle(req, res, url, { foreign, key, now, site: home })) return;
   if (req.method === "POST" && ["/api/pair", "/api/me", "/api/unpair"].includes(url.pathname)) {
     if (foreign) return json(res, 403, { error: "origin" });
+    // Each page asks for its own pairing every two seconds: that poll is limited per pairing, so an office of
+    // pages on one address never trips the address's page limit.
+    const me = url.pathname === "/api/me", rate = (e) => e ? EVENT_PER_IP : me ? LISTENERS_PER_IP : PAGE_RATE;
+    const seen = tally(me ? pollIPs : hits, key, now);
+    if (seen > rate(anyEvent)) return json(res, 429, { error: "slow down" });
     const body = await readJson(req, res, "{}");
     if (!body) return;
     const event = isEvent(body.event);
-    // Each page asks for its own pairing every two seconds: that poll is limited per pairing, so an office of
-    // pages on one address never trips the address's page limit.
-    if (url.pathname === "/api/me" ? limited(polls, String(body.pair).slice(0, 64), now, 5) || limited(pollIPs, key, now, event ? EVENT_PER_IP : LISTENERS_PER_IP)
-      : limited(hits, key, now, event ? EVENT_PER_IP : PAGE_RATE)) return json(res, 429, { error: "slow down" });
+    if (seen > rate(event) || (me && limited(polls, String(body.pair).slice(0, 64), now, 5))) return json(res, 429, { error: "slow down" });
     for (const [token, pair] of pairs) if (now - pair.created > PAIR_TTL) pairs.delete(token);
     if (url.pathname === "/api/pair") {
       if (pairs.size >= 5000) return json(res, 503, { error: "pair capacity" });
@@ -557,10 +595,12 @@ const server = http.createServer({ connectionsCheckingInterval: 1000, requestTim
     // Only the reader plays: it sends JSON and no browser headers. A browser cannot send that type to another
     // site without asking first, and this server never says yes.
     if (foreign || site || !/^application\/json\b/i.test(String(req.headers["content-type"] || ""))) return json(res, 403, { error: "reader only" });
+    const seen = tally(plays, key, now);
+    if (seen > playRate(anyEvent)) return json(res, 429, { error: "slow down" });
     const body = await readJson(req, res, "");
     if (!body) return;
     const event = isEvent(body.event);
-    if (limited(plays, key, now, playRate(event))) return json(res, 429, { error: "slow down" });
+    if (seen > playRate(event)) return json(res, 429, { error: "slow down" });
     if (typeof body.id !== "string" || !/^[a-f0-9]{16,64}$/.test(body.id)) return json(res, 400, { error: "id" });
     if (body.simulation === true && !ALLOW_SIMULATION) return json(res, 403, { error: "simulation disabled" });
     if (body.pair && (body.simulation || players.get(body.id)?.simulation)) return json(res, 403, { error: "simulation cannot pair" });
@@ -588,9 +628,9 @@ const server = http.createServer({ connectionsCheckingInterval: 1000, requestTim
   }
   if (req.method === "POST" && url.pathname === "/api/metric") {
     if (foreign) return json(res, 403, { error: "origin" });
+    if (limited(hits, key, now, PAGE_RATE)) return json(res, 429, { error: "slow down" });
     const body = await readJson(req, res, "");
     if (!body) return;
-    if (limited(hits, key, now, PAGE_RATE)) return json(res, 429, { error: "slow down" });
     if (!METRIC_NAMES.has(body.name)) return json(res, 400, { error: "name" });
     count(body.name, key, now);
     res.writeHead(204, { "cache-control": "no-store" });
@@ -603,6 +643,17 @@ const server = http.createServer({ connectionsCheckingInterval: 1000, requestTim
   // `now`: the hall's clock, so a page can tell how far behind the stream reaches it (see app.js).
   if (["GET", "HEAD"].includes(req.method) && url.pathname === "/api/health") return json(res, 200, { ok: true, players: players.size, listeners: listeners.size, now });
   if (req.method !== "GET" && req.method !== "HEAD") return json(res, 405, { error: "method" });   // HEAD: same headers, no body
+  if (url.pathname === "/api/seats") return json(res, 200, shop.seatsPayload());
+  if (url.pathname.startsWith("/seat-images/")) {
+    const name = url.pathname.slice("/seat-images/".length);
+    try {
+      if (!SEATS_DIR || !/^[a-z0-9-]{1,40}\.(webp|png|jpe?g)$/.test(name)) throw new Error("no such image");
+      // O_NOFOLLOW: a link placed in SEATS_DIR is not followed out of it.
+      const file = await readFile(join(SEATS_DIR, name), { flag: constants.O_RDONLY | constants.O_NOFOLLOW });
+      res.writeHead(200, { "content-type": TYPES[extname(name)], "cache-control": "public, max-age=86400" });
+      return res.end(file);
+    } catch { res.writeHead(404); return res.end("not found"); }
+  }
   if (url.pathname === "/reader.py") {
     try {
       const file = await readFile(READER);
@@ -610,7 +661,12 @@ const server = http.createServer({ connectionsCheckingInterval: 1000, requestTim
       return res.end(file);
     } catch { res.writeHead(404); return res.end("not found"); }
   }
-  const path = normalize(url.pathname === "/" ? "/index.html" : url.pathname).replace(/^(\.\.[/\\])+/, "");
+  // The management panel exists only with ADMIN_KEYS, and search engines are asked to leave it alone.
+  const panel = /^\/yonetim(\/|$)/.test(url.pathname);
+  if (panel && !shop.panelOpen) { res.writeHead(404); return res.end("not found"); }
+  if (panel) res.setHeader("x-robots-tag", "noindex");
+  const page = url.pathname === "/" ? "/index.html" : /^\/yonetim\/?$/.test(url.pathname) ? "/yonetim/index.html" : url.pathname;
+  const path = normalize(page).replace(/^(\.\.[/\\])+/, "");
   try {
     const file = await readFile(join(WEB, path));
     // Page and code revalidate every load, so a new version shows up right away. The sound engine
@@ -618,9 +674,20 @@ const server = http.createServer({ connectionsCheckingInterval: 1000, requestTim
     const pinned = /^[/\\](vendor|sounds)[/\\]/.test(path);
     const fresh = [".html", ".js", ".mjs", ".json", ".css"].includes(extname(path));
     res.writeHead(200, { "content-type": TYPES[extname(path)] || "application/octet-stream", "cache-control": pinned ? "public, max-age=31536000, immutable" : fresh ? "no-cache" : "public, max-age=3600" });
-    const output = extname(path) === ".html" && PUBLIC_URL ? file.toString()
+    let output = extname(path) === ".html" && PUBLIC_URL ? file.toString()
       .replaceAll('content="/og.png"', `content="${PUBLIC_URL}/og.png"`)
       .replace("</head>", `<meta property="og:url" content="${PUBLIC_URL}/"><link rel="canonical" href="${PUBLIC_URL}/"></head>`) : file;
+    // A link in another language (?lang=en, ?lang=de…) gets its title and preview in that language, so a shared
+    // link reads right before any script runs. A text a dictionary lacks goes out in English.
+    const asked = url.searchParams.get("lang");
+    if (extname(path) === ".html" && Object.hasOwn(DICTS, asked)) {
+      const { tag, dir } = LANGS[asked], dict = DICTS[asked];
+      output = output.toString().replace('<html lang="tr">', `<html lang="${tag}"${dir ? ` dir="${dir}"` : ""}>`)
+        .replace(/(<title>|content=")([^<"]+)(<\/title>|")/g, (all, open, text, close) => {
+          const to = dict[text] ?? EN[text];
+          return to ? open + to.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;") + close : all;
+        });
+    }
     res.end(output);
   } catch {
     res.writeHead(404); res.end("not found");

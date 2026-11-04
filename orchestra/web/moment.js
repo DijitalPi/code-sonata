@@ -73,3 +73,10 @@ export function momentLayout(notes, { left, right, top, bottom }, seconds = 12) 
     return { x, y: Math.round(mid - ((pitch - centre) / span) * 2 * half), length: Math.max(0, Math.min(right - x, (duration / seconds) * (right - left))), strength: Math.min(1, Math.max(0, velocity / 127)) };
   }).sort((a, b) => a.x - b.x);
 }
+// The shared hall's last seconds as a moment. Any demo or test note inside the window labels the
+// whole moment, so simulated music is never presented as the real hall.
+export function captureCommon(heard, time, seconds = 12) {
+  const span = seconds * 1000, inside = heard.filter((h) => h.at >= time - span && h.at <= time);
+  const label = inside.some((h) => h.source === 'demo') ? 'DEMO' : inside.some((h) => h.source === 'test') ? 'TEST' : '';
+  return { notes: inside.map((h) => [h.at - time + span, ...h.note]), label };
+}
