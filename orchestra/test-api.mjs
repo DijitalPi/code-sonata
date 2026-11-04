@@ -342,7 +342,7 @@ try {
 // The image copies orchestra/*.mjs by name (web/ goes whole): a module the server reaches but the image lacks
 // stops the server at its first line.
 test('the Docker image gets every module the server imports', () => {
-  const need = new Set(), todo = ['server.mjs'];
+  const need = new Set(), todo = ['server.mjs', 'check-data.mjs'];   // check-data: restore.sh runs it in the image
   while (todo.length) {
     const file = todo.pop();
     if (need.has(file)) continue;

@@ -53,7 +53,7 @@ Kapsayıcı içinde `HOST=0.0.0.0`; örnek komut host portunu yalnız loopback'e
 `orchestra/deploy/` hazır bir kurulumdur: `compose.yaml` sunucuyu ve önündeki Caddy'yi açar. Sunucu portu dışarıya kapalıdır, ona yalnız
 Caddy ulaşır. `Caddyfile` sertifikayı Let's Encrypt'ten alır; HSTS, aşağıdaki gövde sınırları, yalnız statik dosyada sıkıştırma,
 tamponsuz akış ve HTTP/2-3 sağlar. Erişim kaydı ve ziyaretçi adresli hata kaydı yazmaz. İstek hızını sunucu kendisi sınırlar (Caddy'de
-hız sınırı eklentisi yok). `backup.sh` ve `restore.sh` aşağıdaki Yedek bölümünün betikleridir. Gereken: Docker + compose, `python3` (geri yükleme arşivi okur; Ubuntu ve Debian'da hazır gelir), 80 ve 443
+hız sınırı eklentisi yok). `backup.sh` ve `restore.sh` aşağıdaki Yedek bölümünün betikleridir. Gereken: Docker + compose, 80 ve 443
 (TCP), 443/UDP açık, build sırasında GitHub Pages erişimi.
 
 1. Alan adının A (varsa AAAA) kaydı sunucuya. Cloudflare'de "DNS only" kalsın; proxy açılacaksa Ayarlar'daki `TRUST_CF` satırı.
@@ -144,9 +144,10 @@ Betik `orchestra/deploy/backup.sh` (bu sırayla kopyalar, her şeyi yalnız sahi
 kopya bırakmaz, `rclone` ile makine dışına gönderir, 30 günden eskiyi siler): cron `15 4 * * * root /srv/code-sonata/orchestra/deploy/backup.sh`. `DATA`, `BACKUPS`, `REMOTE`, `KEEP_DAYS` ile ayarlanır.
 
 Geri yükleme: `docker compose stop orchestra && ./restore.sh /var/backups/orchestra/GÜN.tgz && docker compose start orchestra`.
-Betik önce arşivi denetler (tek klasör, defterler bütün JSON); bozuksa hiçbir şeyi değiştirmeden durur. Değiştirdiği dosyaları silmez,
-`/srv/orchestra.before-<zaman>`'a taşır, yarıda kalırsa geri koyar, sahibini `node` yapar. Sunucu açılışta her siparişi ve teklifi yeniden
-denetler: kayıtta `not read` görürsen ödeme kapalı kalmıştır, `.before-` klasöründen geri dön. Panelde Genel bakış sayıları ve
+Betik önce arşivi denetler: tek klasör, içinde yalnız dosya ve klasör (bağlantı yok), defterler sunucunun kendi kuralıyla okunur
+(`orchestra/check-data.mjs`; makinede `node` yoksa sunucunun imajında, ağsız). Bozuksa hiçbir şeyi değiştirmeden durur. Değiştirdiği
+dosyaları silmez, her çalışmada kendine ait `/srv/orchestra.before-<zaman>-<rastgele>` klasörüne taşır; hata ya da durdurma sinyalinde
+(TERM, INT, HUP) geri koyar. Sahibini `node` yapar. Panelde Genel bakış sayıları ve
 onay bekleyenler yedekle aynı olmalı. Yedek alındıktan sonra ödenmiş siparişler Stripe
 panelinde (Payments) görünür, panelde yoktur: o sürede ödeme geldiyse alıcıyla iletişime geç ya da iade et. Geri yüklemeyi yayından
 önce bir kez dene.

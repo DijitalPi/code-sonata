@@ -10,7 +10,8 @@ import tempfile
 import unittest
 
 DEPLOY = Path(__file__).with_name("orchestra") / "deploy"
-ORDERS = {"orders": [{"id": "o-" + "1" * 24, "state": "live", "email": "buyer@example.test"}], "events": [], "coupons": []}
+ORDERS = {"orders": [{"id": "o-" + "1" * 24, "state": "live", "ring": 0, "col": 10, "width": 1, "depth": 1, "name": "Acme",
+                       "link": "https://acme.example/", "amount": 2500, "email": "buyer@example.test"}], "events": [], "coupons": []}
 AUCTION = {"auction": None, "bids": [], "old": [], "past": []}
 
 
@@ -75,7 +76,7 @@ class DeployScripts(unittest.TestCase):
         done = self.run_script("backup.sh")
         self.assertNotEqual(done.returncode, 0)
         self.assertEqual(self.others_can_read(), [])
-        self.assertEqual(list(self.backups.glob("*.tgz")), [], "a failed archive is not taken for a backup")
+        self.assertEqual(list(self.backups.iterdir()), [], "neither the copy nor a part of the archive stays")
 
     # ---------- restore ----------
     def test_a_restore_puts_the_archive_in_and_keeps_what_it_replaced(self):
@@ -92,8 +93,12 @@ class DeployScripts(unittest.TestCase):
     def test_a_broken_archive_changes_nothing(self):
         """Files that are not whole are refused before anything moves (G5)."""
         was = self.snapshot()
+        bad_order = {**ORDERS, "orders": [{**ORDERS["orders"][0], "width": "1"}]}
+        bids_alone = {**AUCTION, "bids": [{"id": "b-" + "7" * 24, "state": "winner", "amount": 2400}]}
         for files in ({"orders.json": b"not-json"}, {"orders.json": b"{}"}, {"orders.json": json.dumps(ORDERS).encode(), "auction.json": b""},
-                      {"auction.json": json.dumps(AUCTION).encode()}):
+                      {"auction.json": json.dumps(AUCTION).encode()}, {"orders.json": b'{"orders":[null]}'},
+                      {"orders.json": json.dumps(bad_order).encode()},   # what the server would not read (Y3)
+                      {"orders.json": json.dumps(ORDERS).encode(), "auction.json": json.dumps(bids_alone).encode()}):
             a = self.archive(files)
             done = self.run_script("restore.sh", str(a))
             self.assertNotEqual(done.returncode, 0, files)
@@ -108,6 +113,43 @@ class DeployScripts(unittest.TestCase):
         done = self.run_script("restore.sh", str(a))
         self.assertNotEqual(done.returncode, 0)
         self.assertEqual(self.snapshot(), was)
+
+    def test_a_restore_stopped_by_a_signal_puts_the_old_files_back(self):
+        """Stopped (TERM) after the orders went in, it still puts back what it moved (Y4)."""
+        a = self.archive({"orders.json": json.dumps(ORDERS).encode(), "auction.json": json.dumps(AUCTION).encode(), "seats/o-1.webp": b"new"})
+        was = self.snapshot()
+        self.wrap("mv", f'case "$1" in {self.data}/auction.json) kill -TERM "$PPID"; exit 143;; esac\nexec "$REAL" "$@"')
+        done = self.run_script("restore.sh", str(a))
+        self.assertNotEqual(done.returncode, 0)
+        self.assertEqual(self.snapshot(), was)
+
+    def test_two_restores_in_the_same_second_keep_both_copies_of_what_they_replaced(self):
+        """The folder of what a restore replaced is its own, even with the same time in its name (Y5)."""
+        self.wrap("date", 'echo 20261104-120000')
+        first = self.archive({"orders.json": json.dumps({**ORDERS, "events": [{"what": "first"}]}).encode()}, folder="first")
+        self.assertEqual(self.run_script("restore.sh", str(first)).returncode, 0)
+        shutil.rmtree(self.root / "src"); first.unlink()
+        second = self.archive({"orders.json": json.dumps({**ORDERS, "events": [{"what": "second"}]}).encode()}, folder="second")
+        done = self.run_script("restore.sh", str(second))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        kept = sorted(json.loads((p / "orders.json").read_text())["events"] for p in self.root.iterdir() if p.name.startswith("data.before-"))
+        self.assertEqual(kept, [[], [{"what": "first"}]], "the ledger before each restore, both kept")
+
+    def test_an_archive_with_a_link_in_it_changes_nothing(self):
+        """A symbolic link in the archive would bring a file from elsewhere into the volume (Y7)."""
+        outside = self.root / "external.json"
+        outside.write_text(json.dumps(ORDERS))
+        src = self.root / "src" / "2026-11-04"
+        src.mkdir(parents=True)
+        os.symlink(outside, src / "orders.json")
+        a = self.root / "a.tgz"
+        with tarfile.open(a, "w:gz") as t:
+            t.add(src, arcname="2026-11-04")
+        was = self.snapshot()
+        done = self.run_script("restore.sh", str(a))
+        self.assertNotEqual(done.returncode, 0)
+        self.assertEqual(self.snapshot(), was)
+        self.assertFalse((self.data / "orders.json").is_symlink())
 
 
 if __name__ == "__main__":
