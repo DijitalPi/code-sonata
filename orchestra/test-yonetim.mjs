@@ -144,6 +144,18 @@ test('a session that runs out goes back to the key', async () => {
   assert.ok(!form.closest('[hidden]'));
 });
 
+test('a link that is not a web address (an old order read back from disk) shows as text, never as a link (G7)', async () => {
+  STATE.orders[0].link = 'javascript:alert(1)';
+  try {
+    const form = root.querySelector('form');
+    root.querySelector('input').value = KEY; await form.onsubmit({ preventDefault() {} }); await settle();
+    await go('#bekleyen');
+    const card = root.querySelectorAll('article')[0];
+    assert.ok(card.querySelectorAll('a').every((a) => !String(a.getAttribute('href')).startsWith('javascript:')), 'no link to it');
+    assert.ok(card.textContent.includes('javascript:alert(1)'), 'it is still there to read');
+  } finally { STATE.orders[0].link = 'https://acme.example/'; }
+});
+
 test('an order whose refund was started says so on its card', async () => {
   STATE.orders[0].refunding = true;
   try {

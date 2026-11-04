@@ -13,6 +13,8 @@ const el = (tag, { role, ...props } = {}, ...children) => {
 };
 const num = (n) => Number(n).toLocaleString('tr-TR');
 const money = (cents) => `${num(cents / 100)} $`;
+// An order's link is a web address when sold; one read back from a file edited by hand may not be: it is shown as text.
+const web = (link) => { try { return ['http:', 'https:'].includes(new URL(link).protocol); } catch { return false; } };
 const when = (ms) => (ms ? new Date(ms).toLocaleString('tr-TR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
 const STATE = { held: 'Tutuluyor', paid: 'Onay bekliyor', problem: 'Sorunlu', live: 'Yayında', expired: 'Süresi doldu', refunded: 'İade edildi', removed: 'Kaldırıldı' };
 const DONE = { held: 'yer tuttu', 'checkout-failed': 'ödeme sayfası açılamadı', paid: 'ödendi', problem: 'sorunlu ödeme', expired: 'süresi doldu',
@@ -136,7 +138,8 @@ function waiting() {
       el('div', { className: 'row' }, el('button', { type: 'button', className: 'danger', onclick: () => act(o, 'reject', { reason: reason.value.trim() },
         o.amount === 0 ? `Reddedildi: ${o.name}.` : `İade edildi: ${o.name}.`) }, o.amount === 0 ? 'Reddet (iade yok)' : 'Reddet ve iade et'),
         el('button', { type: 'button', className: 'quiet', onclick: () => { ask.hidden = true; } }, 'Vazgeç')));
-    const link = el('a', { href: o.link, target: '_blank', rel: 'noopener noreferrer' }, `${o.link} ↗`);
+    const link = web(o.link) ? el('a', { href: o.link, target: '_blank', rel: 'noopener noreferrer' }, `${o.link} ↗`)
+      : el('p', { className: 'dim' }, `Bağlantı değil: ${o.link}`);
     const stripe = o.payment && el('a', { href: `https://dashboard.stripe.com/payments/${encodeURIComponent(o.payment)}`, target: '_blank', rel: 'noopener noreferrer' }, 'Stripe\'ta gör ↗');
     return el('article', { className: 'order' }, canvas,
       el('div', { className: 'facts' }, logo,
