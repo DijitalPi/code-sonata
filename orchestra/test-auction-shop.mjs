@@ -373,8 +373,16 @@ test('an order found by its payment gets the logo and the pointer of the auction
 test('an auction file that cannot be trusted closes payment and keeps the block; it is never read as no auction (F2)', () => {
   const badBid = { ...saved('won'), bids: [{ ...saved('won').bids[0], amount: '2400' }] };
   const noTop = { ...saved('won'), bids: [] };
+  const without = (state) => { const d = saved(state); d.auction.top = null; return d; };
+  const second = (state) => { const d = saved(state); d.bids.push({ ...d.bids[0], id: `b-${'8'.repeat(24)}` }); return d; };
   for (const [what, text] of [['empty', ''], ['broken', '{broken'], ['no auction', '{}'], ['null', 'null'],
-    ['a bid it cannot read', JSON.stringify(badBid)], ['a top bid that is not there', JSON.stringify(noTop)]]) {
+    ['a bid it cannot read', JSON.stringify(badBid)], ['a top bid that is not there', JSON.stringify(noTop)],
+    // a file that would read as no auction, or as one without its leader, while a bid holds money (N1, N2)
+    ['bids without their auction', JSON.stringify({ ...saved('won'), auction: null })],
+    ['won without its top', JSON.stringify(without('won'))], ['capturing without its top', JSON.stringify(without('capturing'))],
+    ['failed without its top', JSON.stringify(without('failed'))], ['open with a top bid it does not point to', JSON.stringify(without('open'))],
+    ['two top bids', JSON.stringify(second('open'))], ['won with its bid not the winner', JSON.stringify({ ...saved('won'), bids: saved('open').bids })],
+    ['open with a winner', JSON.stringify({ ...saved('open'), bids: saved('won').bids })]]) {
     const at = mkdtempSync(join(tmpdir(), 'auction-bad-'));
     try {
       const caseEnv = { ...env, SEATS_DIR: at, ORDERS_FILE: join(at, 'orders.json'), AUCTION_FILE: join(at, 'auction.json'), SLACK_WEBHOOK_URL: '' };
@@ -385,6 +393,12 @@ test('an auction file that cannot be trusted closes payment and keeps the block;
       assert.equal(readFileSync(caseEnv.AUCTION_FILE, 'utf8'), text, `${what}: the file is left as it is`);
     } finally { rmSync(at, { recursive: true, force: true }); }
   }
-  const fine = fixture(saved('won'));
-  try { assert.equal(fine.shop.open, true, 'a sound file opens payment'); } finally { fine.clear(); }
+  const unsold = without('unsold'); unsold.bids = [];
+  const fresh = { ...saved('open'), bids: [] }; fresh.auction.top = null;
+  for (const [what, data] of [['won', saved('won')], ['capturing', saved('capturing')], ['failed', saved('failed')], ['open', saved('open')],
+    ['unsold after a refused capture', saved('unsold')], ['unsold without bids', unsold], ['open without bids', fresh],
+    ['before the first auction', { auction: null, bids: [], old: [], past: [] }]]) {
+    const fine = fixture(data);
+    try { assert.equal(fine.shop.open, true, `${what}: a sound file opens payment`); } finally { fine.clear(); }
+  }
 });
